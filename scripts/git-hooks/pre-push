@@ -1,0 +1,37 @@
+#!/bin/sh
+#
+# Pre-push gate for Kason-Hub.
+#
+# WHY THIS EXISTS. `master` is the default branch and deliberately has ZERO CI
+# (.github/workflows/ci.yml fires only on main/uat/prod), so the first execution of any
+# lint or typecheck is a master -> uat promotion PR. That is a bad place to discover a
+# stale assertion, and an even worse place to discover a type error.
+#
+# It is not hypothetical. A `maintenance` utility was added to a union but omitted from
+# two bucket ARRAYS — which TypeScript does not check for exhaustiveness — and the miss
+# surfaced weeks later, in front of an admin, as "couldn't issue the invoice". The arrays
+# are now exhaustive `Record`s, so THAT class is a compile error: this hook is what makes
+# a compile error actually get compiled before the code leaves the machine.
+#
+# WHAT IT RUNS (all cached by turbo — usually seconds):
+#   typecheck  the drift catcher; exhaustive Records only help if tsc runs
+#   lint       --max-warnings=0 across every workspace
+#   build      the ONLY gate that catches a Node builtin leaking into @kason/shared's
+#              barrel and breaking the Vite SPA build; typecheck and tests both pass
+#              while the web build fails
+#
+# NOT run: integration tests. They need Postgres, they are slow, and they historically
+# wrote to the dev database. Run them deliberately:
+#   set -a; . ./.env; . ./apps/api/.env; set +a
+#   RUN_INTEGRATION=1 npx vitest run --dir apps/api/src
+#
+# INSTALL (per clone — git hooks are not version-controlled):
+#   ln -sf ../../scripts/git-hooks/pre-push .git/hooks/pre-push
+#
+# BYPASS, when you genuinely mean it:
+#   git push --no-verify
+set -e
+
+echo "pre-push: turbo typecheck + lint + build"
+npx turbo run typecheck lint build
+echo "pre-push: OK"

@@ -1,0 +1,3842 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║  DB-LEVEL CONSTRAINTS THAT PRISMA CANNOT SEE — READ THIS BEFORE EDITING      ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+//
+// Prisma has no CHECK-constraint support, so `prisma migrate diff` reports NOTHING
+// for the constraints below and `prisma format` will not preserve them. They exist
+// only in hand-authored migration SQL. This block is the index of what is really in
+// the database, so the next person does not have to discover it from a 500.
+//
+// ── 15 CHECK constraints (column vocabularies) ────────────────────────────────
+// Migration 20260727130000_charge_nature_fundedby_checks
+//   Charge.nature                            expense | profit          -> PROFIT_EXPENSE
+//   Charge.fundedBy                          5 values                  -> FUNDED_BY
+// Migration 20260727140000_bearer_vocabulary_checks
+//   UnitUtilityBill.{indahWater,cleaning,wifi}Bearer      owner|tenant -> `bearer` (bills-grid.ts)
+//   UnitBillsGridEntry.{cleaning,wifi,maintenanceFee}Bearer  owner|tenant
+//   UnitBillsBearerConfig.{cleaning,wifi,maintenanceFee}Bearer owner|tenant
+//   GridExpense.bearer / RecurringChargeRevision.bearer /
+//   GridEntryRecurringLine.bearer                         owner|tenant
+//   Tenancy.commissionSstBearer              owner | KAEN  -> COMMISSION_SST_BEARER
+//     ^ DELIBERATELY a different vocabulary from the others despite the name.
+//       The tenant never bears the SST on KAEN's own letting commission.
+//
+// ── 46 foreign-key indexes ────────────────────────────────────────────────────
+// Migration 20260727120000_fk_indexes_and_explicit_ondelete. These ARE expressed as
+// @@index below, so Prisma does see them. Same migration made 14 onDelete actions
+// explicit — each set to the action Prisma already applied implicitly, so it emitted
+// zero SQL and changed no behaviour.
+//
+// ── RULES ─────────────────────────────────────────────────────────────────────
+// 1. Changing a vocabulary means changing THREE things together: the `as const`
+//    array in @kason/shared, a NEW migration altering the CHECK, and the drift test.
+//    Never edit an applied migration — the checksum in _prisma_migrations will
+//    mismatch and `migrate deploy` can refuse to run.
+// 2. Before constraining any NEW column, run the read-only audit FIRST:
+//      psql "$DSN" -tAF'|' -f scripts/audit-column-vocabularies.sql
+//    A vocabulary derived from reading code alone was wrong on three columns on
+//    2026-07-27; only real data caught it.
+// 3. The drift guard lives at
+//    apps/api/src/modules/billing/__tests__/charge-vocabulary-constraints.integration.test.ts
+//    It is a DEVELOPER check, not a CI gate — no workflow sets RUN_INTEGRATION.
+//    Run it with: RUN_INTEGRATION=1 npx --workspace @kason/api vitest run <that file>
+//
+// Deploy reality: UAT applies these automatically (cd-uat-deploy.yml:150). PROD does
+// NOT — cd-prod-deploy.yml runs no migrations; prod changes go through the manual
+// psql/pg_dump process.
+
+model Organization {
+  id                        String   @id @default(uuid()) @db.Uuid
+  name                      String
+  slug                      String   @unique
+  status                    String
+  defaultCurrency           String
+  timezone                  String
+  locale                    String
+  subscriptionPlan          String
+  billingCycleMode          String   @default("calendar")
+  billLeadDays              Int      @default(30)
+  tenancyExpiryReminderDays Int      @default(30)
+  reservationLinkExpiryDays Int      @default(7)
+  currencyDisplay           String   @default("code")
+  managementFeePercent      Decimal  @default(10) @db.Decimal(5, 2)
+  // ── Owner-statement auto-send schedule ──────────────────────────────────────
+  // WHEN the just-ended month's frozen owner statements go out, expressed in the
+  // org's own `timezone` above (never UTC — an admin picking "the 3rd at 09:00"
+  // means their local 3rd).
+  //
+  // Day is capped at 28 so every month has one: a sendDay of 30 would silently
+  // never fire in February. Both are additive with defaults, so existing rows get
+  // "the 3rd at 09:00 local" without a backfill.
+  //
+  // Read by the send cron (apps/api/src/cron/send-owner-statements.ts), which
+  // treats these as a THRESHOLD, not an exact match — a statement due on the 3rd
+  // that missed its run still goes out on the 4th. That is what makes "August's
+  // statement can go any time in September" true rather than a single fragile
+  // instant.
+  ownerStatementSendDay     Int      @default(3)
+  ownerStatementSendHour    Int      @default(9)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  users                   User[]
+  roleAssignments         RoleAssignment[]
+  properties              Property[]
+  buildings               Building[]
+  units                   Listing[]
+  parties                 Party[]
+  partyRoles              PartyRole[]
+  tenancies               Tenancy[]
+  landlordTenancies       LandlordTenancy[]
+  deposits                Deposit[]
+  charges                 Charge[]
+  chargeEvents            ChargeEvent[]
+  chargeTemplates         ChargeTemplate[]
+  recurringCharges        RecurringCharge[]
+  lateFeeRules            LateFeeRule[]
+  payments                Payment[]
+  paymentAllocations      PaymentAllocation[]
+  bills                   CommissionBill[]
+  cashMovements           CashMovement[]
+  notifications           Notification[]
+  notificationQueue       NotificationQueue[]
+  emailTemplates          EmailTemplate[]
+  auditLogs               AuditLog[]
+  activityLogs            ActivityLog[]
+  unitAttributes          UnitAttribute[]
+  maintenanceRequests     MaintenanceRequest[]
+  documents               Document[]
+  documentLinks           DocumentLink[]
+  supplierExpenses            SupplierExpense[]
+  supplierExpenseAllocations  SupplierExpenseAllocation[]
+  kaenOperatingExpenses       KaenOperatingExpense[]
+  ownerFundingRequests        OwnerFundingRequest[]
+  announcements           Announcement[]
+  agentTierMappings       AgentTierMapping[]
+  commissionClaims        CommissionClaim[]
+  commissionClaimItems    CommissionClaimItem[]
+  roomTypes               RoomType[]
+  amenities               Amenity[]
+  workCategories          WorkCategory[]
+  propertyTypes           PropertyType[]
+  agentLevelThresholds    AgentLevelThreshold[]
+  listingVisibilityGrants ListingVisibilityGrant[]
+  taTiers                 TaTier[]
+  notificationLogs        NotificationLog[]
+  icAccessLogs            IcAccessLog[]
+  pendingUploads          PendingUpload[]
+
+  // Sales Entry + Renovation Claim module (Wave 1)
+  projects                       Project[]
+  salesUnits                     SalesUnit[]
+  renovationProgresses           RenovationProgress[]
+  renovationTransitions          RenovationTransition[]
+  renovationPackages             RenovationPackage[]
+  renovationPackageSplits        RenovationPackageSplit[]
+  renovationClaims               RenovationClaim[]
+  renovationClaimSplits          RenovationClaimSplit[]
+  renovationClaimDocuments       RenovationClaimDocument[]
+  renovationClaimTransitions     RenovationClaimTransition[]
+  renovationClaimOffsets         RenovationClaimOffset[]
+  salesClaims                    SalesClaim[]
+  salesClaimSplits               SalesClaimSplit[]
+  salesClaimTransitions          SalesClaimTransition[]
+  settingsLabels                 SettingsLabel[]
+  renovationStages               RenovationStage[]
+  renovationStageProgress        RenovationStageProgress[]
+  salesClaimDefaults             SalesClaimDefault[]
+  salesClaimDefaultSplits        SalesClaimDefaultSplit[]
+  projectVerificationTransitions ProjectVerificationTransition[]
+
+  cardSettings       OrganizationCardSettings?
+  cardVersions       AgentCardVersion[]
+  documentTemplates  DocumentTemplate[]
+  referenceSequences ReferenceSequence[]
+
+  unitReservations           UnitReservation[]
+  unitReservationTransitions UnitReservationTransition[]
+  unitReservationDocuments   UnitReservationDocument[]
+
+  apartments          Apartment[]
+  unitSubmissions     UnitSubmission[]
+  propertySubmissions PropertySubmission[]
+
+  invoices                   Invoice[]
+  aircondMeters              AircondMeter[]
+  meterReadings              MeterReading[]
+  managementFeeConfigs       ManagementFeeConfig[]
+  ownerLedgerEntries         OwnerLedgerEntry[]
+  ownerExpenseProofs         OwnerExpenseProof[]
+  tasks                      Task[]
+  sprints                    Sprint[]
+  tickets                    Ticket[]
+  ticketHistories            TicketHistory[]
+  deviceTokens               DeviceToken[]
+  draftConfigs               DraftConfig[]
+  utilityBillingConfig       UtilityBillingConfig[]
+  invoiceDraftRuns           InvoiceDraftRun[]
+  importRuns                 ImportRun[]
+  unitUtilityBills           UnitUtilityBill[]
+  utilityAllocations         UtilityAllocation[]
+  unitUtilityBillAttachments UnitUtilityBillAttachment[]
+  carparks                   Carpark[]
+  carparkAssignments         CarparkAssignment[]
+  chargeCategories           ChargeCategory[]
+  documentSeries             DocumentSeries[]
+  billingDocuments           BillingDocument[]
+  creditApplications         CreditApplication[]
+  refunds                    Refund[]
+  unitMonthLedgers           UnitMonthLedger[]
+  ownerStatementPeriods      OwnerStatementPeriod[]
+  // Phase-2 owner remittance / receivable-offset (Spec 1) — back-relations required by
+  // OwnerRemittanceAllocation.organization / OwnerReceivableOffsetAllocation.organization below.
+  ownerRemittanceAllocations       OwnerRemittanceAllocation[]
+  ownerReceivableOffsetAllocations OwnerReceivableOffsetAllocation[]
+
+  // Closed-period integrity (R7 freeze manifest, R8 durable reconciliation)
+  ownerStatementFreezeManifestRows  OwnerStatementFreezeManifestRow[]
+  ownerLedgerReconciliationFindings OwnerLedgerReconciliationFinding[]
+  ownerLedgerReconciliationRuns     OwnerLedgerReconciliationRun[]
+
+  // Bills & Expenses Grid (standalone store — never writes Charge/OwnerLedgerEntry/UnitUtilityBill)
+  unitBillsGridEntries   UnitBillsGridEntry[]
+  gridExpenses           GridExpense[]
+  gridMeterReadings      GridMeterReading[]
+  unitBillsBearerConfigs UnitBillsBearerConfig[]
+  gridAttachments        GridAttachment[]
+
+  @@index([status])
+}
+
+model User {
+  id                 String    @id @default(uuid()) @db.Uuid
+  organizationId     String    @db.Uuid
+  email              String
+  phone              String?
+  fullName           String
+  passwordHash       String?
+  status             String
+  role               String    @default("admin")
+  userType           String    @default("operator")
+  /// INVARIANT: every User where userType="operator" MUST have a paired
+  /// Party row (partyType="individual") and link to it via partyId. The
+  /// invariant exists because Listing.inChargePartyId is FK → Party.id —
+  /// any operator that lacks a Party silently drops out of the in-charge
+  /// picker (and every other surface that resolves an actor via Party).
+  /// createUserService writes both in one transaction; the
+  /// scripts/backfill-operator-parties.ts one-shot covers pre-fix rows.
+  /// Kept nullable here because partyId was added retro to a populated
+  /// table — a NOT NULL migration is queued for after the Pro+PITR
+  /// unlock (see CLAUDE.md "UAT data safety — pre-PITR" + the freeze
+  /// spec). Treat NULL as a bug, not a valid state.
+  partyId            String?   @unique @db.Uuid
+  emailVerified      Boolean   @default(false)
+  mustChangePassword Boolean   @default(false) @map("must_change_password")
+  verificationToken  String?
+  resetTokenHash     String?   @map("reset_token_hash")
+  totpSecret         String?
+  totpEnabled        Boolean   @default(false)
+  lastLoginAt        DateTime?
+  photoKey           String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  organization          Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  party                 Party?                   @relation(fields: [partyId], references: [id], onDelete: SetNull)
+  roleAssignments       RoleAssignment[]
+  properties            Property[]
+  auditLogs             AuditLog[]
+  listingGrantsIssued   ListingVisibilityGrant[]
+  icAccessLogsViewed    IcAccessLog[]
+  cardVersionsSubmitted AgentCardVersion[]       @relation("CardVersionSubmitter")
+  cardVersionsReviewed  AgentCardVersion[]       @relation("CardVersionReviewer")
+
+  unitSubmissionsApproved     UnitSubmission[]     @relation("UnitSubmissionApprover")
+  propertySubmissionsApproved PropertySubmission[] @relation("PropertySubmissionApprover")
+
+  @@unique([organizationId, email])
+  @@index([organizationId, status])
+}
+
+model RoleAssignment {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  userId         String   @db.Uuid
+  role           String
+  scopeType      String
+  scopeId        String?  @db.Uuid
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, userId])
+  @@index([organizationId, role])
+}
+
+model Property {
+  id                  String    @id @default(uuid()) @db.Uuid
+  organizationId      String    @db.Uuid
+  name                String
+  propertyCode        String
+  propertyType        String
+  addressLine1        String
+  addressLine2        String?
+  city                String
+  state               String?
+  postalCode          String?
+  country             String
+  status              String
+  publishStatus       String
+  managerId           String?   @db.Uuid
+  insuranceProvider   String?
+  insurancePolicyNo   String?
+  insuranceExpiryDate DateTime?
+  insuranceCoverage   Decimal?  @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  manager              User?                 @relation(fields: [managerId], references: [id], onDelete: SetNull)
+  buildings            Building[]
+  tenancies            Tenancy[]
+  bills                CommissionBill[]
+  cashMovements        CashMovement[]
+  landlordTenancies    LandlordTenancy[]
+  commissionClaimItems CommissionClaimItem[]
+  promotedFromProjects Project[]
+  unitReservations     UnitReservation[]
+  hasPaxDeduction      Boolean               @default(false)
+  paxDeductionAmount   Decimal?              @db.Decimal(8, 2)
+
+  apartments                       Apartment[]
+  carparks                         Carpark[]
+  unitSubmissionsProposingProperty UnitSubmission[]     @relation("UnitSubmissionProperty")
+  propertySubmissionsApproved      PropertySubmission[] @relation("PropertySubmissionApprovedProperty")
+
+  @@unique([organizationId, propertyCode])
+  @@index([organizationId, status])
+  @@index([managerId])
+}
+
+model Building {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  propertyId     String   @db.Uuid
+  name           String
+  code           String?
+  status         String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property     Property     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, propertyId, code])
+  @@index([organizationId, propertyId])
+}
+
+model Apartment {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  propertyId     String @db.Uuid
+  unitCode       String
+
+  listingMode          ListingMode
+  // Partition utility-billing model (only meaningful when listingMode = PARTITIONED;
+  // WHOLE units always have the single tenant bear all). See 2026-06-18 spec.
+  partitionBillingMode UtilityBillingMode @default(NO_SUBSIDY)
+  underManagement      Boolean            @default(true)
+
+  bedrooms             Int?
+  bathrooms            Decimal? @db.Decimal(4, 1)
+  floorArea            Decimal? @db.Decimal(12, 2)
+  floor                Int?
+  facing               String?
+  furnishingLevel      String?
+  amenities            String[] @default([])
+  highlights           String[] @default([])
+  publishedDescription String?
+  publishedTitle       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property         Property          @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  listings         Listing[]
+  carparks         Carpark[]
+  unitUtilityBills UnitUtilityBill[]
+
+  // Bills & Expenses Grid. The three child tables carry a denormalised
+  // `apartmentId` plain column with NO relation, so they need no back-relation here.
+  unitBillsGridEntries   UnitBillsGridEntry[]
+  unitBillsBearerConfigs UnitBillsBearerConfig[]
+
+  @@unique([organizationId, propertyId, unitCode])
+  @@index([organizationId, propertyId])
+  @@index([organizationId, listingMode])
+}
+
+model UnitSubmission {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+
+  propertyId           String?     @db.Uuid
+  propertySubmissionId String?     @db.Uuid
+  unitCode             String
+  listingType          String
+  listingMode          ListingMode
+
+  parentListingId String? @db.Uuid
+
+  sourcingAgentId String @db.Uuid
+
+  submissionState  SubmissionState
+  amendmentNote    String?
+  submittedPayload Json
+
+  approvedAt        DateTime?
+  approvedById      String?   @db.Uuid
+  approvedListingId String?   @unique @db.Uuid
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property           Property?           @relation("UnitSubmissionProperty", fields: [propertyId], references: [id], onDelete: SetNull)
+  propertySubmission PropertySubmission? @relation(fields: [propertySubmissionId], references: [id], onDelete: SetNull)
+  sourcingAgent      Party               @relation("UnitSubmissionSourcingAgent", fields: [sourcingAgentId], references: [id], onDelete: Restrict)
+  approvedBy         User?               @relation("UnitSubmissionApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedListing    Listing?            @relation("UnitSubmissionApprovedListing", fields: [approvedListingId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, submissionState, createdAt])
+  @@index([organizationId, sourcingAgentId, submissionState])
+  @@index([organizationId, parentListingId])
+  @@index([approvedById])
+  @@index([propertyId])
+  @@index([propertySubmissionId])
+}
+
+model PropertySubmission {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+
+  propertyCode String
+  proposedName String
+  propertyType String
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  state        String?
+  postalCode   String?
+  country      String
+
+  sourcingAgentId  String          @db.Uuid
+  submissionState  SubmissionState
+  amendmentNote    String?
+  submittedPayload Json
+
+  approvedAt         DateTime?
+  approvedById       String?   @db.Uuid
+  approvedPropertyId String?   @unique @db.Uuid
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sourcingAgent    Party        @relation("PropertySubmissionSourcingAgent", fields: [sourcingAgentId], references: [id], onDelete: Restrict)
+  approvedBy       User?        @relation("PropertySubmissionApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedProperty Property?    @relation("PropertySubmissionApprovedProperty", fields: [approvedPropertyId], references: [id], onDelete: SetNull)
+
+  unitSubmissions UnitSubmission[]
+
+  @@index([organizationId, submissionState, createdAt])
+  @@index([organizationId, sourcingAgentId, submissionState])
+  @@index([approvedById])
+}
+
+model Listing {
+  id                      String   @id @default(uuid()) @db.Uuid
+  organizationId          String   @db.Uuid
+  apartmentId             String   @db.Uuid
+  listingType             String
+  occupancyStatus         String
+  listingStatus           String
+  baseRentAmount          Decimal? @db.Decimal(12, 2)
+  currency                String
+  rentalRate              Decimal? @db.Decimal(12, 2)
+  depositMonths           Decimal? @default(2) @db.Decimal(4, 2)
+  // Optional deposits — defaults are computed client-side from rentalRate
+  // (see packages/shared/src/deposits.ts). NULL = uploader did not record;
+  // distinct from "uploader confirmed the default."
+  utilitiesDepositMonths  Decimal? @db.Decimal(4, 2)
+  accessCardDepositPerPcs Decimal? @db.Decimal(8, 2)
+  accessCardQuantity      Int?
+
+  // Parking — quantity sets the number of slots; numbers is an aligned
+  // string array (length matches quantity, or is empty if uploader skipped
+  // numbering).
+  parkingQuantity Int?
+  parkingNumbers  String[] @default([])
+
+  // Media — scoped per Listing (per room type) as of 2026-05-24.
+  // See docs/superpowers/specs/2026-05-24-per-room-unit-media-design.md.
+  // For a PARTITIONED apartment, Master / Medium / Small each own their
+  // own gallery; uploading to one does not affect the others.
+  photoKeys     String[] @default([])
+  coverPhotoKey String?
+  videoKeys     String[] @default([])
+
+  vacantSince        DateTime?
+  moveInDate         DateTime?
+  readyNow           Boolean        @default(false)
+  inChargeName       String?
+  inChargePartyId    String?        @db.Uuid
+  ownerPartyId       String?        @db.Uuid
+  sourcingAgentId    String?        @db.Uuid
+  visibilityMode     VisibilityMode @default(PUBLIC)
+  hiddenFromPartyIds String[]       @default([])
+  // Back-pointer when a SalesUnit auto-promotes into this Listing on
+  // RenovationProgress.status=completed for purpose=rent.
+  salesUnitOriginId  String?        @unique @db.Uuid
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  organization          Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  apartment             Apartment                @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+  tenancies             Tenancy[]
+  unitReservations      UnitReservation[]
+  attributes            UnitAttribute[]
+  charges               Charge[]
+  utilityAllocations    UtilityAllocation[]
+  deposits              Deposit[]
+  inChargeParty         Party?                   @relation("UnitInCharge", fields: [inChargePartyId], references: [id], onDelete: SetNull)
+  ownerParty            Party?                   @relation("UnitOwner", fields: [ownerPartyId], references: [id], onDelete: Restrict)
+  sourcingAgent         Party?                   @relation("UnitSourcingAgent", fields: [sourcingAgentId], references: [id], onDelete: SetNull)
+  visibilityGrants      ListingVisibilityGrant[]
+  // Inverse of SalesUnit.promotedUnit
+  promotedFromSalesUnit SalesUnit?               @relation("SalesUnitPromotedUnit")
+  // Forward FK: when a SalesUnit auto-promotes, this Listing points back to it.
+  salesUnitOrigin       SalesUnit?               @relation("UnitSalesUnitOrigin", fields: [salesUnitOriginId], references: [id], onDelete: SetNull)
+
+  amendmentSubmissions UnitSubmission[] @relation("UnitSubmissionApprovedListing")
+
+  aircondMeters   AircondMeter[]
+  meterReadings   MeterReading[]
+  tickets         Ticket[]
+  ticketHistories TicketHistory[]
+  relatedTasks    Task[]
+
+  @@unique([apartmentId, listingType])
+  @@index([organizationId, listingStatus])
+  @@index([apartmentId, listingStatus])
+  @@index([organizationId, sourcingAgentId])
+  @@index([organizationId, ownerPartyId])
+  @@map("Unit")
+  @@index([inChargePartyId])
+}
+
+/// A physical parking bay owned via its home apartment. Replaces the old
+/// Listing.unitKind="carpark" pseudo-room. Rented to a unit tenant via
+/// CarparkAssignment; rent always foots to ownerPartyId (the bay's owner).
+model Carpark {
+  id             String  @id @default(uuid()) @db.Uuid
+  organizationId String  @db.Uuid
+  propertyId     String  @db.Uuid // the building — drives the "available bays in this condo" picker
+  apartmentId    String  @db.Uuid // home apartment → the bay's owner
+  ownerPartyId   String? @db.Uuid // mirrors the apartment's Listing.ownerPartyId
+  label          String // e.g. "P-12"
+  monthlyRate    Decimal @db.Decimal(12, 2) // default charge when assigned
+  status         String  @default("available") // "available" | "rented" | "inactive"
+  notes          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property     Property            @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  apartment    Apartment           @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+  ownerParty   Party?              @relation("CarparkOwner", fields: [ownerPartyId], references: [id], onDelete: Restrict)
+  assignments  CarparkAssignment[]
+  charges      Charge[]
+
+  @@index([organizationId, propertyId, status])
+  @@index([organizationId, apartmentId])
+  @@index([organizationId, ownerPartyId])
+}
+
+/// Links a parking bay to the renter's ROOM tenancy. 1 tenancy : N assignments;
+/// a Carpark has at most one status="active" assignment at a time.
+///
+/// DB-level uniqueness: partial unique index `CarparkAssignment_carparkId_active_key`
+/// (`carparkId` WHERE status='active') was created in migration
+/// 20260630000002_carpark_assignment_active_unique. Prisma 7 cannot express
+/// partial unique indexes in @@unique, so it lives only in the migration SQL.
+model CarparkAssignment {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  carparkId      String    @db.Uuid
+  tenancyId      String    @db.Uuid // the renter's ROOM tenancy (the cross-unit link)
+  monthlyCharge  Decimal   @db.Decimal(12, 2) // prefilled from Carpark.monthlyRate, editable
+  startDate      DateTime  @db.Date
+  endDate        DateTime? @db.Date
+  status         String    @default("active") // "active" | "ended"
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  carpark      Carpark      @relation(fields: [carparkId], references: [id], onDelete: Restrict)
+  tenancy      Tenancy      @relation(fields: [tenancyId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, carparkId, status])
+  @@index([organizationId, tenancyId, status])
+}
+
+model UnitAttribute {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  unitId         String @db.Uuid
+  attributeKey   String
+  attributeValue String
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  unit         Listing      @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, unitId, attributeKey])
+}
+
+model Party {
+  id                       String    @id @default(uuid()) @db.Uuid
+  organizationId           String    @db.Uuid
+  partyType                String
+  displayName              String
+  legalName                String?
+  primaryEmail             String?
+  primaryPhone             String?
+  /// E.164 phone number for WhatsApp delivery. Optional — parties without
+  /// a number simply don't receive WhatsApp notifications. Distinct from
+  /// `primaryPhone` (which may be a landline or WhatsApp-incapable number).
+  whatsappPhone            String?
+  /// User toggle for receiving claim-submit notifications. Default true.
+  /// Flipped to false on STOP keyword via WhatsApp.
+  notifyOnNewClaim         Boolean   @default(true)
+  status                   String
+  idType                   String?
+  idNumber                 String?
+  /// Generated STORED column (migration 20260706120000). Read-only; never set
+  /// in app code -- Postgres rejects direct writes (SQLSTATE 428C9). Mirrors
+  /// normalizeIc() in apps/api/src/lib/normalize-ic.ts exactly. NOTE: a NULL
+  /// or separator-only idNumber normalizes to '' (empty string), not NULL --
+  /// callers matching on this column MUST guard against an empty/blank
+  /// normalized search key, or they will match every ID-less Party.
+  /// DB-GENERATED (STORED) -- Prisma cannot model this. If `prisma migrate
+  /// dev` ever proposes an ALTER that DROPs the generated expression on this
+  /// column, DISCARD that hunk: dropping it silently converts the column to
+  /// a plain nullable column, breaking NRIC matching. This column is only
+  /// ever set by the DB.
+  /// LOCALE NOTE: the STRIP step's [A-Za-z0-9] bracket-range match is also
+  /// collation-dependent -- benign on this DB's target locale (en_US.UTF-8);
+  /// a future locale re-provision could change which characters get stripped.
+  idNumberNormalized       String?
+  nationality              String?
+  emergencyContactName     String?
+  emergencyContactPhone    String?
+  emergencyContactRelation String?
+  employerName             String?
+  employerAddress          String?
+  monthlyIncome            Decimal?  @db.Decimal(12, 2)
+  race                     String?
+  gender                   String?
+  dateOfBirth              DateTime?
+  occupation               String?
+  bankName                 String?
+  bankAccountHolder        String?
+  bankAccountNumber        String?
+  isBlacklisted            Boolean   @default(false)
+  blacklistReason          String?
+  // agentLevel — tier within the agent population.
+  //   Values: 'leader' | 'pre_leader' | 'new_agent'
+  //   UI labels: 'leader' is shown as "Manager" (see
+  //   apps/web/src/pages/parties/agent-tree-view.tsx → LEVEL_LABELS).
+  //   DO NOT rename the enum values: AgentTierMapping and AgentLevelThreshold
+  //   key on these exact strings for commission percentage lookups.
+  //   Separation of "Manager" vs "Agent" in the UI is enforced at the API
+  //   boundary via GET /parties/agents?excludeLevel=leader and /parties/managers
+  //   (NOT by moving managers into a separate table — Single Table Inheritance
+  //   is correct here since the columns are identical).
+  agentLevel               String?
+  // uplineId — self-referencing reporting line. Agents with uplineId=NULL are
+  // roots in the organization tree; the UI renders them hanging off a synthetic
+  // "Organization" node. Storage is adjacency-list (cheap writes, good
+  // read-perf with @@index below) + recursive CTE for ancestor/descendant
+  // walks. Defensive depth/row caps live in parties.repository.ts.
+  uplineId                 String?   @db.Uuid
+  photoKey                 String?
+  activeCardVersionId      String?   @unique @db.Uuid
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  activeCardVersion   AgentCardVersion?        @relation("PartyActiveCard", fields: [activeCardVersionId], references: [id], onDelete: SetNull)
+  cardVersions        AgentCardVersion[]       @relation("PartyAllCards")
+  organization        Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  upline              Party?                   @relation("PartyHierarchy", fields: [uplineId], references: [id], onDelete: SetNull)
+  downlines           Party[]                  @relation("PartyHierarchy")
+  tenancies           Tenancy[]                @relation("TenancyParty")
+  roles               PartyRole[]
+  charges             Charge[]
+  payments            Payment[]
+  bills               CommissionBill[]
+  cashMovements       CashMovement[]
+  landlordTenancies   LandlordTenancy[]
+  userAccount         User?
+  deposits            Deposit[]
+  commissionClaims    CommissionClaim[]        @relation("CommissionClaimAgent")
+  unitInChargeFor     Listing[]                @relation("UnitInCharge")
+  unitSourcedListings Listing[]                @relation("UnitSourcingAgent")
+  ownedUnits          Listing[]                @relation("UnitOwner")
+  ownedCarparks       Carpark[]                @relation("CarparkOwner")
+  visibilityGrants    ListingVisibilityGrant[]
+  notifications       NotificationLog[]
+  pendingUploads      PendingUpload[]
+
+  // Sales Entry + Renovation Claim
+  salesUnitsOwned       SalesUnit[]            @relation("SalesUnitOwner")
+  salesUnitsAgent       SalesUnit[]            @relation("SalesUnitAgent")
+  salesUnitsInCharge    SalesUnit[]            @relation("SalesUnitInCharge")
+  renovationClaimSplits RenovationClaimSplit[]
+  salesClaimSplits      SalesClaimSplit[]
+
+  issuedReservations      UnitReservation[] @relation("ReservationIssuer")
+  reservationsCreatedFrom UnitReservation[] @relation("ReservationTenant")
+
+  unitSubmissionsAsSourcer     UnitSubmission[]     @relation("UnitSubmissionSourcingAgent")
+  propertySubmissionsAsSourcer PropertySubmission[] @relation("PropertySubmissionSourcingAgent")
+
+  invoicesAsBillTo     Invoice[]             @relation("InvoiceBillTo")
+  invoicesAsOwner      Invoice[]             @relation("InvoiceOwner")
+  managementFeeConfigs ManagementFeeConfig[] @relation("MgmtFeeOwner")
+  deviceTokens         DeviceToken[]
+
+  @@index([organizationId, status])
+  @@index([organizationId, partyType])
+  @@index([organizationId, displayName])
+  @@index([organizationId, agentLevel])
+  @@index([organizationId, uplineId])
+  @@index([organizationId, primaryPhone]) // M1 phone-search-to-act
+  @@index([organizationId, idNumberNormalized], map: "party_idnum_norm")
+}
+
+model PartyRole {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  partyId        String    @db.Uuid
+  roleType       String
+  status         String
+  effectiveFrom  DateTime?
+  effectiveTo    DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  party        Party        @relation(fields: [partyId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, partyId])
+  @@index([organizationId, roleType, status])
+}
+
+model Tenancy {
+  id                     String    @id @default(uuid()) @db.Uuid
+  organizationId         String    @db.Uuid
+  propertyId             String    @db.Uuid
+  unitId                 String    @db.Uuid
+  tenantPartyId          String    @db.Uuid
+  tenancyCode            String
+  status                 String
+  billingStatus          String
+  startDate              DateTime
+  endDate                DateTime?
+  monthlyRentAmount      Decimal   @db.Decimal(12, 2)
+  depositAmount          Decimal?  @db.Decimal(12, 2)
+  termMonths             Int?
+  nextActionDate         DateTime?
+  balanceDueAmount       Decimal?  @db.Decimal(12, 2)
+  moveInChecklist        Json?
+  moveOutChecklist       Json?
+  depositDeductions      Json?
+  depositRefundAmount    Decimal?  @db.Decimal(12, 2)
+  depositRefundDate      DateTime?
+  depositRefundNote      String?
+  autoRenew              Boolean   @default(false)
+  autoRenewTermMonths    Int?
+  moveInNotes            String?
+  moveOutNotes           String?
+  statementSentAt        DateTime?
+  previousTenancyId      String?   @unique @db.Uuid
+  noticePeriodDays       Int?      @default(30)
+  noticeGivenDate        DateTime?
+  noticeGivenBy          String?
+  overdueCount           Int       @default(0)
+  lastOverdueAt          DateTime?
+  // Phase-2 M1/M9 (O1 resolved 2026-06-11) — nullable, populated by import + forms
+  numberOfPax            Int?
+  agentLabel             String? // RAW Excel value; NO auto-normalization (M9 Yannie-reviewed merge)
+  accessCardNo           String? // per-tenant card number(s), newline-tolerant
+  // Rental-invoice scheduling (Day-1 meeting §5.1). Both nullable: existing
+  // tenancies keep today's behaviour (first invoice derives from startDate,
+  // subsequent invoices from the global DraftConfig.runDayOfMonth). "Following
+  // months invoice on" is deliberately NOT a column -- it is the global 25th
+  // (DraftConfig.runDayOfMonth), per Cadis: "the date is one global setting".
+  rentInvoiceStartDate   DateTime?
+  // Free-text label for a manually-keyed first month, e.g. "pro-rate".
+  // Display-only; it never changes the computed amount.
+  firstMonthRentNote     String?
+  // First-month-rent-as-KAEN-commission (Phase 1, display-only). Additive +
+  // defaulted so existing tenancies are behaviour-unchanged. commissionSstBearer
+  // is "owner" | "kaen" (String, not a Prisma enum, per this schema's convention).
+  firstMonthIsCommission Boolean   @default(false)
+  // DB-ENFORCED: CHECK "Tenancy_commissionSstBearer_check" (owner|KAEN), migration 20260727140000.
+  // Vocabulary source: COMMISSION_SST_BEARER — NOT owner|tenant, the tenant never bears KAEN's commission SST
+  commissionSstBearer    String    @default("owner")
+  // Set by deferred auto-deduct release; nullable until then.
+  renovationClaimId      String?   @db.Uuid
+  reservationId          String?   @unique @db.Uuid
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  organization        Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property            Property                @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  // Restrict: lease history must never be silently destroyed when a Unit
+  // is deleted. Application code blocks Unit deletion if any Tenancy row
+  // exists; this FK action is the defence-in-depth safety net.
+  unit                Listing                 @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  tenantParty         Party                   @relation("TenancyParty", fields: [tenantPartyId], references: [id], onDelete: Cascade)
+  previousTenancy     Tenancy?                @relation("TenancyRenewalChain", fields: [previousTenancyId], references: [id], onDelete: SetNull)
+  renewedTenancy      Tenancy?                @relation("TenancyRenewalChain")
+  renovationClaim     RenovationClaim?        @relation("TenancyRenovationClaim", fields: [renovationClaimId], references: [id], onDelete: SetNull)
+  reservation         UnitReservation?        @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+  charges             Charge[]
+  carparkAssignments  CarparkAssignment[]
+  utilityAllocations  UtilityAllocation[]
+  recurringCharges    RecurringCharge[]
+  deposits            Deposit[]
+  maintenanceRequests MaintenanceRequest[]
+  renovationOffsets   RenovationClaimOffset[]
+
+  invoices Invoice[]
+
+  @@unique([organizationId, tenancyCode])
+  @@index([organizationId, status])
+  @@index([organizationId, billingStatus])
+  @@index([organizationId, unitId])
+  @@index([organizationId, endDate])
+  @@index([organizationId, tenantPartyId, status])
+  @@index([propertyId])
+  @@index([renovationClaimId])
+}
+
+model LandlordTenancy {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  propertyId     String    @db.Uuid
+  landlordId     String    @db.Uuid
+  startDate      DateTime
+  endDate        DateTime?
+  monthlyRent    Decimal   @db.Decimal(12, 2)
+  depositAmount  Decimal?  @db.Decimal(12, 2)
+  status         String    @default("active")
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property     Property     @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  landlord     Party        @relation(fields: [landlordId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, status])
+  @@index([landlordId])
+  @@index([propertyId])
+}
+
+model Deposit {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  tenancyId      String    @db.Uuid
+  partyId        String    @db.Uuid
+  unitId         String    @db.Uuid
+  type           String
+  amount         Decimal   @db.Decimal(12, 2)
+  status         String    @default("held")
+  refundedAmount Decimal   @default(0) @db.Decimal(12, 2)
+  refundDate     DateTime?
+  refundNotes    String?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tenancy      Tenancy      @relation(fields: [tenancyId], references: [id], onDelete: Cascade)
+  party        Party        @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  // Restrict: deposit history is financial data and must not be silently
+  // destroyed when a Unit is deleted. Application code blocks Unit
+  // deletion if any Deposit row exists; this is the safety net.
+  unit         Listing      @relation(fields: [unitId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, status])
+  @@index([organizationId, tenancyId])
+  @@index([organizationId, partyId])
+  @@index([unitId])
+}
+
+// ── Accounting documents P1 (spec 2026-07-02 §4.1) ───────────────────────────
+// ChargeCategory — the admin-maintained charge registry (meeting D2). `code` is
+// the stable machine key auto-post flows resolve by; `name` is renameable
+// display. `family` drives posting class + document routing; `ledgerCategory`
+// maps INTO the existing OWNER_LEDGER_CATEGORIES vocabulary for sync projection
+// (it does NOT replace the EntryFormDrawer's own dropdown — spec §4.8).
+model ChargeCategory {
+  id               String   @id @default(uuid()) @db.Uuid
+  organizationId   String   @db.Uuid
+  code             String
+  name             String
+  family           String // "tenant_income" | "owner_income" | "pay_back_landlord"
+  docType          String // "invoice" | "debit_note" (CN/RN are never category-routed)
+  seriesId         String   @db.Uuid
+  defaultSstRate   Decimal  @default(0) @db.Decimal(5, 2)
+  eInvoiceEligible Boolean  @default(false)
+  ledgerCategory   String? // OWNER_LEDGER_CATEGORIES value, sync projection only
+  isSystem         Boolean  @default(false)
+  active           Boolean  @default(true)
+  sortOrder        Int      @default(0)
+  description      String?
+  profitExpense    String? // "profit" | "expense" — bills-grid classification only; NOT read by issuance
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  series       DocumentSeries @relation(fields: [seriesId], references: [id], onDelete: Restrict)
+  charges      Charge[]
+  gridExpenses GridExpense[]
+
+  @@unique([organizationId, code])
+  @@unique([organizationId, name])
+  @@index([organizationId, active, sortOrder])
+  @@index([seriesId])
+}
+
+// DocumentSeries — editable numbering config per series (IVTEN/IVOWN/DEP/CN/RN).
+// Counters are NOT stored here: Plan 2's mintDocumentNumberTx reuses the
+// existing ReferenceSequence with docType = 'series:' + code (no new engine).
+model DocumentSeries {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  code           String
+  prefix         String
+  padding        Int      @default(4)
+  includeYear    Boolean  @default(false)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  categories   ChargeCategory[]
+
+  @@unique([organizationId, code])
+}
+
+/// Duplicate-charge prevention (Spec 2 R1): two PARTIAL UNIQUE INDEXes —
+/// (unitId|carparkId, categoryId, billingMonth, amount) WHERE status NOT IN
+/// ('void','credited') AND categoryId IS NOT NULL — live only in migration
+/// 20260706120000_charge_duplicate_prevention (Prisma 7 can't express partial @@unique).
+model Charge {
+  id                    String    @id @default(uuid()) @db.Uuid
+  organizationId        String    @db.Uuid
+  chargeNumber          String
+  tenancyId             String?   @db.Uuid
+  unitId                String?   @db.Uuid
+  carparkId             String?   @db.Uuid
+  categoryId            String?   @db.Uuid // ChargeCategory — nullable for legacy rows (backfill script)
+  partyId               String    @db.Uuid
+  chargeType            String
+  status                String
+  description           String?
+  dueDate               DateTime  @db.Date
+  postedAt              DateTime?
+  amount                Decimal   @db.Decimal(12, 2)
+  currency              String
+  outstandingAmount     Decimal   @db.Decimal(12, 2)
+  waivedReason          String?
+  cancelledReason       String?
+  isDisputed            Boolean   @default(false)
+  disputeReason         String?
+  disputeStatus         String?
+  disputeResolution     String?
+  disputeResolvedAt     DateTime?
+  chargeableFrom        DateTime?
+  chargeableTo          DateTime?
+  lateFeeApplied        Boolean   @default(false)
+  lateFeeAmount         Decimal?  @db.Decimal(12, 2)
+  parentChargeId        String?   @db.Uuid
+  attachmentKeys        String[]
+  // Phase-2 additive extension points (M3/M5) — nullable, no backfill
+  invoiceId             String?   @db.Uuid
+  approvedBy            String?   @db.Uuid // User.id — plain column
+  approvedAt            DateTime?
+  billingMonth          DateTime? @db.Date // matrix period key; null on legacy rows (chargeBillingMonth() derives)
+  // Phase-2 (bills-grid Bill→invoice): tags charges minted by the bills-grid Bill so
+  // re-Bill can find live invoices (filtered to ISSUED docs) and the double-count guard
+  // can detect prior issuance. Real FK to UnitBillsGridEntry with SetNull on delete —
+  // deleting a grid entry nulls this ref (never orphans it), keeping the re-Bill/
+  // double-count logic (which locate live charges by sourceGridEntryId) correct.
+  sourceGridEntryId     String?   @db.Uuid // UnitBillsGridEntry.id — FK, SetNull on delete
+  // Recurring-charge LINE-level provenance (recurring-charges feature). Set ONLY on charges
+  // minted from a GridEntryRecurringLine (custom recurring); null for utility/other charges.
+  // The re-Bill RECLAIM key stays sourceGridEntryId (which recurring charges also carry) — this
+  // is for invoice-line/owner-statement provenance. FK SetNull so a removed snapshot line never
+  // orphan-cascades a billed Charge. NO backfill (existing charges predate the feature).
+  sourceRecurringLineId String?   @db.Uuid
+  // Bill-expenses feature (spec R2): per-charge SST override. Null = derive from
+  // category.defaultSstRate (today's behavior). Set to 0 or the standard rate by
+  // expense minting so SST follows the expense's withSST flag, not the routing category.
+  sstRate               Decimal?  @db.Decimal(5, 2)
+  // Bill-expenses feature (spec R4): provenance of a charge minted from a GridExpense.
+  // FK SetNull so deleting the grid expense nulls this ref (never orphans the billed
+  // charge). Null for all non-expense charges. Drives attachment resolution + re-Bill.
+  sourceGridExpenseId   String?   @db.Uuid
+  // Paid-on-behalf metadata (Task 9) — DISPLAY-ONLY, additive nullable. When KAEN
+  // settled this expense (e.g. fire insurance) for the owner, who was paid + the
+  // supplier reference + the payment date. Copied verbatim onto the synced
+  // OwnerLedgerEntry; NEVER affects any money math.
+  payeeName             String? // who KAEN paid on the owner's behalf (e.g. "Allianz")
+  paidOnBehalfRef       String? // supplier reference / invoice no. (e.g. "INV-1")
+  paidOnBehalfDate      DateTime? @db.Date // date KAEN paid the payee
+  // Phase-0 agency-accounting economic-treatment (additive, nullable, forward-only — no backfill).
+  // Records WHO funded the cost, what the money IS, who it settles to, and its tax nature —
+  // distinct questions ChargeCategory.family alone cannot answer. NEVER read for SST in this phase.
+  // DB-ENFORCED: CHECK "Charge_fundedBy_check" (migration 20260727130000). The
+  // authoritative vocabulary is FUNDED_BY (@kason/shared) — 5 values; this comment
+  // previously listed only 4 and omitted "tenant_funded". Do not edit the list here:
+  // change FUNDED_BY, then the constraint, then run the drift test
+  // (apps/api/src/modules/billing/__tests__/charge-vocabulary-constraints.integration.test.ts).
+  fundedBy              String? // FUNDED_BY: owner|manager|tenant_direct|tenant_funded|third_party
+  revenueRecognition    String? // "manager_revenue"|"owner_funds"|"recovery_of_advance"|"third_party_collection"
+  settlementRecipient   String? // "manager"|"owner"|"third_party"|"none"
+  // DB-ENFORCED: CHECK "Charge_nature_check" (migration 20260727130000), vocabulary
+  // PROFIT_EXPENSE (@kason/shared). NULL still permitted (legacy rows).
+  nature                String? // "expense" | "profit" — drives EB/deduction routing (ENABLE_CHARGE_NATURE_ROUTING)
+  sourceSupplier        String? // e.g. "TNB", "Air Selangor"
+  sourceInvoiceIssuedTo String? // "owner"|"tenant"|"manager"
+  actualCost            Decimal?  @db.Decimal(12, 2)
+  markupAmount          Decimal?  @db.Decimal(12, 2)
+  taxTreatment          String? // "taxable_service"|"exempt"|"out_of_scope_disbursement"|"reimbursement"|"pending_review"
+  taxRate               Decimal?  @db.Decimal(5, 2)
+  taxReason             String?
+  taxDeterminedAt       DateTime?
+  // Spec 1 rent-reclassification (Phase 1) — additive, nullable, forward-only. Authoritative
+  // routing input alongside the economic-treatment columns above. commercialPurpose is NEVER
+  // inferred from category name at runtime. provenance* is the Spec-3 work-order seam.
+  commercialPurpose             String? // RENT|UTILITY|CARPARK|SERVICE|MANAGEMENT_FEE|OTHER_OWNER_COLLECTION
+  provenanceType                String?
+  provenanceId                  String?   @db.Uuid
+  nonBillable                   Boolean   @default(false)
+  economicClassificationStatus  String? // null | "NEEDS_ECONOMIC_CLASSIFICATION"
+  economicClassificationReason  String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  organization        Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tenancy             Tenancy?                @relation(fields: [tenancyId], references: [id], onDelete: SetNull)
+  unit                Listing?                @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  carpark             Carpark?                @relation(fields: [carparkId], references: [id], onDelete: SetNull)
+  category            ChargeCategory?         @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  invoice             Invoice?                @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  sourceGridEntry     UnitBillsGridEntry?     @relation("GridEntrySourcedCharges", fields: [sourceGridEntryId], references: [id], onDelete: SetNull)
+  sourceRecurringLine GridEntryRecurringLine? @relation("RecurringLineSourcedCharges", fields: [sourceRecurringLineId], references: [id], onDelete: SetNull)
+  sourceGridExpense   GridExpense?            @relation("GridExpenseSourcedCharges", fields: [sourceGridExpenseId], references: [id], onDelete: SetNull)
+  party               Party                   @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  events              ChargeEvent[]
+  allocations         PaymentAllocation[]
+  // Phase-2 owner remittance / receivable-offset (Spec 1) — back-relation for
+  // OwnerReceivableOffsetAllocation.charge (the IVOWN receivable charge an offset settled).
+  ownerReceivableOffsetAllocations OwnerReceivableOffsetAllocation[]
+
+  @@unique([organizationId, chargeNumber])
+  @@index([organizationId, partyId, status])
+  @@index([organizationId, tenancyId, status])
+  @@index([organizationId, dueDate, status])
+  @@index([organizationId, status, postedAt])
+  @@index([organizationId, invoiceId])
+  @@index([organizationId, carparkId])
+  @@index([organizationId, categoryId])
+  @@index([organizationId, sourceGridEntryId])
+  @@index([organizationId, sourceRecurringLineId])
+  @@index([organizationId, sourceGridExpenseId])
+  @@index([unitId])
+}
+
+model ChargeEvent {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  chargeId       String   @db.Uuid
+  eventType      String
+  eventAt        DateTime
+  actorUserId    String?  @db.Uuid
+  payloadJson    Json     @default("{}")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  charge       Charge       @relation(fields: [chargeId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, chargeId, eventAt(sort: Desc)])
+}
+
+model ChargeTemplate {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String
+  chargeType     String
+  amount         Decimal  @db.Decimal(12, 2)
+  currency       String   @default("MYR")
+  frequency      String
+  description    String?
+  propertyType   String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, isActive])
+  @@index([organizationId, propertyType])
+}
+
+model RecurringCharge {
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String    @db.Uuid
+  tenancyId       String    @db.Uuid
+  chargeType      String
+  amount          Decimal   @db.Decimal(12, 2)
+  currency        String    @default("MYR")
+  frequency       String    @default("monthly")
+  dayOfMonth      Int       @default(1)
+  nextChargeDate  DateTime
+  lastGeneratedAt DateTime?
+  isActive        Boolean   @default(true)
+  description     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tenancy      Tenancy      @relation(fields: [tenancyId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, isActive])
+  @@index([organizationId, nextChargeDate])
+  @@index([tenancyId])
+}
+
+model LateFeeRule {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String
+  daysAfterDue   Int      @default(5)
+  feeType        String   @default("flat")
+  feeAmount      Decimal  @db.Decimal(10, 2)
+  maxAmount      Decimal? @db.Decimal(10, 2)
+  isActive       Boolean  @default(true)
+  appliesTo      String   @default("all")
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, isActive])
+}
+
+model Payment {
+  id                String   @id @default(uuid()) @db.Uuid
+  organizationId    String   @db.Uuid
+  paymentNumber     String
+  partyId           String   @db.Uuid
+  paymentType       String
+  paymentMethod     String
+  status            String
+  amount            Decimal  @db.Decimal(12, 2)
+  currency          String
+  receivedAt        DateTime
+  referenceNote     String?
+  externalReference String?
+  // Phase-2 (M4 FPX reconciliation + M3 retry-dedupe) — nullable, no backfill
+  provider          String?
+  providerTxnId     String?
+  // The GATEWAY's own transaction id (Fiuu `tranID`), stamped from the first
+  // callback/return that carries it. `providerTxnId` above is OUR order id.
+  // Both are kept: Fiuu's status-requery retention is 7 days by order id but
+  // 180 days by transaction id, and the FPX merchant agreement gives payers 60
+  // days to reclaim funds — so only this column can cover a late dispute.
+  providerTranId    String?
+  bankCode          String?
+  gatewayStatus     String?
+  idempotencyKey    String?
+  // transfer-slip / proof-of-payment uploads — Yannie's fraud-check artifact (minutes 2B.2)
+  attachmentKeys    String[] @default([])
+  // Slip verification (tenant-submitted bank transfers). A tenant submits a
+  // payment + slip as `pending_approval`; an admin either posts it (status
+  // "posted") or refuses it (status "rejected"). These three are stamped ONLY
+  // by the refusal path — `rejectionReason` is tenant-VISIBLE (it is shown back
+  // to them so they can re-submit), unlike `referenceNote`, which is internal.
+  rejectionReason   String?
+  reviewedAt        DateTime?
+  reviewedById      String?  @db.Uuid // User.id — plain column, no relation
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  organization      Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  party             Party                   @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  allocations       PaymentAllocation[]
+  renovationOffsets RenovationClaimOffset[]
+  creditApplication CreditApplication?
+  refunds           Refund[]
+
+  @@unique([organizationId, paymentNumber])
+  // Postgres: NULLs distinct — multiple NULL idempotencyKeys allowed
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, partyId, receivedAt(sort: Desc)])
+  @@index([organizationId, status])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, provider, providerTxnId])
+}
+
+model PaymentAllocation {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @db.Uuid
+  paymentId       String   @db.Uuid
+  chargeId        String   @db.Uuid
+  allocatedAmount Decimal  @db.Decimal(12, 2)
+  allocatedAt     DateTime
+  // Phase-2 M3: pro-rate basis (0–1) used at allocation time; null = not pro-rated
+  prorateRatio    Decimal? @db.Decimal(5, 4)
+  createdAt       DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payment      Payment      @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  charge       Charge       @relation(fields: [chargeId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, paymentId, chargeId, allocatedAt])
+  @@index([organizationId, paymentId])
+  @@index([organizationId, chargeId])
+}
+
+model PaymentAllocationReversal {
+  id                   String   @id @default(uuid()) @db.Uuid
+  organizationId       String   @db.Uuid
+  originalAllocationId String   @db.Uuid // → PaymentAllocation.id (append-only ref; plain column)
+  amount               Decimal  @db.Decimal(12, 2) // positive; the reversed magnitude
+  reason               String
+  reversedById         String   @db.Uuid // User.id — plain column
+  createdAt            DateTime @default(now())
+  idempotencyKey       String
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([originalAllocationId])
+  @@index([organizationId, createdAt])
+}
+
+model CommissionBill {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  billNumber     String
+  partyId        String    @db.Uuid
+  propertyId     String?   @db.Uuid
+  category       String
+  description    String
+  amount         Decimal   @db.Decimal(12, 2)
+  currency       String    @default("MYR")
+  status         String    @default("pending")
+  dueDate        DateTime?
+  paidAt         DateTime?
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  party           Party            @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  property        Property?        @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  commissionClaim CommissionClaim?
+
+  @@unique([organizationId, billNumber])
+  @@index([organizationId, status])
+  @@index([organizationId, partyId])
+  @@map("Bill") // model renamed Bill → CommissionBill (2026-07-22); table name preserved → zero data migration
+  @@index([propertyId])
+}
+
+model CashMovement {
+  id               String   @id @default(uuid()) @db.Uuid
+  organizationId   String   @db.Uuid
+  movementNumber   String
+  type             String
+  category         String
+  description      String
+  amount           Decimal  @db.Decimal(12, 2)
+  currency         String   @default("MYR")
+  propertyId       String?  @db.Uuid
+  partyId          String?  @db.Uuid
+  movementDate     DateTime @default(now())
+  paymentTender    String?
+  allocatedAmount  Decimal? @default(0) @db.Decimal(12, 2)
+  allocationStatus String   @default("registered")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property        Property?        @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  party           Party?           @relation(fields: [partyId], references: [id], onDelete: SetNull)
+  commissionClaim CommissionClaim?
+
+  @@unique([organizationId, movementNumber])
+  @@index([organizationId, type])
+  @@index([organizationId, movementDate])
+  @@index([partyId])
+  @@index([propertyId])
+}
+
+model Notification {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  userId         String?  @db.Uuid
+  domain         String
+  title          String
+  body           String
+  read           Boolean  @default(false)
+  actionUrl      String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, read])
+  @@index([organizationId, domain])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model NotificationQueue {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  type           String    @default("general")
+  recipientEmail String
+  recipientName  String?
+  subject        String
+  body           String
+  channel        String    @default("email")
+  status         String    @default("pending")
+  sentAt         DateTime?
+  errorMessage   String?
+  retryCount     Int       @default(0)
+  sesMessageId   String?
+  updatedAt      DateTime? @updatedAt
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+}
+
+model EmailTemplate {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String
+  subject        String
+  body           String
+  description    String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, name])
+  @@index([organizationId, isActive])
+}
+
+model AuditLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  actorUserId    String   @db.Uuid
+  actorRole      String
+  action         String
+  entityType     String
+  entityId       String
+  diff           Json?
+  meta           Json?
+  ip             String?
+  userAgent      String?  @db.Text
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actor        User         @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, entityType, entityId])
+  @@index([organizationId, actorUserId, createdAt])
+}
+
+model ActivityLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  entityType     String
+  entityId       String   @db.Uuid
+  action         String
+  description    String
+  performedBy    String?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, entityType, entityId])
+  @@index([organizationId, createdAt])
+}
+
+model MaintenanceRequest {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  tenancyId      String    @db.Uuid
+  requestNumber  String
+  category       String
+  title          String
+  description    String?
+  priority       String    @default("medium")
+  status         String    @default("open")
+  photoKeys      String[]
+  resolvedAt     DateTime?
+  closedAt       DateTime?
+  adminNotes     String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tenancy      Tenancy      @relation(fields: [tenancyId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, requestNumber])
+  @@index([organizationId, tenancyId, status])
+  @@index([organizationId, status, createdAt])
+}
+
+model Document {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  fileName       String
+  fileType       String
+  fileSize       Int
+  storageKey     String   @unique
+  uploadedBy     String?  @db.Uuid
+  createdAt      DateTime @default(now())
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  links        DocumentLink[]
+
+  @@index([organizationId])
+}
+
+model DocumentLink {
+  id               String   @id @default(uuid()) @db.Uuid
+  organizationId   String   @db.Uuid
+  documentId       String   @db.Uuid
+  linkedEntityType String
+  linkedEntityId   String   @db.Uuid
+  label            String?
+  createdAt        DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  document     Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, linkedEntityType, linkedEntityId])
+  @@index([organizationId, documentId])
+}
+
+model Announcement {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  title          String
+  message        String
+  type           String    @default("info")
+  active         Boolean   @default(true)
+  startDate      DateTime  @default(now())
+  endDate        DateTime?
+  createdBy      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, active, startDate, endDate])
+}
+
+// ─── Commission Module ──────────────────────────────────────────────────────
+
+model AgentTierMapping {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  claimType      String
+  agentLevel     String
+  percentage     Decimal  @db.Decimal(5, 2)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, claimType, agentLevel])
+  @@index([organizationId, isActive])
+  @@index([organizationId, createdAt])
+}
+
+model CommissionClaim {
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String    @db.Uuid
+  claimNumber     String
+  agentPartyId    String    @db.Uuid
+  status          String    @default("draft")
+  currency        String    @default("MYR")
+  submittedAt     DateTime?
+  approvedAt      DateTime?
+  approvedBy      String?   @db.Uuid
+  rejectedAt      DateTime?
+  rejectedBy      String?   @db.Uuid
+  rejectionReason String?
+  // Admin's instruction when sending the claim back for amendment (new
+  // needs_amendment state). Mirrors UnitSubmission.amendmentNote /
+  // PropertySubmission.amendmentNote (same column NAME, different tables —
+  // no shared column). Nullable; cleared on agent resubmit.
+  amendmentNote   String?
+  paidAt          DateTime?
+  paidBy          String?   @db.Uuid
+  totalNettPayout Decimal   @default(0) @db.Decimal(12, 2)
+  claimType       String
+  billId          String?   @unique @db.Uuid
+  cashMovementId  String?   @unique @db.Uuid
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization  Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agent         Party                 @relation("CommissionClaimAgent", fields: [agentPartyId], references: [id], onDelete: Restrict)
+  bill          CommissionBill?       @relation(fields: [billId], references: [id], onDelete: SetNull)
+  cashMovement  CashMovement?         @relation(fields: [cashMovementId], references: [id], onDelete: SetNull)
+  items         CommissionClaimItem[]
+  notifications NotificationLog[]
+
+  @@unique([organizationId, claimNumber])
+  @@index([organizationId, agentPartyId, status])
+  @@index([organizationId, status, createdAt])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, claimType, status, createdAt])
+}
+
+model CommissionClaimItem {
+  id                    String    @id @default(uuid()) @db.Uuid
+  organizationId        String    @db.Uuid
+  claimId               String    @db.Uuid
+  propertyId            String    @db.Uuid
+  condoName             String
+  unitCode              String
+  roomType              String
+  tenantName            String
+  // Tenant profile (B1, optional). All nullable; no PDPA burden — these are
+  // text-only contact + social fields. IC images are gated separately in B2.
+  tenantEmail           String?   @db.VarChar(254)
+  tenantPhone           String?   @db.VarChar(20)
+  tenantLinkedinUrl     String?   @db.VarChar(500)
+  tenantInstagramHandle String?   @db.VarChar(30)
+  tenantJobPosition     String?   @db.VarChar(200)
+  tenantIcFrontKey      String?   @db.VarChar(500)
+  tenantIcBackKey       String?   @db.VarChar(500)
+  salesDate             DateTime  @db.Date
+  moveInDate            DateTime  @db.Date
+  moveOutDate           DateTime? @db.Date
+  monthlyRental         Decimal   @db.Decimal(12, 2)
+  agentTierPercentage   Decimal?  @db.Decimal(5, 2)
+  isCobroke             Boolean   @default(false)
+  taSharePercent        Decimal?  @db.Decimal(5, 2)
+  commissionPercentage  Decimal   @db.Decimal(5, 2)
+  tenancyChargesByAgent Decimal   @db.Decimal(12, 2)
+  tenancyChargesByKaen  Decimal   @db.Decimal(12, 2)
+  numberOfPax           Int?
+  remark                String?   @db.VarChar(1000)
+  nettPayout            Decimal   @db.Decimal(12, 2)
+  // Per-claim shortfall tracking. Moved to item-level 2026-04-24; previously
+  // lived on CommissionClaim as an aggregate. Values are recomputed on submit.
+  shortfallApplied      Decimal?  @db.Decimal(12, 2)
+  outstandingBalance    Decimal?  @db.Decimal(12, 2)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  organization            Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  claim                   CommissionClaim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  property                Property        @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  icAccessLogs            IcAccessLog[]
+  consumingPendingUploads PendingUpload[]
+
+  @@index([organizationId, claimId])
+  @@index([organizationId, unitCode, tenantName, salesDate])
+  @@index([organizationId, propertyId, unitCode, roomType, moveInDate])
+}
+
+model RoomType {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String
+  kind           String   @default("PARTITION") // "WHOLE" | "PARTITION"
+  sortOrder      Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, isActive, sortOrder])
+  @@index([organizationId, createdAt])
+}
+
+model Amenity {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String
+  sortOrder      Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, isActive, sortOrder])
+  @@index([organizationId, createdAt])
+}
+
+model WorkCategory {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String
+  sortOrder      Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, name])
+  @@index([organizationId, isActive, sortOrder])
+}
+
+model PropertyType {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String
+  sortOrder      Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, name])
+  @@index([organizationId, isActive, sortOrder])
+}
+
+model AgentLevelThreshold {
+  id                      String   @id @default(uuid()) @db.Uuid
+  organizationId          String   @db.Uuid
+  agentLevel              String
+  minCumulativeCommission Decimal  @db.Decimal(12, 2)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, agentLevel])
+  @@index([organizationId, minCumulativeCommission])
+}
+
+// ─── Phase 1 Expansion — Listing visibility ─────────────────────────────────
+
+enum ListingMode {
+  WHOLE
+  PARTITIONED
+}
+
+enum UtilityBillingMode {
+  SUBSIDY
+  NO_SUBSIDY
+}
+
+enum SubmissionState {
+  pending
+  needs_amendment
+  approved
+  rejected
+  withdrawn
+}
+
+enum VisibilityMode {
+  PUBLIC
+  RESTRICTED
+}
+
+model ListingVisibilityGrant {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  unitId         String   @db.Uuid
+  partyId        String   @db.Uuid
+  grantedById    String   @db.Uuid
+  grantedAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  unit         Listing      @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  party        Party        @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  grantedBy    User         @relation(fields: [grantedById], references: [id], onDelete: Restrict)
+
+  @@unique([unitId, partyId])
+  @@index([organizationId, unitId])
+  @@index([organizationId, partyId])
+  @@index([grantedById])
+}
+
+model TaTier {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  tier           Int
+  rentalMin      Decimal  @db.Decimal(12, 2)
+  rentalMax      Decimal? @db.Decimal(12, 2) // NULL = open-ended (highest band catches all)
+  companyMinimum Decimal  @db.Decimal(12, 2)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, tier])
+  @@index([organizationId, rentalMin])
+}
+
+model NotificationLog {
+  id                String   @id @default(uuid()) @db.Uuid
+  organizationId    String   @db.Uuid
+  claimId           String   @db.Uuid
+  recipientPartyId  String   @db.Uuid
+  channel           String // "whatsapp"
+  templateName      String
+  status            String // "queued" | "sent" | "delivered" | "read" | "failed" | "stub"
+  providerMessageId String?  @unique
+  errorReason       String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  claim        CommissionClaim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  recipient    Party           @relation(fields: [recipientPartyId], references: [id], onDelete: Restrict)
+
+  @@index([claimId])
+  @@index([recipientPartyId, createdAt])
+  @@index([organizationId, status, createdAt])
+}
+
+enum IcSide {
+  front
+  back
+}
+
+model IcAccessLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  claimItemId    String   @db.Uuid
+  side           IcSide
+  viewerUserId   String   @db.Uuid
+  viewerScope    String   @db.VarChar(20)
+  ip             String?  @db.VarChar(45)
+  userAgent      String?  @db.VarChar(500)
+  createdAt      DateTime @default(now())
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  claimItem    CommissionClaimItem @relation(fields: [claimItemId], references: [id], onDelete: Cascade)
+  viewer       User                @relation(fields: [viewerUserId], references: [id], onDelete: Restrict)
+
+  @@index([claimItemId, createdAt])
+  @@index([organizationId, viewerUserId, createdAt])
+  @@index([organizationId, createdAt])
+}
+
+model PendingUpload {
+  id                  String   @id @default(uuid()) @db.Uuid
+  organizationId      String   @db.Uuid
+  partyId             String   @db.Uuid
+  storageKey          String   @unique @db.VarChar(500)
+  bucket              String   @db.VarChar(50)
+  uploadType          String   @db.VarChar(30)
+  side                IcSide?
+  contentType         String   @db.VarChar(50)
+  status              String   @db.VarChar(20)
+  consumedClaimItemId String?  @db.Uuid
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  expiresAt           DateTime
+
+  organization      Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  party             Party                @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  consumedClaimItem CommissionClaimItem? @relation(fields: [consumedClaimItemId], references: [id], onDelete: SetNull)
+
+  @@index([status, expiresAt])
+  @@index([organizationId, partyId, createdAt])
+  @@index([organizationId, status, updatedAt])
+  @@index([consumedClaimItemId])
+}
+
+// ─── Sales Entry & Renovation Claim (Wave 1) ────────────────────────────────
+//
+// Off-plan project lifecycle: Project → SalesUnit → RenovationProgress →
+// (auto-promote to Unit on completion when purpose=rent). Renovation Claims
+// and Sales Claims live alongside, with their own 5-state machine.
+// See docs/plans/sales-entry-and-renovation-claim.md sections 3, 6, 7, 8.
+
+model Project {
+  id                 String    @id @default(uuid()) @db.Uuid
+  organizationId     String    @db.Uuid
+  name               String
+  developer          String
+  city               String?
+  expectedHandover   DateTime?
+  status             String    @default("unverified") // unverified | active | archived
+  verifiedAt         DateTime?
+  verifiedById       String?   @db.Uuid
+  // First-time promotion auto-creates a Property and writes its id back here.
+  promotedPropertyId String?   @unique @db.Uuid
+  notes              String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  createdById        String?   @db.Uuid
+
+  organization        Organization                    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  promotedProperty    Property?                       @relation(fields: [promotedPropertyId], references: [id], onDelete: SetNull)
+  salesUnits          SalesUnit[]
+  verifiedTransitions ProjectVerificationTransition[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, status])
+}
+
+model SalesUnit {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @db.Uuid
+  projectId       String   @db.Uuid
+  unitNumber      String
+  ownerPartyId    String   @db.Uuid
+  salesDate       DateTime
+  purpose         String // "rent" | "own_stay"
+  bedrooms        Int // -1 (=Studio), 1..3, 4 (=4+)
+  bathrooms       Int // 1, 2, 3 (=3+)
+  parkingLots     Int      @default(0)
+  expectedRental  Decimal? @db.Decimal(12, 2)
+  purchasePrice   Decimal  @db.Decimal(14, 2)
+  agentPartyId    String   @db.Uuid // submitter
+  inChargePartyId String?  @db.Uuid // becomes agent on Source-Queue approval
+
+  // Source-queue lifecycle
+  sourceFlag           String    @default("AGENT_SOURCED") // "COMPANY" | "AGENT_SOURCED"
+  sourcingApproved     Boolean   @default(false)
+  sourcingApprovedById String?   @db.Uuid
+  sourcingApprovedAt   DateTime?
+  amendmentNotes       String?
+  // Soft-delete flag for an agent's withdrawn pending submission. Row
+  // stays for audit; queries that drive the source queue add
+  // sourcingCancelled=false. Mirror of Unit.sourcingCancelled.
+  sourcingCancelled    Boolean   @default(false)
+
+  // Promotion linkage (one-way; null until auto-promoted)
+  promotedUnitId String? @unique @db.Uuid
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project            Project             @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  ownerParty         Party               @relation("SalesUnitOwner", fields: [ownerPartyId], references: [id])
+  agentParty         Party               @relation("SalesUnitAgent", fields: [agentPartyId], references: [id])
+  inChargeParty      Party?              @relation("SalesUnitInCharge", fields: [inChargePartyId], references: [id])
+  promotedUnit       Listing?            @relation("SalesUnitPromotedUnit", fields: [promotedUnitId], references: [id], onDelete: SetNull)
+  // Inverse of Listing.salesUnitOrigin (the auto-promote back-pointer column on Listing).
+  originatedUnit     Listing?            @relation("UnitSalesUnitOrigin")
+  renovationProgress RenovationProgress?
+  renovationClaims   RenovationClaim[]
+  salesClaims        SalesClaim[]
+
+  @@unique([organizationId, projectId, unitNumber])
+  @@index([organizationId, agentPartyId])
+  @@index([organizationId, sourcingApproved])
+  @@index([organizationId, salesDate])
+  @@index([inChargePartyId])
+  @@index([ownerPartyId])
+}
+
+model RenovationProgress {
+  id                 String    @id @default(uuid()) @db.Uuid
+  organizationId     String    @db.Uuid
+  salesUnitId        String    @unique @db.Uuid
+  status             String    @default("not_started") // not_started | on_going | completed
+  startDate          DateTime?
+  expectedCompletion DateTime?
+  actualCompletion   DateTime?
+  notes              String?
+  archivedAt         DateTime?
+  archivedById       String?   @db.Uuid
+  updatedAt          DateTime  @updatedAt
+  updatedById        String?   @db.Uuid
+
+  organization  Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  salesUnit     SalesUnit                 @relation(fields: [salesUnitId], references: [id], onDelete: Cascade)
+  transitions   RenovationTransition[]
+  stageProgress RenovationStageProgress[]
+
+  @@index([organizationId, status])
+}
+
+model RenovationTransition {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  progressId     String   @db.Uuid
+  fromStatus     String? // null on initial creation
+  toStatus       String
+  changedById    String   @db.Uuid
+  changedAt      DateTime @default(now())
+  note           String?
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  progress     RenovationProgress @relation(fields: [progressId], references: [id], onDelete: Cascade)
+
+  @@index([progressId, changedAt])
+  @@index([organizationId])
+}
+
+model RenovationPackage {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  key            String // "standard" | "premium" | "premium_plus" | custom
+  label          String
+  description    String?
+  defaultPrice   Decimal  @db.Decimal(14, 2)
+  archived       Boolean  @default(false)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization  Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  defaultSplits RenovationPackageSplit[]
+  claims        RenovationClaim[]
+
+  @@unique([organizationId, key])
+  @@index([organizationId, archived])
+}
+
+model RenovationStage {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  key            String // lowercased slug
+  label          String
+  description    String?
+  sortOrder      Int      @default(0)
+  archived       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  progress     RenovationStageProgress[]
+
+  @@unique([organizationId, key])
+  @@index([organizationId, archived, sortOrder])
+}
+
+model RenovationStageProgress {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  progressId     String    @db.Uuid
+  stageId        String    @db.Uuid
+  status         String    @default("pending") // "pending" | "in_progress" | "completed"
+  startedAt      DateTime?
+  completedAt    DateTime?
+  note           String?
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  progress     RenovationProgress @relation(fields: [progressId], references: [id], onDelete: Cascade)
+  stage        RenovationStage    @relation(fields: [stageId], references: [id], onDelete: Restrict)
+
+  @@unique([progressId, stageId])
+  @@index([organizationId, status])
+}
+
+model SalesClaimDefault {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @db.Uuid
+  appliesTo       String   @default("__catchall__") // sentinel for catch-all default; future: "own_stay" | "rent" | "commercial"
+  commissionType  String // "percent_of_purchase" | "fixed"
+  commissionValue Decimal  @db.Decimal(10, 2)
+  paymentType     String   @default("full")
+  notes           String?
+  updatedAt       DateTime @updatedAt
+  updatedById     String?  @db.Uuid
+
+  organization  Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  defaultSplits SalesClaimDefaultSplit[]
+
+  @@unique([organizationId, appliesTo])
+}
+
+model SalesClaimDefaultSplit {
+  id             String  @id @default(uuid()) @db.Uuid
+  organizationId String  @db.Uuid
+  defaultId      String  @db.Uuid
+  roleLabel      String
+  splitType      String // "percent" | "fixed"
+  splitValue     Decimal @db.Decimal(10, 2)
+  sortOrder      Int     @default(0)
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  default      SalesClaimDefault @relation(fields: [defaultId], references: [id], onDelete: Cascade)
+
+  @@index([defaultId])
+  @@index([organizationId])
+}
+
+model ProjectVerificationTransition {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  projectId      String   @db.Uuid
+  fromStatus     String?
+  toStatus       String // "unverified" | "active" | "archived"
+  changedById    String   @db.Uuid
+  changedAt      DateTime @default(now())
+  note           String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, projectId])
+}
+
+model RenovationPackageSplit {
+  id             String  @id @default(uuid()) @db.Uuid
+  organizationId String  @db.Uuid
+  packageId      String  @db.Uuid
+  roleLabel      String // "Sales Commission" | "Project Leader Override" | "House Keep" | etc.
+  splitType      String // "percent" | "fixed"
+  splitValue     Decimal @db.Decimal(10, 2)
+  isHouseKeep    Boolean @default(false) // marks the line that contributes to "profit" KPI
+  sortOrder      Int     @default(0)
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  package      RenovationPackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  @@index([packageId])
+  @@index([organizationId])
+}
+
+model RenovationClaim {
+  id                  String    @id @default(uuid()) @db.Uuid
+  organizationId      String    @db.Uuid
+  salesUnitId         String    @db.Uuid
+  packageId           String    @db.Uuid
+  packagePrice        Decimal   @db.Decimal(14, 2) // snapshot at submit
+  paymentType         String // "full" | "partial" | "offset_from_rental"
+  monthlyOffsetAmount Decimal?  @db.Decimal(12, 2) // only when paymentType=offset_from_rental
+  status              String    @default("submitted") // submitted | pending_approval | approved | rejected | needs_amendment
+  notes               String?
+  submittedAt         DateTime  @default(now())
+  submittedById       String    @db.Uuid
+  reviewedAt          DateTime?
+  reviewedById        String?   @db.Uuid
+  reviewerNote        String?
+
+  organization Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  salesUnit    SalesUnit                   @relation(fields: [salesUnitId], references: [id], onDelete: Cascade)
+  package      RenovationPackage           @relation(fields: [packageId], references: [id], onDelete: Restrict)
+  splits       RenovationClaimSplit[]
+  documents    RenovationClaimDocument[]
+  transitions  RenovationClaimTransition[]
+  offsets      RenovationClaimOffset[]
+  // Inverse of Tenancy.renovationClaim — populated by deferred auto-deduct release.
+  tenancies    Tenancy[]                   @relation("TenancyRenovationClaim")
+
+  @@index([organizationId, status])
+  @@index([organizationId, submittedById])
+  @@index([organizationId, salesUnitId])
+  @@index([packageId])
+}
+
+model RenovationClaimSplit {
+  id               String  @id @default(uuid()) @db.Uuid
+  organizationId   String  @db.Uuid
+  claimId          String  @db.Uuid
+  partyPartyId     String? @db.Uuid // null for system buckets (e.g. House Keep)
+  partyDisplayName String // snapshot for display when partyPartyId is null
+  roleLabel        String
+  splitType        String // "percent" | "fixed"
+  splitValue       Decimal @db.Decimal(10, 2)
+  isHouseKeep      Boolean @default(false)
+  sortOrder        Int     @default(0)
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  claim        RenovationClaim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  party        Party?          @relation(fields: [partyPartyId], references: [id], onDelete: SetNull)
+
+  @@index([claimId])
+  @@index([organizationId])
+  @@index([partyPartyId])
+}
+
+model RenovationClaimDocument {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  claimId        String   @db.Uuid
+  kind           String // "quotation" | "invoice" | "agreement" — DB-driven
+  fileKey        String // Supabase Storage object key
+  filename       String
+  uploadedAt     DateTime @default(now())
+  uploadedById   String   @db.Uuid
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  claim        RenovationClaim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  @@index([claimId])
+  @@index([organizationId])
+}
+
+model UnitReservationDocument {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  reservationId  String   @db.Uuid
+  kind           String // passport_front | passport_back | ic_front | ic_back
+  fileKey        String // Supabase Storage object key (server-derived)
+  filename       String
+  uploadedAt     DateTime @default(now())
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  reservation  UnitReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+
+  @@unique([reservationId, kind])
+  @@index([reservationId])
+  @@index([organizationId])
+}
+
+model RenovationClaimTransition {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  claimId        String   @db.Uuid
+  fromStatus     String?
+  toStatus       String
+  changedById    String   @db.Uuid
+  changedAt      DateTime @default(now())
+  note           String?
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  claim        RenovationClaim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  @@index([claimId, changedAt])
+  @@index([organizationId])
+}
+
+// Schema-only on day 1; populated by deferred auto-deduct release.
+model RenovationClaimOffset {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  claimId        String   @db.Uuid
+  tenancyId      String   @db.Uuid
+  paymentId      String?  @db.Uuid
+  amount         Decimal  @db.Decimal(12, 2)
+  appliedAt      DateTime @default(now())
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  claim        RenovationClaim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  tenancy      Tenancy         @relation(fields: [tenancyId], references: [id], onDelete: Restrict)
+  payment      Payment?        @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([claimId])
+  @@index([tenancyId])
+  @@index([organizationId])
+  @@index([paymentId])
+}
+
+// Sales commission claim for the off-plan SALE — distinct from RenovationClaim.
+model SalesClaim {
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String    @db.Uuid
+  salesUnitId     String    @db.Uuid
+  commissionType  String // "percent_of_purchase" | "fixed"
+  commissionValue Decimal   @db.Decimal(10, 2)
+  computedAmount  Decimal   @db.Decimal(14, 2) // server-computed at submit
+  paymentType     String    @default("full") // "full" | "partial"
+  notes           String?
+  status          String    @default("submitted") // same 5-state machine
+  submittedAt     DateTime  @default(now())
+  submittedById   String    @db.Uuid
+  reviewedAt      DateTime?
+  reviewedById    String?   @db.Uuid
+  reviewerNote    String?
+
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  salesUnit    SalesUnit              @relation(fields: [salesUnitId], references: [id], onDelete: Cascade)
+  splits       SalesClaimSplit[]
+  transitions  SalesClaimTransition[]
+
+  @@index([organizationId, status])
+  @@index([organizationId, salesUnitId])
+}
+
+model SalesClaimSplit {
+  id               String  @id @default(uuid()) @db.Uuid
+  organizationId   String  @db.Uuid
+  claimId          String  @db.Uuid
+  partyPartyId     String? @db.Uuid
+  partyDisplayName String
+  roleLabel        String // "Sales Commission" | "Co-broke Override" | etc.
+  splitType        String // "percent" | "fixed"
+  splitValue       Decimal @db.Decimal(10, 2)
+  sortOrder        Int     @default(0)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  claim        SalesClaim   @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  party        Party?       @relation(fields: [partyPartyId], references: [id], onDelete: SetNull)
+
+  @@index([claimId])
+  @@index([organizationId])
+  @@index([partyPartyId])
+}
+
+model SalesClaimTransition {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  claimId        String   @db.Uuid
+  fromStatus     String?
+  toStatus       String
+  changedById    String   @db.Uuid
+  changedAt      DateTime @default(now())
+  note           String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  claim        SalesClaim   @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  @@index([claimId, changedAt])
+  @@index([organizationId])
+}
+
+// DB-driven labels — see plan §7.3. Used for claim_status / renovation_status /
+// document_kind / payment_type. The state-machine *codes* are still hardcoded
+// (5 approval states, 3 renovation states); only the user-visible labels live here.
+model SettingsLabel {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  category       String // "claim_status" | "renovation_status" | "document_kind" | "payment_type"
+  key            String // "approved" | "needs_amendment" | "quotation" | etc.
+  label          String
+  sortOrder      Int    @default(0)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, category, key])
+  @@index([organizationId, category])
+}
+
+// Per-org card settings. Every field is nullable or has a schema default,
+// so a bare `{ organizationId }` row is valid. The API service lazy-creates
+// this row on first read via upsert (see
+// apps/api/src/modules/organization-card-settings/service.ts:getOrgCardSettings).
+// DO NOT require this row to be seeded — freshly-created orgs and seed
+// resets both rely on the lazy-create path.
+model OrganizationCardSettings {
+  id               String   @id @default(uuid()) @db.Uuid
+  organizationId   String   @unique @db.Uuid
+  // brandName + brandTagline removed 2026-05-05 — the logo carries the brand,
+  // standalone text was redundant. See docs/schema-changelog.md.
+  agencyName       String?
+  agencyLicense    String?
+  agencyPhone      String?
+  agencyFax        String?
+  addressLine1     String?
+  addressLine2     String?
+  addressLine3     String?
+  addressLine4     String?
+  cardExpiryMonths Int      @default(3)
+  isConfigured     Boolean  @default(false)
+  logoKey          String?
+  // Legal entity name printed on document headers (reservation forms,
+  // invoices). Falls back to Organization.name when null. Lets the admin
+  // store "X SDN BHD" / "X MANAGEMENT SDN BHD" as the legal entity while
+  // keeping Organization.name as the workspace display name.
+  legalEntityName  String?
+  updatedAt        DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model DocumentTemplate {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @db.Uuid
+  docType         String // "reservation_form" | "rental_commission_claim" | "invoice" | "renovation_claim"
+  title           String
+  refPrefix       String   @default("")
+  refSeparator    String   @default("-")
+  refPadding      Int      @default(5)
+  refIncludeYear  Boolean  @default(false)
+  headerFields    Json     @default("{}") // HeaderFieldFlags
+  orgRegNo        String?
+  orgSalesTaxId   String?
+  orgServiceTaxId String?
+  orgAddressLines Json     @default("[]") // string[]
+  orgEmail        String?
+  orgContact      String?
+  logoKey         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, docType])
+  @@index([organizationId])
+}
+
+model ReferenceSequence {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  docType        String
+  year           Int // 0 = non-year-segmented; otherwise full year
+  nextValue      Int    @default(1)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, docType, year])
+}
+
+// ── Accounting documents core (2026-07-02 spec §4.1) ─────────────────────────
+// The immutable legal layer. After issue: no edit, no regenerate, no delete —
+// status transitions only (issued → partially_settled → settled, or → offset
+// when CNs cover the full amount). Corrections are always NEW linked documents.
+// seriesId / partyId / tenancyId / propertyId / apartmentId / listingId /
+// issuedById / originalDocumentId / statementInvoiceId are PLAIN columns
+// (no FK sprawl); apartment/listing/property are denormalized so unit-first
+// views are free.
+model BillingDocument {
+  id                     String    @id @default(uuid()) @db.Uuid
+  organizationId         String    @db.Uuid
+  docType                String // "invoice" | "debit_note" | "credit_note" | "refund_note"
+  documentNumber         String // series-minted, e.g. "IVTEN-0001" / "DEP-2026-0007"
+  seriesId               String    @db.Uuid // → DocumentSeries (plain column)
+  status                 String    @default("issued") // issued | partially_settled | settled | offset
+  issuedAt               DateTime  @default(now())
+  issuedById             String    @db.Uuid // User.id — plain column
+  billingMonth           DateTime? @db.Date // first-of-month; null for month-less docs
+  counterpartyType       String // "tenant" | "owner"
+  partyId                String    @db.Uuid // → Party (plain column)
+  tenancyId              String?   @db.Uuid
+  propertyId             String?   @db.Uuid
+  apartmentId            String?   @db.Uuid
+  listingId              String?   @db.Uuid
+  originalDocumentId     String?   @db.Uuid // MANDATORY for credit_note/refund_note (LHDN original ref)
+  statementInvoiceId     String?   @db.Uuid // → Invoice (owner_statement) for IVOWN docs + statement CNs
+  creditAmount           Decimal?  @db.Decimal(12, 2) // credit_note only: collected portion = spendable credit
+  reason                 String? // CN/RN: the void/refund reason
+  subtotal               Decimal   @db.Decimal(12, 2)
+  sstAmount              Decimal   @default(0) @db.Decimal(12, 2)
+  total                  Decimal   @db.Decimal(12, 2)
+  pdfKey                 String?
+  idempotencyKey         String?
+  paymentId              String?   @db.Uuid // → Payment (plain column) — links a receipt to its Payment (P2 R13)
+  documentStatus         String    @default("ISSUED") // DRAFT | ISSUED | CANCELLED | SUPERSEDED (R6)
+  settlementStatus       String    @default("UNPAID") // UNPAID | PARTIALLY_PAID | PAID | OVERPAID (derived, R7)
+  taxStatus              String    @default("NOT_REQUIRED") // NOT_REQUIRED | NOT_SUBMITTED | SUBMITTED | VALID | INVALID | CANCELLED (column only; Phase 3)
+  supersededByDocumentId String?   @db.Uuid // set on a cancel-and-replaced original → its replacement (plain column, R3)
+  /// Proforma spec R3 (2026-08-10). Set on a GRADUATED `invoice` → the `proforma` whose
+  /// lines it was minted from. Null on every other document, including the proforma itself.
+  ///
+  /// ⚠️ `originalDocumentId` MUST NOT be reused for this link. Four paths treat
+  /// `originalDocumentId: null` as the "this is a real original / head of chain" sentinel
+  /// (charge-adjustment.service.ts:167, credit-notes.service.ts:452,
+  /// correction-replace.service.ts:87, bills-grid/service.ts:564). A graduated invoice
+  /// carrying a non-null originalDocumentId becomes invisible to all four — a credit note
+  /// against it throws ORIGINAL_DOCUMENT_NOT_FOUND and the grid goes provenance-blind,
+  /// which double-bills. That column stays reserved for the CN/RN LHDN original reference.
+  ///
+  /// Also the immutability marker (R5): a document with this set is a real tax invoice
+  /// against real money and can NEVER enter the grid's reclaimable set.
+  proformaDocumentId     String?   @db.Uuid
+  // Spec 1 rent-reclassification (Phase 1) — additive, nullable. docType stays the accounting
+  // form; commercialDocumentType is the business purpose; ledgerTreatment is the money fate.
+  commercialDocumentType     String? // RENTAL_INVOICE|OWNER_COLLECTION_INVOICE|TENANT_SERVICE_INVOICE|OWNER_SERVICE_INVOICE
+  ledgerTreatment            String? // PAYABLE_TO_OWNER|MANAGER_REVENUE
+  principalOwnerId           String?   @db.Uuid
+  collectedOnBehalfOfOwnerId String?   @db.Uuid
+  ownerRefDiffersReason      String?
+  legacyClassification       String? // e.g. LEGACY_RENT_MISCLASSIFICATION (Phase-3 migration only)
+  meta                   Json?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  organization       Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lines              BillingDocumentLine[]
+  creditApplications CreditApplication[]
+  refunds            Refund[]
+
+  @@unique([organizationId, documentNumber])
+  // Postgres: NULLs distinct — multiple NULL idempotencyKeys allowed
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, apartmentId, billingMonth])
+  @@index([organizationId, partyId, docType])
+  @@index([organizationId, docType, status])
+  @@index([organizationId, originalDocumentId])
+  @@index([organizationId, paymentId])
+  @@index([organizationId, documentStatus])
+  @@index([organizationId, settlementStatus])
+  @@index([organizationId, proformaDocumentId])
+}
+
+model BillingDocumentLine {
+  id          String  @id @default(uuid()) @db.Uuid
+  documentId  String  @db.Uuid
+  chargeId    String? @db.Uuid // → Charge (nullable: overpayment-CN lines settle no charge; R12a)
+  categoryId  String? @db.Uuid // → ChargeCategory (nullable: overpayment-CN lines have no category; R12a)
+  description String
+  amount      Decimal @db.Decimal(12, 2)
+  sstRate     Decimal @default(0) @db.Decimal(5, 2)
+  sstAmount   Decimal @default(0) @db.Decimal(12, 2)
+  // This line's `amount` IS tax its SIBLING line already contributed via that
+  // line's own `sstRate` — so it is excluded from `subtotal` at mint
+  // (issue.service.ts) and folded away by every human-facing renderer
+  // (foldTaxLines, @kason/shared). The line still EXISTS, carrying its own
+  // chargeId, because that is what makes the tax visible to deriveDocumentStatus
+  // and allocatable on the Record-Payment form — without it the tax is invoiced,
+  // owed and declared to LHDN yet has no row a payment can settle.
+  //
+  // The write side has always KNOWN this (IssueLineInput.isTax); it simply never
+  // persisted it, so readers could not tell a tax line from a real one and printed
+  // it as a third line item that made the Amount column refuse to foot to Subtotal.
+  isTax       Boolean @default(false)
+
+  document BillingDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([chargeId])
+}
+
+// P3 (spec §4.1): one row per CN-credit application. The applied Payment
+// (method 'credit_note') + its PaymentAllocations ARE the money movement —
+// this table only links payment → credit document for balance derivation:
+// CN unapplied balance = creditAmount − Σ(linked payments' amounts).
+model CreditApplication {
+  id               String   @id @default(uuid()) @db.Uuid
+  organizationId   String   @db.Uuid
+  creditDocumentId String   @db.Uuid // → BillingDocument (docType credit_note)
+  paymentId        String   @db.Uuid // → Payment (method credit_note)
+  appliedAt        DateTime @default(now())
+  appliedById      String   @db.Uuid // User.id — plain column (matches approvedBy idiom)
+
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  creditDocument BillingDocument @relation(fields: [creditDocumentId], references: [id], onDelete: Restrict)
+  payment        Payment         @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@unique([paymentId])
+  @@index([organizationId, creditDocumentId])
+}
+
+// P3 (spec §4.1): money physically returned to the payer. The RN (BillingDocument
+// docType refund_note) is the legal artifact; this row carries the operational
+// details (method, bank ref, slip). FPX gateway payments are NEVER reversed —
+// refunds are recorded manually (spec §3).
+model Refund {
+  id                   String   @id @default(uuid()) @db.Uuid
+  organizationId       String   @db.Uuid
+  refundNoteDocumentId String   @db.Uuid // → BillingDocument (docType refund_note)
+  originalPaymentId    String   @db.Uuid // → Payment that collected the money
+  amount               Decimal  @db.Decimal(12, 2)
+  method               String
+  bankRef              String?
+  proofKey             String? // storage key of the transfer slip
+  refundedAt           DateTime
+  recordedById         String   @db.Uuid // User.id — plain column
+  createdAt            DateTime @default(now())
+
+  organization       Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  refundNoteDocument BillingDocument @relation(fields: [refundNoteDocumentId], references: [id], onDelete: Restrict)
+  originalPayment    Payment         @relation(fields: [originalPaymentId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, refundNoteDocumentId])
+  @@index([originalPaymentId])
+}
+
+// ── Accounting-document redesign P3 (2026-07-22): internal Expense (EXP-) ─────
+// A supplier/property cost recorded ONCE, then ALLOCATED across who ultimately
+// bears it (SupplierExpenseAllocation.borneBy ∈ tenant|owner|kaen). The UI
+// "Shared" case = >1 allocation with different bearers. Purely additive — no
+// existing table is touched. Downstream fate wiring (EB- / owner-ledger / KAEN
+// opex) lands in P4/P5/P6; recoveryStatus carries that lifecycle.
+model SupplierExpense {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  expenseNumber  String // EXP- series-minted, e.g. "EXP-0001"
+  supplierName   String
+  supplierRef    String? // supplier invoice / bill reference
+  expenseDate    DateTime @db.Date
+  totalAmount    Decimal  @db.Decimal(12, 2)
+  propertyId     String?  @db.Uuid // plain column (denormalised search)
+  apartmentId    String?  @db.Uuid
+  unitId         String?  @db.Uuid // → Listing (the room); plain column
+  description    String?
+  status         String   @default("recorded") // recorded | void
+  createdById    String   @db.Uuid // User.id — plain column
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  allocations  SupplierExpenseAllocation[]
+
+  @@unique([organizationId, expenseNumber])
+  @@index([organizationId, expenseDate])
+  @@index([organizationId, apartmentId])
+}
+
+model SupplierExpenseAllocation {
+  id                String   @id @default(uuid()) @db.Uuid
+  organizationId    String   @db.Uuid
+  supplierExpenseId String   @db.Uuid
+  borneBy           String // "tenant" | "owner" | "kaen" (BORNE_BY)
+  amount            Decimal  @db.Decimal(12, 2)
+  partyId           String?  @db.Uuid // concrete party for tenant/owner; null for kaen
+  tenancyId         String?  @db.Uuid
+  chargeCategoryId  String?  @db.Uuid
+  description       String?
+  // Downstream lifecycle: pending → routed (EB-/owner-ledger/kaen-opex minted) →
+  // settled. The routed artifact's id is stamped in P4/P5/P6 (additive columns then).
+  recoveryStatus    String   @default("pending") // pending | routed | settled
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplierExpense SupplierExpense @relation(fields: [supplierExpenseId], references: [id], onDelete: Cascade)
+  // P6 back-relation — at most one per allocation in practice (organizationId +
+  // sourceExpenseAllocationId is unique on KaenOperatingExpense below), modelled as a
+  // list because sourceExpenseAllocationId alone isn't a single-column unique key.
+  kaenOperatingExpenses KaenOperatingExpense[]
+
+  @@index([organizationId, supplierExpenseId])
+  @@index([organizationId, borneBy, recoveryStatus])
+}
+
+// Accounting-document redesign P6 — the KAEN agency's OWN operating-expense ledger
+// (software subscriptions, office rent, bank charges, etc.) — NEVER owner/tenant money.
+// One row per borneBy:"kaen" SupplierExpenseAllocation, created by
+// createSupplierExpenseService when ENABLE_KAEN_OPEX is on (expenses.service.ts). The
+// unique index below is the idempotency guard: re-attempting the routing step for the
+// same allocation (a retry, a repair script) never duplicates a row.
+model KaenOperatingExpense {
+  id                        String   @id @default(uuid()) @db.Uuid
+  organizationId            String   @db.Uuid
+  sourceExpenseAllocationId String   @db.Uuid // provenance — the borneBy:"kaen" allocation this row was routed from
+  category                  String // resolved from the allocation's ChargeCategory.name, else "other_expense"
+  description               String?
+  amount                    Decimal  @db.Decimal(12, 2)
+  expenseDate               DateTime @db.Date
+  status                    String   @default("recorded") // recorded | void
+  createdById               String   @db.Uuid // User.id — plain column
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  // Restrict (not Cascade): SupplierExpense/Allocation never hard-delete today (soft
+  // status "recorded"|"void" only) — if a hard-delete path is ever added, it must NOT
+  // silently vaporize agency P&L history; force a deliberate decision at that point.
+  sourceExpenseAllocation SupplierExpenseAllocation @relation(fields: [sourceExpenseAllocationId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, sourceExpenseAllocationId])
+  @@index([organizationId, expenseDate])
+  @@index([organizationId, category])
+}
+
+// Accounting-document redesign P7 (reshaped, 2026-07-23) — Owner Funding Request:
+// a DELIBERATE admin-issued ask for the owner to fund KAEN (e.g. a big repair far
+// exceeds the rent collected this month). NOT a BillingDocument / invoice /
+// debit_note / receivable — KAEN is not EARNING this money, it is asking the
+// owner to send money IN. The already-carried-forward negative owner running
+// balance stays silent + automatic (computeOwnerRunningBalance /
+// computeAvailableOwnerPayableC / derivePeriodRemittanceStatus and all payout
+// math are UNCHANGED by this table) — this row exists only when an admin
+// explicitly decides KAEN needs the owner to pay NOW. amount/reason are
+// admin-SUPPLIED (deliberate), never auto-computed.
+model OwnerFundingRequest {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  ownerPartyId   String    @db.Uuid // plain column — mirrors OwnerLedgerEntry.ownerPartyId, no FK
+  propertyId     String?   @db.Uuid // plain column; null = not attributable to one property
+  amount         Decimal   @db.Decimal(12, 2) // admin-supplied, never computed
+  reason         String
+  status         String    @default("requested") // requested | settled | cancelled
+  requestedById  String    @db.Uuid // User.id — plain column (User idiom, mirrors SupplierExpense.createdById)
+  settledAt      DateTime?
+  note           String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, ownerPartyId, status])
+}
+
+model AgentCardVersion {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  partyId        String @db.Uuid
+
+  displayName  String
+  title        String
+  primaryEmail String?
+  primaryPhone String?
+
+  status          String
+  submittedById   String    @db.Uuid
+  submittedByType String
+  reviewedById    String?   @db.Uuid
+  reviewedAt      DateTime?
+  rejectionReason String?
+
+  publicToken    String?   @unique
+  approvedAt     DateTime?
+  expiresAt      DateTime?
+  reconfirmCount Int       @default(0)
+
+  createdAt DateTime @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  party          Party        @relation("PartyAllCards", fields: [partyId], references: [id], onDelete: Cascade)
+  submittedBy    User         @relation("CardVersionSubmitter", fields: [submittedById], references: [id])
+  reviewedBy     User?        @relation("CardVersionReviewer", fields: [reviewedById], references: [id])
+  activeForParty Party?       @relation("PartyActiveCard")
+
+  @@index([organizationId, status])
+  @@index([partyId, status])
+  @@index([publicToken])
+  @@index([status, expiresAt])
+  @@index([reviewedById])
+  @@index([submittedById])
+}
+
+model UnitReservation {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  referenceCode  String
+  status         String @default("pending_customer")
+
+  issuedByPartyId String   @db.Uuid
+  issuedAt        DateTime @default(now())
+  expiresAt       DateTime
+  publicToken     String   @unique
+
+  propertyId      String    @db.Uuid
+  unitId          String    @db.Uuid
+  carPark         String?
+  proposedMoveIn  DateTime
+  proposedMoveOut DateTime?
+  specialRemarks  String?
+
+  reservationDeposit Decimal  @db.Decimal(12, 2)
+  documentationFee   Decimal  @db.Decimal(12, 2)
+  rentalDeposit      Decimal  @db.Decimal(12, 2)
+  utilityDeposit     Decimal  @db.Decimal(12, 2)
+  accessCardDeposit  Decimal  @db.Decimal(12, 2)
+  agreedMonthlyRent  Decimal? @db.Decimal(12, 2)
+
+  applicantFullName String?
+  applicantNric     String?
+  applicantContact  String?
+  applicantEmail    String?
+
+  applicantAddressLine1 String?
+  applicantAddressLine2 String?
+  applicantCity         String?
+  applicantPostcode     String?
+  applicantState        String?
+  applicantCountry      String?
+
+  signedAt                   DateTime?
+  signedFromIp               String?
+  signedUserAgent            String?
+  signatureDrawingKey        String?
+  signatureTypedName         String?
+  signatureAgreementTickedAt DateTime?
+
+  signedPdfKey String?
+
+  cancelledAt   DateTime?
+  cancelledById String?   @db.Uuid
+  cancelReason  String?
+
+  // Per-reservation T&C list. Empty array = "use the bundled defaults
+  // unchanged"; non-empty = "use this list verbatim, in order, ignoring
+  // defaults". needsApproval is purely structural: customTerms.length > 0.
+  customTerms           String[]  @default([])
+  // Legacy split (predecessor of customTerms). Kept on the row for back-
+  // compat reads of historical reservations; no new flow writes them.
+  disabledClauseIndexes Int[]     @default([])
+  termsAddendum         String?
+  approvalReviewedAt    DateTime?
+  approvalReviewedById  String?   @db.Uuid
+  approvalNote          String?
+
+  // Set once when an admin creates a tenant FROM this signed reservation
+  // (conditional write, WHERE tenantPartyId IS NULL). Drives the "has
+  // reservation" tag. Distinct relation name from ReservationIssuer above.
+  tenantPartyId String? @db.Uuid
+
+  // Applicant identity/profile captured on the customer fill form (Section B).
+  // Nullable + additive; carried into Party at tenant creation from reservation.
+  nationality              String?
+  emergencyContactName     String?
+  emergencyContactPhone    String?
+  emergencyContactRelation String?
+  monthlyIncome            Decimal? @db.Decimal(12, 2)
+  occupation               String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property     Property                    @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  // Restrict made explicit (was implicit Prisma default). A Listing with any
+  // reservation row must not be deleted; application code blocks first,
+  // this FK action is the safety net.
+  unit         Listing                     @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  issuedBy     Party                       @relation("ReservationIssuer", fields: [issuedByPartyId], references: [id])
+  tenantParty  Party?                      @relation("ReservationTenant", fields: [tenantPartyId], references: [id], onDelete: SetNull)
+  transitions  UnitReservationTransition[]
+  documents    UnitReservationDocument[]
+  tenancy      Tenancy?
+
+  @@unique([organizationId, referenceCode])
+  @@index([organizationId, status])
+  @@index([organizationId, issuedByPartyId])
+  @@index([organizationId, tenantPartyId], map: "unitreservation_tenantparty")
+  @@index([expiresAt])
+  @@index([propertyId])
+  @@index([unitId])
+}
+
+model UnitReservationTransition {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  reservationId  String   @db.Uuid
+  fromStatus     String?
+  toStatus       String
+  actor          String
+  changedAt      DateTime @default(now())
+  note           String?
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  reservation  UnitReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+
+  @@index([reservationId, changedAt])
+  @@index([organizationId])
+}
+
+model Invoice {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  invoiceNumber  String
+  partyId        String    @db.Uuid
+  ownerPartyId   String?   @db.Uuid
+  tenancyId      String?   @db.Uuid
+  propertyId     String?   @db.Uuid
+  apartmentId    String?   @db.Uuid // owner_statement per-unit scope; null = legacy owner-combined
+  invoiceType    String // "tenant_rental" | "tenant_aircon" | "owner_statement"
+  status         String    @default("draft") // draft → approved → sent → paid | void
+  invoiceDate    DateTime
+  dueDate        DateTime?
+  periodMonth    DateTime? // first-of-month billing period (M5 queue filter; never parse from idempotencyKey)
+  totalAmount    Decimal   @db.Decimal(12, 2)
+  sstAmount      Decimal?  @db.Decimal(12, 2)
+  currency       String    @default("MYR") // 2026-06-11 gap pass — Charge/Payment/ChargeTemplate all carry currency
+  pdfKey         String?
+  // M6 statement-level bulk receipts
+  attachmentKeys String[]  @default([])
+  // M5 draft dedupe: "draft:<tenancyId>:<periodMonth>"; M3 payment-create dedupe
+  idempotencyKey String?
+  approvedBy     String?   @db.Uuid // User.id (admin actor) — plain column, no FK
+  approvedAt     DateTime?
+  // Accounting-doc redesign P1 (2026-07-23): human-facing sequential DISPLAY number
+  // for an owner_statement Invoice, e.g. "OST-0001" — minted from the OST
+  // DocumentSeries (mintDocumentNumberTx) at the draft→approved transition
+  // (owner-billing.service.ts's approveStatementService), gated behind
+  // ENABLE_OWNER_DOC_NUMBERING. NEVER the dedupe/identity key — that stays
+  // `invoiceNumber`'s "OS-<mm>-<owner8>[-<apt8>]" slug, untouched. Additive +
+  // nullable: flag off, or any non-owner_statement Invoice, leaves this null.
+  statementNumber String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  party        Party        @relation("InvoiceBillTo", fields: [partyId], references: [id], onDelete: Cascade)
+  ownerParty   Party?       @relation("InvoiceOwner", fields: [ownerPartyId], references: [id], onDelete: SetNull)
+  tenancy      Tenancy?     @relation(fields: [tenancyId], references: [id], onDelete: SetNull)
+  charges      Charge[]
+
+  @@unique([organizationId, invoiceNumber])
+  // Postgres treats NULLs as distinct — multiple NULL idempotencyKeys allowed
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, status])
+  @@index([organizationId, ownerPartyId])
+  @@index([organizationId, tenancyId])
+  @@index([organizationId, periodMonth])
+  @@index([organizationId, apartmentId])
+  @@index([partyId])
+}
+
+model AircondMeter {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  unitId         String   @db.Uuid // → Listing (the per-room "Unit"); NEVER Apartment
+  meterNumber    String?
+  ratePerKwh     Decimal  @default(0.6000) @db.Decimal(6, 4) // editable; some rooms 0.55
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  // Restrict: meter/billing history must never be silently destroyed with a Unit
+  unit         Listing        @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  readings     MeterReading[]
+
+  @@unique([organizationId, unitId]) // one active meter per unit (v1)
+}
+
+model MeterReading {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @db.Uuid
+  meterId         String   @db.Uuid
+  unitId          String   @db.Uuid
+  periodMonth     DateTime // first-of-month key
+  previousReading Decimal  @db.Decimal(12, 2)
+  currentReading  Decimal  @db.Decimal(12, 2)
+  consumption     Decimal  @db.Decimal(12, 2)
+  ratePerKwh      Decimal  @db.Decimal(6, 4) // snapshot at submit time
+  computedAmount  Decimal  @db.Decimal(12, 2)
+  imageKey        String?
+  status          String   @default("submitted") // submitted → charged | void
+  chargeId        String?  @db.Uuid // the Charge created from this reading — plain column
+  submittedBy     String   @db.Uuid // User.id — plain column
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  meter        AircondMeter @relation(fields: [meterId], references: [id], onDelete: Restrict)
+  unit         Listing      @relation(fields: [unitId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, unitId, periodMonth]) // one reading per unit per month
+  @@index([organizationId, unitId, periodMonth])
+  @@index([meterId])
+}
+
+model ManagementFeeConfig {
+  id               String    @id @default(uuid()) @db.Uuid
+  organizationId   String    @db.Uuid
+  ownerPartyId     String    @db.Uuid // owner is per-unit via Listing.ownerPartyId (resolution moved off LandlordTenancy.landlordId)
+  propertyId       String?   @db.Uuid // null = all the owner's properties — plain column
+  feeType          String // "percent" | "fixed" | "cap"
+  feeValue         Decimal   @db.Decimal(10, 2)
+  capAmount        Decimal?  @db.Decimal(10, 2)
+  sstPercent       Decimal   @default(8.00) @db.Decimal(5, 2)
+  freePeriodStart  DateTime?
+  freePeriodEnd    DateTime?
+  /// ⛔ DEPRECATED 2026-08-17 — ORPHANED, read and written by NOTHING. The owner-settings
+  /// cleaning auto-bill field, its manual create/patch/void endpoints and the statement
+  /// issuer that consumed it are all gone; the bills grid is the single cleaning issuer
+  /// (bearer in the unit Setting drawer, amount in the Recurring editor). Its `@default(100)`
+  /// was dropped in the same migration so no new row carries a phantom RM 100.
+  /// The COLUMN is retained deliberately: a DROP COLUMN applied before the API ships would
+  /// 500 the old code still reading it, and prod migrations here are manual and unordered
+  /// against the code deploy. Drop it in a follow-up once this change is live everywhere.
+  /// Do NOT re-wire it — reintroducing a second cleaning issuer is the exact bug that was
+  /// removed in two halves (2026-07-29 automatic, 2026-08-17 manual).
+  cleaningAutoBill Decimal?  @db.Decimal(10, 2)
+  isActive         Boolean   @default(true)
+  effectiveFrom    DateTime?
+  effectiveTo      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ownerParty   Party        @relation("MgmtFeeOwner", fields: [ownerPartyId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, ownerPartyId])
+}
+
+model OwnerLedgerEntry {
+  id                  String    @id @default(uuid()) @db.Uuid
+  organizationId      String    @db.Uuid
+  ownerPartyId        String    @db.Uuid // owner is per-unit via Listing.ownerPartyId (resolution moved off LandlordTenancy.landlordId) — plain column
+  // Task 6a (Phase-2 owner remittance): NULLABLE. null = this row belongs to the
+  // owner OVERALL and is not attributable to one property — NOT "unknown", NOT
+  // invalid data, NOT a nil-UUID sentinel. A cross-property (R9) or combined-scope
+  // Phase-2 remittance payout has no single meaningful propertyId. Precedent:
+  // ManagementFeeConfig.propertyId (below) is already nullable with the identical
+  // "null = all the owner's properties" semantic. Property-specific reads
+  // (propertyId-filtered) correctly EXCLUDE a null row (Postgres `=`/`IN` never
+  // match NULL) — that is by design, not a gap: a property-level breakdown of a
+  // remittance is derived from OwnerRemittanceAllocation rows, never from this
+  // column. Owner-level (all-property) reads must omit the propertyId filter
+  // entirely so both property-specific AND null rows are included. Every
+  // money-critical balance primitive (computeOwnerRunningBalance,
+  // resolveOwnerBalance, computeAvailableOwnerPayableC) is propertyId-agnostic —
+  // none of them filter or group by this column.
+  propertyId          String?   @db.Uuid // plain column
+  apartmentId         String?   @db.Uuid // plain column; the Apartment (unit) anchor
+  listingId           String?   @db.Uuid // the per-room "Unit"; null = property-level
+  tenancyId           String?   @db.Uuid
+  statementMonth      DateTime  @db.Date // first-of-month grouping key
+  transactionDate     DateTime  @db.Date
+  direction           String // "income" | "expense" | "payout"
+  category            String // OWNER_LEDGER_CATEGORIES
+  description         String?
+  remarks             String?
+  amount              Decimal   @db.Decimal(12, 2)
+  sstAmount           Decimal?  @db.Decimal(12, 2)
+  paidBy              String // OWNER_PAID_BY
+  paymentStatus       String    @default("paid")
+  taxCategory         String    @default("check_with_tax_agent")
+  includeInPayout     Boolean   @default(true) // derived: paidBy == "kaen"
+  attachmentKeys      String[]  @default([])
+  sourceType          String    @default("manual") // "rent" | "statement" | "utility" | "manual"
+  sourceChargeId      String?   @db.Uuid
+  sourceInvoiceId     String?   @db.Uuid
+  sourceUtilityBillId String?   @db.Uuid
+  // R3 forward-collection idempotency: the triggering PaymentAllocation / PaymentAllocationReversal
+  // event id. Non-null only on prior_period_collection / prior_period_collection_reversal rows.
+  sourceAllocationEventId String? @db.Uuid
+  // Paid-on-behalf metadata (Task 9) — DISPLAY-ONLY, additive nullable. Copied from
+  // the source Charge by owner-ledger.sync (source-2) so the statement/receipt can
+  // document "KAEN paid <payee> on your behalf". NEVER part of the payout formula.
+  payeeName           String? // who KAEN paid on the owner's behalf (e.g. "Allianz")
+  paidOnBehalfRef     String? // supplier reference / invoice no. (e.g. "INV-1")
+  paidOnBehalfDate    DateTime? @db.Date // date KAEN paid the payee
+  status              String    @default("active") // "active" | "void"
+  createdById         String    @db.Uuid // User.id — plain column
+  updatedById         String    @db.Uuid // User.id — plain column; sync sentinel id ⇒ "untouched by admin"
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  // Spec 1 Phase-2 owner remittance / offset / reversal / idempotency — additive, nullable.
+  settlementKind     String?   // OWNER_REMITTANCE | OWNER_RECEIVABLE_OFFSET | PRE_STATEMENT_REMITTANCE (null = legacy/sync payout)
+  paymentMethod      String?   // bank_transfer | cash | cheque | other  (real remittances only; null for offsets)
+  bankReference      String?
+  proofKey           String?
+  proofStatus        String?   // PROOF_PENDING | PROOF_ATTACHED
+  memo               String?
+  idempotencyKey     String?
+  requestFingerprint String?
+  reversalOfEntryId  String?   @db.Uuid // ONE-WAY: set only on a reversal entry; original carries no back-pointer
+  // Accounting-doc redesign P1 (2026-07-23): human-facing sequential DISPLAY number
+  // for a real cash-out payout row, e.g. "REM-0001" — minted from the REM
+  // DocumentSeries (mintDocumentNumberTx) ONLY at the recordRemittanceService write
+  // (settlementKind OWNER_REMITTANCE / PRE_STATEMENT_REMITTANCE), gated behind
+  // ENABLE_OWNER_DOC_NUMBERING. Deliberately NEVER minted for an
+  // OWNER_RECEIVABLE_OFFSET payout or a reversal row (reversalOfEntryId set) —
+  // neither is new cash to the owner. NEVER the dedupe/identity key — that stays
+  // `idempotencyKey`, untouched. Additive + nullable.
+  remittanceNumber   String?
+  remittanceAllocations OwnerRemittanceAllocation[]
+  offsetAllocations     OwnerReceivableOffsetAllocation[]
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // R3: forward-collection idempotency. Each PaymentAllocation(Reversal) event yields exactly one
+  // prior_period_collection / prior_period_collection_reversal row. Postgres NULLs-distinct ⇒ existing
+  // rows (null sourceAllocationEventId) stay unconstrained. Explicit map: keeps the index name < 63 chars
+  // and deterministic so the hand-authored migration matches.
+  @@unique([organizationId, sourceType, sourceAllocationEventId], map: "OwnerLedgerEntry_org_sourceType_allocEvent_key")
+  // The former @@unique([organizationId, sourceType, sourceChargeId]) is intentionally NOT declared here:
+  // Prisma 7 cannot express a PARTIAL unique. It is recreated in the migration as a partial unique index
+  // EXCLUDING ('prior_period_collection','prior_period_collection_reversal','reversal_forward_adjustment')
+  // — those legitimately have multiple rows per charge (ppc/ppc_reversal one per allocation event, keyed by
+  // the alloc-event unique above; reversal_forward_adjustment one per OPEN month it corrects into, keyed by
+  // the per-(charge, statementMonth) partial unique OwnerLedgerEntry_org_revFwdAdj_charge_month_key).
+  // prior_period_adjustment and the write-once `reversal` stay covered by the broad partial index (exactly
+  // one per charge). See migrations 20260720000000_closed_period_integrity_schema (broad index) and
+  // 20260720100000_reversal_forward_adjustment_partial_unique (new exclusion + per-month unique).
+  // C2: utility rows carry no sourceChargeId; deduplicate on sourceUtilityBillId instead.
+  // Postgres NULLs-distinct ⇒ manual/rent/statement rows (null sourceUtilityBillId) are unconstrained.
+  @@unique([organizationId, sourceType, sourceUtilityBillId])
+  @@index([organizationId, ownerPartyId, statementMonth])
+  @@index([organizationId, apartmentId, statementMonth])
+  @@index([organizationId, propertyId])
+  @@index([organizationId, direction, category])
+  // Spec 1 Phase-2 owner remittance / offset / reversal / idempotency indexes.
+  @@unique([organizationId, settlementKind, idempotencyKey])
+  @@index([organizationId, ownerPartyId, settlementKind])
+  @@index([reversalOfEntryId])
+}
+
+model OwnerStatementPeriod {
+  id                 String    @id @default(uuid()) @db.Uuid
+  organizationId     String    @db.Uuid
+  ownerPartyId       String    @db.Uuid
+  apartmentId        String?   @db.Uuid // null = combined scope; set = per-unit
+  periodMonth        DateTime  @db.Date // first-of-month key (UTC)
+  status             String    @default("open") // "open" | "frozen"
+  issuedAt           DateTime?
+  openingBalanceC    Int       @default(0)
+  closingBalanceC    Int       @default(0)
+  netPayoutC         Int       @default(0)
+  snapshotJson       Json? // frozen line items as of freeze
+  pdfKey             String?
+  idempotencyKey     String // ownerstmt:<owner>:<YYYY-MM>[:<apartmentId>]
+  sourceMaxUpdatedAt DateTime // monotonic-write guard
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  // R7 write-once freeze header — set ONLY on first freeze, never overwritten (immutability baseline).
+  // A later re-freeze that changes persisted balances is itself detectable via R6(d) frozen_balance_drift.
+  firstFrozenAt        DateTime?
+  firstFrozenOpeningC  Int?
+  firstFrozenClosingC  Int?
+  firstFrozenNetC      Int?
+  freezeRulesetVersion Int?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  // Spec 1 Phase-2 owner remittance — back-relation for OwnerRemittanceAllocation.period.
+  ownerRemittanceAllocations OwnerRemittanceAllocation[]
+  freezeManifestRows         OwnerStatementFreezeManifestRow[]
+
+  @@unique([organizationId, ownerPartyId, apartmentId, periodMonth])
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, ownerPartyId, periodMonth])
+  @@index([organizationId, apartmentId, periodMonth])
+}
+
+model OwnerRemittanceAllocation {
+  id                    String   @id @default(uuid()) @db.Uuid
+  organizationId        String   @db.Uuid
+  payoutEntryId         String   @db.Uuid // → OwnerLedgerEntry (the payout row)
+  ownerStatementPeriodId String  @db.Uuid // → OwnerStatementPeriod (owner×apartment×month)
+  allocatedAmountC      Int      // integer cents; > 0
+  createdById           String   @db.Uuid
+  createdAt             DateTime @default(now())
+  organization  Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payoutEntry   OwnerLedgerEntry     @relation(fields: [payoutEntryId], references: [id], onDelete: Cascade)
+  period        OwnerStatementPeriod @relation(fields: [ownerStatementPeriodId], references: [id], onDelete: Restrict)
+  @@unique([organizationId, payoutEntryId, ownerStatementPeriodId])
+  @@index([organizationId, ownerStatementPeriodId])
+  @@index([organizationId, payoutEntryId])
+}
+
+model OwnerReceivableOffsetAllocation {
+  id                   String   @id @default(uuid()) @db.Uuid
+  organizationId       String   @db.Uuid
+  offsetEntryId        String   @db.Uuid // → OwnerLedgerEntry (settlementKind=OWNER_RECEIVABLE_OFFSET)
+  chargeId             String   @db.Uuid // → Charge (the IVOWN receivable charge whose outstanding this settled)
+  billingDocumentLineId String? @db.Uuid // display/trace only; settlement is at the charge grain
+  allocatedAmountC     Int      // integer cents; > 0
+  createdById          String   @db.Uuid
+  createdAt            DateTime @default(now())
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  offsetEntry  OwnerLedgerEntry @relation(fields: [offsetEntryId], references: [id], onDelete: Cascade)
+  charge       Charge           @relation(fields: [chargeId], references: [id], onDelete: Restrict)
+  @@unique([organizationId, offsetEntryId, chargeId])
+  @@index([organizationId, chargeId])
+  @@index([organizationId, offsetEntryId])
+}
+
+// R7 — immutable, write-once freeze manifest. One row per ACTIVE OwnerLedgerEntry (any paymentStatus)
+// captured at FIRST freeze of a period-scope. snapshotJson is insufficient (paid-only; omits
+// includeInPayout/sstAmount and unpaid-active rows). Never overwritten by a re-freeze. Serves R6.
+model OwnerStatementFreezeManifestRow {
+  id                     String   @id @default(uuid()) @db.Uuid
+  organizationId         String   @db.Uuid
+  ownerStatementPeriodId String   @db.Uuid
+  ownerPartyId           String   @db.Uuid
+  apartmentId            String?  @db.Uuid
+  periodMonth            DateTime @db.Date
+  ledgerEntryId          String   @db.Uuid
+  amountC                Int
+  direction              String
+  category               String
+  paidBy                 String
+  includeInPayout        Boolean
+  paymentStatus          String
+  sstAmountC             Int?
+  statementMonth         DateTime @db.Date
+  sourceType             String
+  sourceChargeId         String?  @db.Uuid
+  ledgerUpdatedAtAtFreeze DateTime
+  createdAt              DateTime @default(now())
+
+  organization         Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ownerStatementPeriod OwnerStatementPeriod @relation(fields: [ownerStatementPeriodId], references: [id], onDelete: Cascade)
+
+  // Write-once (one row per ledger entry) is enforced by the freeze SERVICE, not the DB, so a buggy
+  // re-freeze double-write is surfaced by R6 as a manifest diff rather than silently rejected here.
+  @@index([organizationId, ownerStatementPeriodId], map: "OwnerStmtFreezeManifest_org_period_idx")
+}
+
+// R5/R6/R8 — durable reconciliation finding. Survives beyond AuditLog's 10-day purge. Idempotent upsert
+// on the dedupe key; lastDetectedAt bumped on re-detect; auto-resolved when valid data reappears.
+model OwnerLedgerReconciliationFinding {
+  id                 String    @id @default(uuid()) @db.Uuid
+  organizationId     String    @db.Uuid
+  ownerPartyId       String    @db.Uuid
+  apartmentId        String?   @db.Uuid
+  unitId             String?   @db.Uuid
+  carparkId          String?   @db.Uuid
+  checkKind          String // "source_to_ledger" | "frozen_integrity"
+  findingType        String // missing_ledger_row | stale_collected_amount | invalid_forward_adjustment | post_freeze_creation | post_freeze_economic_edit | manifest_field_mismatch | frozen_balance_drift | unexplained_frozen_row
+  sourceType         String
+  sourceId           String    @db.Uuid
+  sourceUpdatedAt    DateTime?
+  originalBillingMonth DateTime? @db.Date
+  expectedPostingMonth DateTime? @db.Date
+  expectedDirection  String?
+  expectedAmountC    Int?
+  actualAmountC      Int?
+  severity           String // "critical" | "warning"
+  status             String    @default("open") // "open" | "acknowledged" | "resolved" | "ignored"
+  reason             String? // required on ignore (enforced by service)
+  firstDetectedAt    DateTime  @default(now())
+  lastDetectedAt     DateTime
+  resolvedAt         DateTime?
+  resolvedById       String?   @db.Uuid
+  detailsJson        Json?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, checkKind, sourceType, sourceId, findingType], map: "OwnerLedgerReconFinding_dedupe_key")
+  @@index([organizationId, status, severity], map: "OwnerLedgerReconFinding_org_status_sev_idx")
+  @@index([organizationId, ownerPartyId, checkKind], map: "OwnerLedgerReconFinding_org_owner_check_idx")
+}
+
+// R8/R9 — durable reconciliation run record. One per (type, scope) execution; feeds the enablement preflight.
+model OwnerLedgerReconciliationRun {
+  id                 String    @id @default(uuid()) @db.Uuid
+  organizationId     String    @db.Uuid
+  reconciliationType String // "source_to_ledger" | "frozen_integrity"
+  scopeJson          Json? // owner/month filters, or null/{full:true} for full scope
+  isFullScope        Boolean
+  status             String    @default("running") // "running" | "completed" | "failed"
+  startedAt          DateTime  @default(now())
+  completedAt        DateTime?
+  sourcesScanned     Int       @default(0)
+  findingsOpened     Int       @default(0)
+  findingsResolved   Int       @default(0)
+  triggerType        String // "cron" | "manual"
+  triggeredById      String?   @db.Uuid
+  failureInfo        String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, reconciliationType, status], map: "OwnerLedgerReconRun_org_type_status_idx")
+  @@index([organizationId, startedAt], map: "OwnerLedgerReconRun_org_startedAt_idx")
+}
+
+model UnitMonthLedger {
+  id                  String   @id @default(uuid()) @db.Uuid
+  organizationId      String   @db.Uuid
+  apartmentId         String   @db.Uuid
+  periodMonth         DateTime @db.Date
+  ownerPartyId        String?  @db.Uuid
+  incomeC             Int      @default(0)
+  deductibleExpensesC Int      @default(0)
+  netPayoutC          Int      @default(0)
+  mgmtFeeC            Int      @default(0)
+  sstC                Int      @default(0)
+  // max updatedAt across all inputs (ledger rows + fee config) at compute time —
+  // monotonic-write guard so an older recompute can't clobber a newer state.
+  sourceMaxUpdatedAt  DateTime
+  computedAt          DateTime @default(now())
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, apartmentId, periodMonth])
+  @@index([organizationId, periodMonth])
+  @@index([ownerPartyId, periodMonth])
+}
+
+model OwnerExpenseProof {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  ownerPartyId   String   @db.Uuid
+  statementMonth DateTime @db.Date // first-of-month, UTC
+  apartmentId    String?  @db.Uuid // the per-apartment statement's apartment (null = legacy combined statement)
+  category       String // RAW OwnerLedgerEntry.category: "utilities_tnb" | "water" | "wifi" | "cleaning" | "fire_insurance" | "other_expense" | ...
+  storageKey     String // owner-statements/<owner>/proofs/<uuid>.<ext>
+  filename       String // original upload name (display)
+  uploadedById   String   @db.Uuid
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, ownerPartyId, statementMonth, apartmentId, category])
+}
+
+model Task {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  title          String
+  description    String?
+  status         String    @default("todo") // pool | todo | in_progress | done | archived
+  priority       String    @default("medium")
+  category       String?
+  sortOrder      Int? // manual board ordering within a column/lane
+  attachmentKeys String[]  @default([]) // photos/videos/files — WhatsApp-task parity
+  assigneeUserId String?   @db.Uuid // User.id; null = unassigned pool — plain column
+  relatedUnitId  String?   @db.Uuid
+  ticketId       String?   @db.Uuid // plain column
+  sprintId       String?   @db.Uuid // null = Backlog; FK SetNull mirrors relatedUnitId
+  createdBy      String    @db.Uuid // User.id — plain column
+  dueOn          DateTime?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  assignedAt     DateTime? // stamped when an assignee is set/changed; null when unassigned
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  relatedUnit  Listing?     @relation(fields: [relatedUnitId], references: [id], onDelete: SetNull)
+  sprint       Sprint?      @relation(fields: [sprintId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status])
+  @@index([organizationId, assigneeUserId])
+  @@index([organizationId, relatedUnitId])
+  @@index([organizationId, sprintId])
+}
+
+model Sprint {
+  id               String    @id @default(uuid()) @db.Uuid
+  organizationId   String    @db.Uuid
+  seq              Int // 1-based per-org sprint number; UI falls back to `Sprint ${seq}` when name is null
+  name             String?
+  goal             String?
+  status           String    @default("planned") // planned → active → completed
+  startsOn         DateTime?
+  endsOn           DateTime?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  completedCount   Int? // snapshot at close: tasks with status="done" attached
+  carriedOverCount Int? // snapshot at close: tasks carried forward (sprintId set null)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tasks        Task[]
+
+  @@unique([organizationId, seq])
+  @@index([organizationId, status])
+}
+
+model Ticket {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  unitId         String    @db.Uuid // per-unit history anchor; NOT MaintenanceRequest
+  title          String
+  description    String?
+  category       String?
+  status         String    @default("open") // open → in_progress → resolved | void
+  warrantyFlag   Boolean   @default(false)
+  attachmentKeys String[]  @default([]) // open-time evidence: photos/videos/quote PDFs
+  resolvedAt     DateTime?
+  createdBy      String    @db.Uuid // User.id — plain column
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  unit         Listing         @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  history      TicketHistory[]
+
+  @@index([organizationId, unitId])
+  @@index([organizationId, status])
+}
+
+model TicketHistory {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  ticketId       String   @db.Uuid
+  unitId         String   @db.Uuid
+  entry          String // "1701 kitchen light replaced"
+  attachmentKeys String[] @default([]) // photos, videos, contractor PDFs (renamed from photoKeys, media pass)
+  actorUserId    String   @db.Uuid // User.id — plain column
+  occurredOn     DateTime
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ticket       Ticket       @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  unit         Listing      @relation(fields: [unitId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, unitId, occurredOn])
+  @@index([ticketId])
+}
+
+model DeviceToken {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  partyId        String?   @db.Uuid // tenant/owner
+  userId         String?   @db.Uuid // admin — plain column
+  token          String // web-push subscription JSON or FCM token
+  platform       String // "web" | "ios" | "android"
+  isActive       Boolean   @default(true)
+  lastSeenAt     DateTime?
+  expiresAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  party        Party?       @relation(fields: [partyId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, token])
+  @@index([organizationId, partyId])
+}
+
+model DraftConfig {
+  id                 String   @id @default(uuid()) @db.Uuid
+  organizationId     String   @db.Uuid
+  runDayOfMonth      Int      @default(25)
+  /// Whole months AHEAD of the RUN month that a run bills. 1 = KAEN's process
+  /// (run on the 25th, draft the COMING month's rent); 0 = draft the run month
+  /// itself (the pre-2026-07 behaviour). Range 0..2, enforced by the zod schema
+  /// and the CHECK constraint in the migration.
+  ///
+  /// Applied by the CALLERS of runAutoDraftInvoices (the cron + "Run now"), never
+  /// inside it — that function still drafts exactly the period it is handed, so
+  /// its CRITICAL-risk call graph is untouched by advance billing.
+  ///
+  /// Only rent/carpark (facts knowable in advance) are drafted this way. Metered
+  /// utilities keep billService's blocked_future_period guard: you cannot read
+  /// August's meter in July.
+  billPeriodOffset   Int      @default(1)
+  dueDayOffset       Int?
+  includeRent        Boolean  @default(true)
+  // DEPRECATED (2026-06-27): no longer drives auto-draft folding. Under the one-action
+  // "Post charges" flow, tenant utility/aircond charges are standalone POSTED charges, so
+  // the auto-draft cron no longer bundles them onto the rent invoice. Column retained for
+  // additive-safety (do NOT drop); it persists an inert flag with no behavioral effect.
+  includeElectricity Boolean  @default(true)
+  includeMgmtFee     Boolean  @default(true)
+  includeCleaning    Boolean  @default(true)
+  /// DEAD (never read by any code path). Kept only so the column is not dropped.
+  /// This was NEVER the auto-billing switch — it would have meant "approve a draft
+  /// the instant it is created", which no surface ever wanted. Scheduled
+  /// auto-billing is `autoBillDayOfMonth` below; look there, not here.
+  autoApprove        Boolean  @default(false)
+  /// Day of month (1–28) on which this org's DRAFT rental invoices are BILLED
+  /// automatically: invoice draft→approved, charges draft→posted (live
+  /// receivables), documents issued, owner ledger synced, tenant sees it payable.
+  ///
+  /// NULL (the default) = OFF — drafts wait for a human to issue them from the
+  /// approvals queue. Setting it is an explicit, per-org opt-out of that gate,
+  /// so an org that never touches this setting keeps today's behaviour exactly.
+  ///
+  /// Scope is deliberately bounded on BOTH ends (see auto-bill.service.ts):
+  /// only `tenant_rental` invoices, and only periods from the CURRENT month
+  /// through the org's draft target month. A past-month draft is never billed
+  /// automatically — the mirror of the drafting side, which never reaches back
+  /// into a period an owner statement may already have frozen.
+  autoBillDayOfMonth Int?
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId]) // per-org singleton (v1)
+}
+
+model UtilityBillingConfig {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  subsidyPerPax  Decimal  @default(50.00) @db.Decimal(12, 2) // owner subsidy per pax for SUBSIDY apartments
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId]) // per-org singleton
+}
+
+model InvoiceDraftRun {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  periodMonth    DateTime // first-of-month key
+  runDate        DateTime
+  status         String   @default("running") // running → completed | failed
+  draftsCreated  Int      @default(0)
+  draftsSkipped  Int      @default(0)
+  errorText      String?
+  triggeredBy    String? // "system:auto-draft" | admin userId
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, periodMonth])
+  @@index([organizationId, runDate])
+}
+
+model ImportRun {
+  id               String   @id @default(uuid()) @db.Uuid
+  organizationId   String   @db.Uuid
+  sourceFile       String? // workbook filename
+  dryRun           Boolean  @default(true)
+  status           String   @default("running") // running → completed | failed
+  rowsParsed       Int      @default(0)
+  partiesCreated   Int      @default(0)
+  partiesMatched   Int      @default(0)
+  tenanciesCreated Int      @default(0)
+  rowsSkipped      Int      @default(0)
+  conflicts        Int      @default(0)
+  errorText        String?
+  reportKey        String? // storage key of the dry-run/commit report
+  triggeredBy      String? // admin userId | "cli"
+  createdAt        DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+}
+
+// ── Phase-2 M2: Unit Utility Billing (amendment 2026-06-18) ──────────────────
+model UnitUtilityBill {
+  id                       String   @id @default(uuid()) @db.Uuid
+  organizationId           String   @db.Uuid
+  apartmentId              String   @db.Uuid
+  periodMonth              DateTime @db.Date
+  billingMode              String // snapshot: "whole" | "subsidy" | "no_subsidy"
+  tnbTotal                 Decimal  @db.Decimal(12, 2)
+  airSelangor              Decimal  @default(0) @db.Decimal(12, 2)
+  indahWater               Decimal  @default(0) @db.Decimal(12, 2)
+  cleaning                 Decimal  @default(0) @db.Decimal(12, 2)
+  wifi                     Decimal? @db.Decimal(12, 2)
+  // Per-bill bearer for each non-electricity utility: "owner" (default — out of
+  // the tenant pool) or "tenant" (pooled per-pax). TNB + AirSelangor are always tenant.
+  // DB-ENFORCED: CHECK "UnitUtilityBill_indahWaterBearer_check" (owner|tenant), migration 20260727140000.
+  // Vocabulary source: `bearer` (shared/schemas/bills-grid.ts)
+  indahWaterBearer         String   @default("owner")
+  // DB-ENFORCED: CHECK "UnitUtilityBill_cleaningBearer_check" (owner|tenant), migration 20260727140000.
+  // Vocabulary source: `bearer` (shared/schemas/bills-grid.ts)
+  cleaningBearer           String   @default("owner")
+  // DB-ENFORCED: CHECK "UnitUtilityBill_wifiBearer_check" (owner|tenant), migration 20260727140000.
+  // Vocabulary source: `bearer` (shared/schemas/bills-grid.ts)
+  wifiBearer               String   @default("owner")
+  ownerAttributableAircond Decimal? @db.Decimal(12, 2)
+  ownerBorneUtilities      Decimal? @db.Decimal(12, 2) // Σ owner-borne indah/cleaning/wifi (left out of the tenant pool)
+  subsidyPerPax            Decimal? @db.Decimal(12, 2) // snapshot of the rate used
+  subsidyCovered           Decimal? @db.Decimal(12, 2) // owner-paid subsidy total
+  ownerBorneUtilitiesTotal Decimal? @db.Decimal(12, 2) // = ownerAttributableAircond + ownerBorneUtilities + subsidyCovered + roundingResidual (seam for M6)
+  roundingResidual         Decimal? @db.Decimal(12, 2)
+  status                   String   @default("draft") // draft → charged | void
+  notes                    String?
+  createdBy                String   @db.Uuid // User.id — plain column (no FK)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  organization Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  apartment    Apartment                   @relation(fields: [apartmentId], references: [id], onDelete: Restrict)
+  allocations  UtilityAllocation[]
+  attachments  UnitUtilityBillAttachment[]
+
+  @@unique([organizationId, apartmentId, periodMonth])
+  @@index([organizationId, status])
+  @@index([organizationId, periodMonth])
+}
+
+model UnitUtilityBillAttachment {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  billId         String   @db.Uuid
+  storageKey     String // utility-bills/<apartmentId>/<uuid>.<ext>
+  filename       String // original upload name (display)
+  uploadedById   String   @db.Uuid // User.id — plain column (no FK), matches UnitUtilityBill.createdBy
+  createdAt      DateTime @default(now())
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bill         UnitUtilityBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, billId])
+}
+
+model UtilityAllocation {
+  id               String   @id @default(uuid()) @db.Uuid
+  organizationId   String   @db.Uuid
+  billId           String   @db.Uuid
+  unitId           String   @db.Uuid
+  tenancyId        String   @db.Uuid
+  partyId          String   @db.Uuid // bill-to party snapshot — plain column (no FK)
+  pax              Int
+  tnbShare         Decimal  @db.Decimal(12, 2)
+  airSelangorShare Decimal  @db.Decimal(12, 2)
+  indahShare       Decimal  @db.Decimal(12, 2)
+  cleaningShare    Decimal  @db.Decimal(12, 2)
+  wifiShare        Decimal  @default(0) @db.Decimal(12, 2)
+  subsidyDeduction Decimal  @default(0) @db.Decimal(12, 2)
+  computedAmount   Decimal  @db.Decimal(12, 2)
+  chargeId         String?  @db.Uuid // plain column (no FK)
+  status           String   @default("submitted") // submitted → charged | void
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bill         UnitUtilityBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+  unit         Listing         @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  tenancy      Tenancy         @relation(fields: [tenancyId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, billId, unitId])
+  @@index([organizationId, billId])
+  @@index([tenancyId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bills & Expenses Grid — STANDALONE store (spec 2026-07-10).
+// HARD CONSTRAINT: nothing here writes Charge / OwnerLedgerEntry /
+// UnitUtilityBill / UtilityAllocation. A future accounting system links them.
+// Period column is `periodMonth DateTime @db.Date` on the FOUR period-scoped
+// tables (Entry / MeterReading / Expense / Attachment; the spec mixed
+// periodMonth/billingMonth — normalised here). UnitBillsBearerConfig is
+// per-apartment config keyed @@unique([organizationId, apartmentId]), NOT
+// period-scoped, so it deliberately has NO periodMonth — do NOT add one (it
+// would change the config's cardinality). Mirrors UnitUtilityBill
+// (Apartment-keyed, @db.Date) — NOT MeterReading (Listing-keyed, bare DateTime).
+// Enums are String columns; no Prisma `enum` type is used in this schema.
+// USER RULING 2026-07-10: no status/void column on Entry, MeterReading, or
+// BearerConfig. Only GridExpense retires (active|void). GridAttachment hard-deletes.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model UnitBillsGridEntry {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  apartmentId    String   @db.Uuid
+  periodMonth    DateTime @db.Date // 1st-of-month, matches UnitUtilityBill.periodMonth
+
+  readingDate DateTime? @db.Date // per-apartment billing day-of-month
+
+  rental Decimal? @db.Decimal(12, 2) // whole-unit rent; NULL when room-grained
+
+  cleaning       Decimal? @db.Decimal(12, 2)
+  // DB-ENFORCED: CHECK "UnitBillsGridEntry_cleaningBearer_check" (owner|tenant), migration 20260727140000.
+  // Vocabulary source: `bearer` (shared/schemas/bills-grid.ts)
+  cleaningBearer String   @default("owner") // "owner" | "tenant"
+  // Per-charge Expense/Profit "nature" for the SCALAR cleaning charge (charge-nature-routing
+  // Fix 2), sourced from the CLEANING recurring definition's effective revision. "expense" =
+  // recovery of a KAEN-fronted cost → owner payout deduction / tenant Expense Bill (never KAEN
+  // revenue); "profit"/null = legacy KAEN service revenue. Read only by the flag-gated mint.
+  cleaningNature String? // "expense" | "profit"
+
+  tnbTotalRaw   Decimal? @db.Decimal(12, 2) // RAW un-shaped provider bill (C3/C5). NEVER the shaped value.
+  tnbPattern    String   @default("recharged") // "recharged" | "absorbed" | "tenant_direct" | "manager_advanced" (Task 4: KAEN-fronted, recovers from tenant pool)
+  /// GROSS provider bill for the period — NOT net of the per-room aircond recovery.
+  /// Recorded at Bill from the un-shaped `tnbTotalRaw`, never from ComputeResult (caveat C3).
+  /// Worked example: totalAircond=100, tnbTotalRaw=590, absorbed => this column stores 590,
+  /// while the owner's NET burden is 490 (they recover 100 via separately-billed per-room
+  /// aircond charges). Any consumer computing "owner cost" MUST subtract the period's aircond
+  /// charges, or it double-counts the recovery.
+  ownerBorneTnb Decimal? @db.Decimal(12, 2) // derived from raw input at Bill, never from ComputeResult (C3)
+
+  airSelangorRaw Decimal? @db.Decimal(12, 2) // AIR = Air Selangor = WATER, never air-conditioning
+  airPattern     String   @default("recharged") // "recharged" | "absorbed" | "tenant_direct" | "manager_advanced" — same allowed values as tnbPattern
+  /// GROSS provider bill for the period — same C3 caveat as `ownerBorneTnb`: not net of any
+  /// recovery, recorded from the un-shaped `airSelangorRaw` at Bill. Subtract recoveries
+  /// downstream before presenting this as an owner cost.
+  ownerBorneAir  Decimal? @db.Decimal(12, 2)
+
+  wifi       Decimal? @db.Decimal(12, 2)
+  // DB-ENFORCED: CHECK "UnitBillsGridEntry_wifiBearer_check" (owner|tenant), migration 20260727140000.
+  // Vocabulary source: `bearer` (shared/schemas/bills-grid.ts)
+  wifiBearer String   @default("owner")
+  // Per-charge Expense/Profit "nature" for the SCALAR wifi charge (charge-nature-routing Fix 2),
+  // sourced from the WIFI recurring definition's effective revision. Same semantics as
+  // cleaningNature above. Read only by the flag-gated mint.
+  wifiNature String? // "expense" | "profit"
+
+  maintenanceFee       Decimal? @db.Decimal(12, 2)
+  // DB-ENFORCED: CHECK "UnitBillsGridEntry_maintenanceFeeBearer_check" (owner|tenant), migration 20260727140000.
+  // Vocabulary source: `bearer` (shared/schemas/bills-grid.ts)
+  maintenanceFeeBearer String   @default("owner") // owner|tenant — IS a PoolComponents field as of 69fc262f (maintenance is billable)
+
+  paymentStatus String @default("unpaid") // "unpaid"|"pending"|"partial"|"paid" — billing != payment
+
+  billedAt     DateTime? // null = never billed; non-null = last-billed marker. NOT terminal — re-Bill supersedes (2026-07 invoice link).
+  // Set when the entry has live (ISSUED) invoices; cleared/updated on supersede+reissue. Read for the grid lock/state.
+  invoicedAt   DateTime?
+  lockedBy     String?   @db.Uuid // User.id — plain column (no FK)
+  // Task 5/8 (agency billing itemization): per-attempt counter for mintItemizedCharges'
+  // chargeNumber suffix (`-r${billRevision}` when > 0, omitted at 0). 0 = first issuance
+  // (original GRIDUTIL-/GRIDOWN- numbering, unchanged). Task 8's re-Bill increments this
+  // BEFORE re-minting, so the fresh chargeNumber never collides with the CREDITED
+  // prior-attempt charges under the unconditional @@unique([organizationId, chargeNumber])
+  // on Charge. Additive, prod-safe (NOT NULL is safe here — DEFAULT 0 backfills existing rows).
+  billRevision Int       @default(0)
+
+  createdBy   String   @db.Uuid // User.id — plain column (no FK)
+  updatedById String?  @db.Uuid // User.id — last admin editor; NULL = never admin-edited (plain column, no FK)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt // optimistic-concurrency token
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// Restrict, NOT Cascade: these are money rows — deleting an Apartment must never silently delete billed entries. Precedent: `UnitUtilityBill.apartment` (schema.prisma:2735) uses the same Restrict.
+  apartment    Apartment    @relation(fields: [apartmentId], references: [id], onDelete: Restrict)
+
+  expenses       GridExpense[]
+  readings       GridMeterReading[]
+  attachments    GridAttachment[]
+  // Charges minted by this entry's Bill. onDelete: SetNull (defined on Charge.sourceGridEntry)
+  // so deleting this entry nulls the ref rather than orphaning it.
+  sourcedCharges Charge[]                 @relation("GridEntrySourcedCharges")
+  // Recurring-charge snapshots frozen onto THIS period (custom lines only; cleaning/wifi
+  // stay scalar). Cascade — child rows die with the entry.
+  recurringLines GridEntryRecurringLine[]
+
+  @@unique([organizationId, apartmentId, periodMonth])
+  @@index([organizationId, periodMonth])
+  @@index([organizationId, paymentStatus])
+  @@index([organizationId, apartmentId])
+}
+
+model GridExpense {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  entryId        String   @db.Uuid
+  apartmentId    String   @db.Uuid // denormalised for search by unit (no FK)
+  periodMonth    DateTime @db.Date
+
+  // DB-ENFORCED: CHECK "GridExpense_bearer_check" (owner|tenant), migration 20260727140000.
+  // Vocabulary source: `bearer` (shared/schemas/bills-grid.ts)
+  bearer      String  @default("tenant") // "tenant" (cols O/P) | "owner" (cols Q/R)
+  nature      String? // gridexpense-nature: per-row Expense/Profit routing. NULL/"expense" → tenant Expense Bill (EB-) / owner payout deduction (today's behavior, backward-compatible); "profit" → tenant IVTEN / owner IVOWN (KAEN revenue). Read ONLY when ENABLE_CHARGE_NATURE_ROUTING is ON (stamped onto Charge.nature by mintExpenseChargesTx); flag OFF ⇒ ignored.
+  description String
+  amount      Decimal @db.Decimal(12, 2)
+  withSST     Boolean @default(false) // SST is COLUMN SEMANTICS, never an sstAmount number
+
+  partyId String? @db.Uuid // party snapshot for tenant-record reachability + name/phone search
+
+  chargeCategoryId String? @db.Uuid // bills-grid line classification (nullable; SetNull-safe — module never hard-deletes)
+
+  tenancyId String? @db.Uuid // source tenancy snapshot (bill-expenses feature, spec R3) — drives tenant-invoice co-grouping at issuance
+
+  status String @default("active") // "active" | "void" — the ONLY retire path in this module
+
+  createdBy String   @db.Uuid // User.id — plain column (no FK)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  entry          UnitBillsGridEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  chargeCategory ChargeCategory?    @relation(fields: [chargeCategoryId], references: [id], onDelete: SetNull)
+  attachments    GridAttachment[]
+  sourcedCharges Charge[]           @relation("GridExpenseSourcedCharges")
+
+  @@index([organizationId, entryId])
+  @@index([organizationId, apartmentId, periodMonth])
+  @@index([organizationId, partyId])
+  @@index([organizationId, chargeCategoryId])
+}
+
+model GridMeterReading {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  entryId        String   @db.Uuid
+  apartmentId    String   @db.Uuid // denormalised (no FK)
+  periodMonth    DateTime @db.Date
+
+  listingId String  @db.Uuid // the ROOM. = Listing.id, mirroring MeterReading.unitId (meter/repository.ts:99).
+  // NOT NULL: every reading belongs to a room, occupied or vacant. No FK (snapshot store,
+  // consistent with the other grid columns). This is the per-room discriminator the unique
+  // index keys on, so it BITES for vacant rooms (which legally carry readings — spec C1).
+  tenancyId String? @db.Uuid // KEEP nullable — snapshot; null = vacant/whole-unit. Multiple NULLs per entry are EXPECTED (one per vacant room) and correct.
+  partyId   String? @db.Uuid // KEEP nullable — snapshot.
+
+  previousKwh Decimal? @db.Decimal(12, 2)
+  currentKwh  Decimal? @db.Decimal(12, 2)
+  amount      Decimal? @db.Decimal(12, 2) // per-room AIRCOND submeter charge, ADMIN-ENTERED in v1.
+  // Fed to RoomInput.airconCharge (compute.ts:51). NOT the pax share of leftover TNB.
+  // The grid stores no tariff/rate; server-side derivation is DEFERRED (Open Question).
+
+  createdBy   String   @db.Uuid // User.id — plain column (no FK)
+  updatedById String?  @db.Uuid // User.id — last admin editor of THIS reading; NULL = never (plain column, no FK)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  entry        UnitBillsGridEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  // Keyed on listingId (NOT NULL) so it BITES for vacant rooms and the upsert typechecks.
+  // tenancyId is a snapshot payload, never a key (this replaces the spec's tenancyId-keyed index; see CORRECTION 2).
+  @@unique([organizationId, entryId, listingId])
+  @@index([organizationId, entryId])
+  @@index([organizationId, apartmentId, periodMonth])
+}
+
+model UnitBillsBearerConfig {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  apartmentId    String @db.Uuid
+
+  /// SEEDED BY THE APP, NOT BY THESE COLUMN DEFAULTS. The five bearer columns below are
+  /// written explicitly from the apartment's LISTING MODE — `bearerDefaultsFor`
+  /// (apps/api/src/modules/bills-grid/bearer-defaults.ts), applied by BOTH
+  /// resolveBearerConfig (create) and getBearerConfigService/toBearerConfigDto (read of a
+  /// unit with no row). WHOLE starts cleaning/WiFi TENANT-borne; PARTITIONED starts them
+  /// OWNER-borne; TNB/AIR are "recharged" (= Tenant) in both. The @default values here
+  /// survive only as a last-resort fallback for a raw INSERT that bypasses the app, so do
+  /// NOT read them as the real seed — change bearer-defaults.ts instead. No migration was
+  /// needed for the switch: the seed moved into the app, the columns did not change.
+  tnbPattern           String @default("recharged")
+  airPattern           String @default("recharged")
+  // DB-ENFORCED: CHECK "UnitBillsBearerConfig_cleaningBearer_check" (owner|tenant), migration 20260727140000.
+  // Vocabulary source: `bearer` (shared/schemas/bills-grid.ts)
+  cleaningBearer       String @default("owner")
+  // DB-ENFORCED: CHECK "UnitBillsBearerConfig_wifiBearer_check" (owner|tenant), migration 20260727140000.
+  // Vocabulary source: `bearer` (shared/schemas/bills-grid.ts)
+  wifiBearer           String @default("owner")
+  // DB-ENFORCED: CHECK "UnitBillsBearerConfig_maintenanceFeeBearer_check" (owner|tenant), migration 20260727140000.
+  // Vocabulary source: `bearer` (shared/schemas/bills-grid.ts)
+  maintenanceFeeBearer String @default("owner")
+
+  /// charge-nature gate (2026-07-27) — the unit's DEFAULT Expense/Profit nature for its
+  /// cleaning / wifi scalar, editable in the Unit setting drawer. This is step 3 of
+  /// `resolveScalarNatures`' precedence (period-lock.ts): the FROZEN entry column wins, then
+  /// the GOVERNING recurring revision, then this. NULL = the admin has never decided, which
+  /// under ENABLE_CHARGE_NATURE_ROUTING makes the Bill fail closed (`nature_unresolved`)
+  /// rather than silently defaulting the scalar to profit → an owner IVOWN receivable.
+  /// Nullable + no default ON PURPOSE: a default here would re-create the very silent
+  /// assumption the gate exists to remove.
+  cleaningNature String? // "expense" | "profit"
+  wifiNature     String? // "expense" | "profit"
+
+  /// Recurring cleaning amount a unit STARTS with. 0 = disabled (the established
+  /// sentinel — backfill-recurring-defs.ts reads `0/null ⇒ disabled`), i.e. no recurring
+  /// cleaning until an admin sets one in the grid's Recurring editor.
+  /// ⚠️ Was `@default(100)` until 2026-08-17. `getOrCreateEntry` seeds the month entry's
+  /// `cleaning` from this column, so the default was not cosmetic — every never-configured
+  /// unit froze a billable RM 100 onto its first period. Keep in lock-step with
+  /// `DEFAULT_CLEANING_RECURRING_AMOUNT` (bills-grid/bearer-defaults.ts), which covers the
+  /// read paths where no row exists yet.
+  cleaningRecurringAmount Decimal @default(0) @db.Decimal(12, 2)
+
+  isLocked Boolean   @default(false) // set-once + audited unlock
+  lockedAt DateTime?
+  lockedBy String?   @db.Uuid // User.id — plain column (no FK)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt // optimistic-concurrency token
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// Cascade, NOT Restrict: this row is pure per-apartment configuration carrying no money, so it dies with its Apartment. Deliberate asymmetry vs `UnitBillsGridEntry.apartment` (Restrict, precedent `UnitUtilityBill.apartment` schema.prisma:2735).
+  apartment    Apartment    @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, apartmentId])
+}
+
+/// Recurring-charge DEFINITION — the stable per-apartment identity of a recurring fee
+/// (kind CLEANING | WIFI | CUSTOM). Money/effective-dating lives on RecurringChargeRevision;
+/// this row never changes financially. Archived (archivedAt), NEVER hard-deleted, once used.
+/// organizationId/apartmentId are plain columns (app-scoped, no back-relation churn), mirroring
+/// the module's `lockedBy String? // plain column (no FK)` precedent.
+model RecurringChargeDefinition {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  apartmentId    String    @db.Uuid
+  kind           String // "CLEANING" | "WIFI" | "CUSTOM"
+  code           String // stable per (org, apartment) — e.g. "cleaning", "wifi", "custom-<slug>"
+  name           String
+  archivedAt     DateTime?
+  createdBy      String    @db.Uuid
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  revisions RecurringChargeRevision[]
+
+  @@unique([organizationId, apartmentId, code])
+  @@index([organizationId, apartmentId])
+}
+
+/// Immutable effective-dated REVISION of a definition. Editing amount/bearer/category creates a
+/// NEW revision and closes the prior's effectiveToMonth; disabling creates an enabled:false
+/// revision. Revisions of one definition NEVER overlap on [effectiveFromMonth, effectiveToMonth).
+/// categoryId is a plain column (no FK relation) — the app validates it against the seeded set.
+model RecurringChargeRevision {
+  id                 String    @id @default(uuid()) @db.Uuid
+  definitionId       String    @db.Uuid
+  amount             Decimal   @db.Decimal(12, 2)
+  // DB-ENFORCED: CHECK "RecurringChargeRevision_bearer_check" (owner|tenant), migration 20260727140000.
+  // Vocabulary source: `bearer` (shared/schemas/bills-grid.ts)
+  bearer             String // "owner" | "tenant"
+  categoryId         String?   @db.Uuid // ChargeCategory.id (custom lines); null for CLEANING/WIFI (they route via cats)
+  nature             String?   // "expense" | "profit" — null = legacy (treated as profit)
+  effectiveFromMonth DateTime  @db.Date // first-of-month, inclusive
+  effectiveToMonth   DateTime? @db.Date // first-of-month, EXCLUSIVE; null = open-ended
+  enabled            Boolean   @default(true)
+  createdBy          String    @db.Uuid
+  createdAt          DateTime  @default(now())
+
+  definition RecurringChargeDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+
+  @@index([definitionId, effectiveFromMonth])
+}
+
+/// Per-period frozen SNAPSHOT of a CUSTOM recurring line on one grid entry (cleaning/wifi keep
+/// their scalar entry fields, NOT this table). Copies every financially-meaningful field so it
+/// survives rename/disable/archive of the definition. definitionId/revisionId + resolved* are
+/// plain columns (defs are archived-not-deleted → never dangling). Billing mints one Charge per row.
+model GridEntryRecurringLine {
+  id                String   @id @default(uuid()) @db.Uuid
+  organizationId    String   @db.Uuid
+  gridEntryId       String   @db.Uuid
+  definitionId      String   @db.Uuid
+  revisionId        String   @db.Uuid
+  name              String
+  amount            Decimal  @db.Decimal(12, 2)
+  // DB-ENFORCED: CHECK "GridEntryRecurringLine_bearer_check" (owner|tenant), migration 20260727140000.
+  // Vocabulary source: `bearer` (shared/schemas/bills-grid.ts)
+  bearer            String // "owner" | "tenant"
+  nature            String?   // snapshot of the revision's nature at Bill time
+  categoryId        String   @db.Uuid
+  categoryCode      String
+  categoryName      String
+  categoryFamily    String
+  resolvedPartyId   String   @db.Uuid // owner party (owner-borne) or tenant party (tenant-borne)
+  resolvedTenancyId String?  @db.Uuid // tenant-borne only; null for owner-borne
+  resolvedUnitId    String   @db.Uuid // listing id (room / owner listing) stamped on the Charge
+  effectiveMonth    DateTime @db.Date
+  kind              String // "CUSTOM"
+  createdAt         DateTime @default(now())
+
+  gridEntry      UnitBillsGridEntry @relation(fields: [gridEntryId], references: [id], onDelete: Cascade)
+  sourcedCharges Charge[]           @relation("RecurringLineSourcedCharges")
+
+  @@unique([gridEntryId, definitionId])
+  @@index([organizationId, gridEntryId])
+}
+
+model GridAttachment {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  apartmentId    String   @db.Uuid // denormalised (no FK)
+  periodMonth    DateTime @db.Date
+
+  entryId String @db.Uuid // non-nullable: the upload get-or-creates the parent entry first
+
+  expenseId String? @db.Uuid // per-line link (nullable; entry-level rows stay null)
+
+  storageKey  String
+  filename    String
+  contentType String
+  sizeBytes   Int
+
+  uploadedBy String   @db.Uuid // User.id — plain column (no FK)
+  createdAt  DateTime @default(now())
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  entry        UnitBillsGridEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  expense      GridExpense?       @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, apartmentId, periodMonth])
+  @@index([organizationId, expenseId])
+  @@index([entryId])
+}

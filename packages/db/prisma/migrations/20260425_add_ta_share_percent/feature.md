@@ -1,0 +1,1 @@
+TA share percent on commission claim items

@@ -1,0 +1,13 @@
+-- AlterTable
+-- Task 5 (agency billing itemization): per-attempt revision counter on
+-- UnitBillsGridEntry, consumed by mintItemizedCharges' chargeNumber suffix
+-- (`-r${billRevision}` when > 0). Additive; NOT NULL is safe here because it
+-- carries a DEFAULT, so every existing row backfills to 0 (first-issuance
+-- numbering, unchanged) with no data loss. Hand-written (not `prisma migrate
+-- diff`) for the same shared-DB drift reason as 20260719130000_charge_economic_treatment:
+-- this worktree's `.env` points at the shared local `kaenproperties` dev DB,
+-- which carries cross-branch migrations absent from this branch's
+-- `prisma/migrations/` history, so `--from-migrations` (no shadowDatabaseUrl
+-- configured) and `--from-url` (would diff against live drift and could emit
+-- destructive statements neither branch wants) are both unsafe here.
+ALTER TABLE "UnitBillsGridEntry" ADD COLUMN "billRevision" INTEGER NOT NULL DEFAULT 0;

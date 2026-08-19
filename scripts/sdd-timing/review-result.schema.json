@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "sdd-timing/review-result.schema.json",
+  "title": "SDD ReviewResult + ReworkLink (schemaVersion 1.0.0)",
+  "description": "Two SEPARATE authority surfaces. ReviewResult is the reviewer's; it carries CLAIMS only and MUST NOT contain reworkOfFindingIds. ReworkLink is controller/fix-owned and is where reworkOfFindingIds lives. Authoritative cross-review relationships are produced later by controller reconciliation, not here.",
+  "definitions": {
+    "reviewResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "instrumentationVersion", "runId", "taskId", "reviewSpanId", "reviewerRole", "generatedAtEpochMs", "artifactId", "findings", "outcome"],
+      "properties": {
+        "schemaVersion": { "const": "1.0.0" },
+        "instrumentationVersion": { "type": "string" },
+        "runId": { "type": "string" },
+        "taskId": { "type": "string" },
+        "reviewSpanId": { "type": "string" },
+        "reviewerRole": { "enum": ["standard", "adversarial", "re-review", "final"] },
+        "reviewedBaseCommit": { "type": ["string", "null"] },
+        "reviewedHeadCommit": { "type": ["string", "null"] },
+        "generatedAtEpochMs": { "type": "integer" },
+        "artifactId": { "type": "string" },
+        "outcome": { "enum": ["clean", "changes-requested", "error"] },
+        "dataQuality": { "type": "object" },
+        "findings": { "type": "array", "items": { "$ref": "#/definitions/finding" } }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "reviewerClaimedNewlyDiscovered/duplicateOfFindingId/relatedFindingIds are CLAIMS. reworkOfFindingIds is NOT permitted here.",
+      "required": ["findingId", "severity", "category"],
+      "properties": {
+        "findingId": { "type": "string" },
+        "reviewSpanId": { "type": "string" },
+        "severity": { "enum": ["critical", "high", "medium", "low", "info"] },
+        "category": { "enum": ["correctness", "money", "security", "auth", "migration-safety", "concurrency", "performance", "test-coverage", "style", "other"] },
+        "summary": { "type": ["string", "null"] },
+        "file": { "type": ["string", "null"] },
+        "line": { "type": ["integer", "null"] },
+        "reviewerClaimedNewlyDiscovered": { "type": ["boolean", "null"], "description": "reviewer CLAIM or null=unknown; never forced" },
+        "duplicateOfFindingId": { "type": ["string", "null"] },
+        "relatedFindingIds": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+      }
+    },
+    "reworkLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Controller/fix-stage-owned. The ONLY place reworkOfFindingIds may be authored.",
+      "required": ["schemaVersion", "runId", "taskId", "fixSpanId", "reworkOfFindingIds", "generatedAtEpochMs", "artifactId"],
+      "properties": {
+        "schemaVersion": { "const": "1.0.0" },
+        "instrumentationVersion": { "type": "string" },
+        "runId": { "type": "string" },
+        "taskId": { "type": "string" },
+        "fixSpanId": { "type": "string" },
+        "reworkOfFindingIds": { "type": "array", "items": { "type": "string" } },
+        "generatedAtEpochMs": { "type": "integer" },
+        "artifactId": { "type": "string" }
+      }
+    }
+  },
+  "oneOf": [{ "$ref": "#/definitions/reviewResult" }, { "$ref": "#/definitions/reworkLink" }]
+}

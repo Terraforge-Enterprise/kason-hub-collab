@@ -1,0 +1,1 @@
+ALTER TABLE "Unit" DROP COLUMN "unitKind";

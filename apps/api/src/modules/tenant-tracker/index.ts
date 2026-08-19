@@ -1,0 +1,1 @@
+export { tenantTrackerRoutes } from "./routes";

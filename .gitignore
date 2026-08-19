@@ -1,0 +1,93 @@
+node_modules
+.next/
+dist
+.turbo
+coverage
+.env
+.env.local
+.env.bak
+.env.bak*
+.env*.bak*
+apps/*/.env.bak
+apps/*/.env.bak*
+apps/*/.env*.bak*
+
+# Local credential / secret files (AWS access keys, DB URLs, console logins).
+# NEVER commit — these are downloaded IAM/Supabase credential exports.
+Cadis_con_*.csv
+*credentials*.csv
+*accessKeys*.csv
+*.credentials.csv
+credentials/
+# Per-mode local overrides (e.g. apps/web/.env.development.local, which enables
+# a Phase-2 money flag for `vite dev` only). Never commit these — they must not
+# reach a build or CI.
+.env.*.local
+uat.env
+uat2.env
+dev.env
+prod.env
+*.secrets.env
+.prisma
+uploads
+.DS_Store
+.mcp.json
+.gitnexus
+.superpowers/
+
+# OpenNext build output
+.open-next/
+
+# Terraform
+infra/.terraform/
+infra/**/.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfplan
+.terraform.lock.hcl
+
+# Build artifacts (local packaging)
+*.zip
+
+# TypeScript build info
+tsconfig.tsbuildinfo
+
+# Local Claude Code settings
+.claude/settings.local.json
+screenshots/
+e2e/e2e/
+e2e/smoke-results*.json
+supabase/.temp/
+
+# Git worktrees
+.worktrees/
+.claude/worktrees/
+.superpowers/
+
+# Meeting recordings — large binaries, keep local only (nested per-meeting folders)
+docs/meetings/**/*.mp3
+docs/meetings/**/*.m4a
+docs/meetings/**/*.mp4
+docs/meetings/**/*.wav
+*.mp3
+*.m4a
+
+# Claude Code scheduled-task runtime state
+.claude/scheduled_tasks.lock
+
+# UAT migration freeze toggle — local-only, holds PITR-verified date when unlocked
+.claude/uat-migration-allowed
+
+# Phone backfill artifacts (contain redacted PII; do not commit)
+phone-backfill.dryrun.log
+phone-backfill.warnings.log
+backups/
+
+# Subagent-driven-development scratch
+.superpowers/
+
+# Local dev DB baseline for scripts/local-db-reset.sh (contains password hashes)
+.local-db-baseline/
+
+# Playwright MCP browser-verification artifacts (console logs + page snapshots)
+.playwright-mcp/

@@ -1,0 +1,1 @@
+Agent card — drop brandName and brandTagline columns (logo carries the wordmark)

@@ -1,0 +1,29 @@
+{
+  "name": "kason-hub",
+  "version": "0.3.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "dev:lan": "bash scripts/dev-lan.sh",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "backfill:unit-month-ledger": "tsx scripts/backfill-unit-month-ledger.ts",
+    "db:reset": "bash scripts/local-db-reset.sh reset",
+    "db:reset:bare": "bash scripts/local-db-reset.sh reset --bare",
+    "db:snapshot": "bash scripts/local-db-reset.sh snapshot",
+    "db:status": "bash scripts/local-db-reset.sh status"
+  },
+  "devDependencies": {
+    "dotenv": "^17.4.1",
+    "turbo": "^2.5.8",
+    "typescript": "^5.9.3"
+  },
+  "description": "Kason Hub monorepo (Turborepo, Vite web, Hono API)",
+  "packageManager": "npm@10.9.4"
+}

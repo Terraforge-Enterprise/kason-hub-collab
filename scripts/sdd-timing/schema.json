@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "sdd-timing/schema.json",
+  "title": "SDD timing report (schemaVersion 1.0.0)",
+  "type": "object",
+  "required": ["schemaVersion", "runId", "provenance", "reportLabel", "spans", "rollup", "coverage", "knownUnknowns"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "runId": { "type": "string" },
+    "provenance": { "enum": ["historical", "forward"] },
+    "reportLabel": { "enum": ["ILLUSTRATIVE", "measured"] },
+    "generatedFrom": { "type": "string" },
+    "spanCount": { "type": "integer" },
+    "spans": { "type": "array", "items": { "$ref": "#/definitions/span" } },
+    "rollup": { "$ref": "#/definitions/rollup" },
+    "coverage": { "type": "object" },
+    "knownUnknowns": { "type": "array", "items": { "type": "string" } }
+  },
+  "definitions": {
+    "statusMetric": {
+      "type": "object",
+      "required": ["value", "status"],
+      "properties": {
+        "value": { "type": ["number", "null"] },
+        "status": { "enum": ["authoritative", "estimated", "incomplete", "unavailable"] },
+        "reason": { "type": ["string", "null"] }
+      }
+    },
+    "span": {
+      "type": "object",
+      "required": ["spanId", "stage", "stageClass", "startedAtEpochMs", "endedAtEpochMs", "durationClock", "dataQuality"],
+      "properties": {
+        "spanId": { "type": "string" },
+        "stage": { "enum": ["dispatch", "implement", "evidence-gate", "review", "review-standard", "review-adversarial", "review-ambiguous", "fix", "re-review", "integration-gate", "commit", "unknown"] },
+        "taskId": { "type": ["string", "null"] },
+        "agentRole": { "type": "string" },
+        "stageClass": { "enum": ["observed", "derived", "inferred", "unknown"] },
+        "stageConfidence": { "enum": ["high", "medium", "low", null] },
+        "startedAtEpochMs": { "type": ["integer", "null"] },
+        "endedAtEpochMs": { "type": ["integer", "null"] },
+        "durationClock": { "enum": ["epoch", "monotonic"] },
+        "model": { "type": ["string", "null"] },
+        "inputTokens": { "type": "integer" },
+        "outputTokens": { "type": "integer" },
+        "cacheReadTokens": { "type": "integer" },
+        "cacheCreationTokens": { "type": "integer" },
+        "toolCalls": { "type": "integer" },
+        "summedToolMs": { "type": "integer" },
+        "unionElapsedToolMs": { "type": "integer" },
+        "unmatchedToolUses": { "type": "integer" },
+        "unmatchedToolResults": { "type": "integer" },
+        "baseCommit": { "type": ["string", "null"] },
+        "headCommit": { "type": ["string", "null"] },
+        "baseHeadClass": { "enum": ["observed", "derived", "inferred", "unknown"] },
+        "dataQuality": {
+          "type": "object",
+          "properties": {
+            "confidence": { "enum": ["high", "medium", "low"] },
+            "missingFields": { "type": "array", "items": { "type": "object", "required": ["field", "reason"] } },
+            "inferenceNotes": { "type": "array" },
+            "instrumentationErrors": { "type": "array" },
+            "errors": { "type": "array", "items": { "type": "string" } },
+            "malformedLines": { "type": "integer" }
+          }
+        }
+      }
+    },
+    "rollup": {
+      "type": "object",
+      "required": ["observedSpanEnvelopeMs", "aggregateAgentMs", "criticalPath"],
+      "properties": {
+        "observedSpanEnvelopeMs": { "$ref": "#/definitions/statusMetric" },
+        "wallClockMs": { "$ref": "#/definitions/statusMetric" },
+        "aggregateAgentMs": { "$ref": "#/definitions/statusMetric" },
+        "criticalPath": {
+          "type": "object",
+          "required": ["field", "value", "status"],
+          "properties": {
+            "field": { "enum": ["criticalPathMs", "estimatedActiveCriticalPathMs"] },
+            "value": { "type": ["number", "null"] },
+            "status": { "enum": ["authoritative", "estimated", "incomplete", "unavailable"] },
+            "confidence": { "enum": ["high", "medium", "low", null] },
+            "edgesInferred": { "type": "boolean" },
+            "assumptions": { "type": "array", "items": { "type": "string" } },
+            "dataQualityErrors": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "residualUnobservedElapsedMs": { "$ref": "#/definitions/statusMetric" },
+        "aggregateMinusCriticalMs": { "$ref": "#/definitions/statusMetric" },
+        "reworkFindings": { "$ref": "#/definitions/statusMetric" },
+        "adversarialUniqueFindings": { "$ref": "#/definitions/statusMetric" }
+      }
+    }
+  }
+}

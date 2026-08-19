@@ -1,0 +1,17 @@
+-- Persist the GATEWAY's own transaction id (Fiuu `tranID`) alongside our order id.
+--
+-- Why this column has to exist:
+--   Fiuu's status-requery APIs are retention-limited per lookup key. Querying by
+--   OUR order id (`providerTxnId`, already stored) returns nothing after 7 days.
+--   Querying by THEIR transaction id returns results for 180 days, at the
+--   fastest tier and the highest rate limit. The FPX Merchant Services
+--   Agreement (cl. 7.2) gives a payer 60 days to demand funds back — so the
+--   order-id path structurally cannot cover our own dispute window, and this one
+--   comfortably can.
+--
+--   The value is knowable ONLY from a message Fiuu sends us (callback or browser
+--   return). If it is not captured at that moment it is unrecoverable.
+--
+-- Additive and reversible: nullable, no default, no backfill, no index. Existing
+-- rows keep NULL and every existing query is unaffected.
+ALTER TABLE "Payment" ADD COLUMN "providerTranId" TEXT;

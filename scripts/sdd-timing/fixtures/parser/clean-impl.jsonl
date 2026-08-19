@@ -1,0 +1,4 @@
+{"type":"user","timestamp":"2026-07-13T16:00:00.000Z","message":{"role":"user","content":"Implement Task 1"}}
+{"type":"assistant","timestamp":"2026-07-13T16:00:10.000Z","message":{"model":"claude-opus-4-8","usage":{"input_tokens":1000,"output_tokens":50,"cache_read_input_tokens":200,"cache_creation_input_tokens":100},"content":[{"type":"tool_use","id":"t1","name":"Edit"}]}}
+{"type":"user","timestamp":"2026-07-13T16:00:13.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}}
+{"type":"assistant","timestamp":"2026-07-13T16:00:20.000Z","message":{"model":"claude-opus-4-8","usage":{"input_tokens":500,"output_tokens":80,"cache_read_input_tokens":300,"cache_creation_input_tokens":0},"content":[{"type":"text","text":"done"}]}}

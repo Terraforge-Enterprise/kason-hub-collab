@@ -1,0 +1,14 @@
+-- Task 6a (Phase-2 owner remittance): OwnerLedgerEntry.propertyId becomes NULLABLE.
+--
+-- null = "this ledger entry belongs to the owner overall and is not attributable
+-- to one property" — NOT "unknown property", NOT invalid data, NOT a nil-UUID
+-- sentinel. A Phase-2 owner remittance may span multiple properties (R9) or be a
+-- combined-scope pre-statement payout, so its single payout ledger entry can't
+-- carry one meaningful propertyId.
+--
+-- Forward-only, reversible (ADD NOT NULL back is always possible while no row is
+-- actually null), no backfill, no data touched: every existing row keeps its
+-- current non-null value. Only the DB constraint changes — this migration writes
+-- zero rows. Precedent: ManagementFeeConfig.propertyId is already nullable with
+-- the identical "null = all the owner's properties" semantic.
+ALTER TABLE "OwnerLedgerEntry" ALTER COLUMN "propertyId" DROP NOT NULL;

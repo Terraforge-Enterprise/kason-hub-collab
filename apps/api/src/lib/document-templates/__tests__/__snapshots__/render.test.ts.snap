@@ -1,0 +1,86 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`renderToHtml > matches the locked-in layout snapshot 1`] = `
+"<!DOCTYPE html><html><head><meta charset='utf-8'/><style>
+  /* Chromium honors @page for the print box. Setting margins here means
+     pagination flows naturally; the .page div no longer fights with
+     puppeteer's margin defaults. Bottom margin is wider than the others to
+     reserve room for the page-number footer rendered by puppeteer's
+     headerTemplate/footerTemplate. */
+  @page{size:A4;margin:18mm 18mm 22mm 18mm}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,Helvetica,sans-serif;font-size:10.5pt;color:#1f2937;line-height:1.45}
+  .page{padding:0}
+
+  /* Header */
+  .doc-header{display:grid;grid-template-columns:1fr 2fr 1fr;gap:8mm;align-items:start;margin-bottom:8mm;padding-bottom:5mm;border-bottom:1px solid #d1d5db}
+  /* Keep max-height in sync with LOGO_MAX_HEIGHT_MM in
+     apps/web/src/lib/pdf-layout-constants.ts (the render snapshot test
+     will fail if this literal changes without updating the constant). */
+  .zone-left img{max-width:100%;max-height:40mm}
+  .zone-center{text-align:center}
+  .zone-center h1{font-size:14pt;font-weight:700;margin-bottom:2mm;letter-spacing:0.3pt}
+  .zone-center p{font-size:8.5pt;color:#4b5563;line-height:1.4}
+  .zone-right{text-align:right}
+  .zone-right h2{font-size:11pt;font-weight:700;text-transform:uppercase;letter-spacing:0.5pt;margin-bottom:3mm}
+  .zone-right p{font-size:9pt;line-height:1.55;color:#374151}
+  .zone-right .ref-label{margin-top:1mm;color:#6b7280;font-size:8.5pt;letter-spacing:0.3pt;text-transform:uppercase}
+  .zone-right .ref-value{margin-top:0;margin-bottom:1.5mm;font-size:10pt;font-variant-numeric:tabular-nums}
+
+  /* Body */
+  main{margin-top:4mm}
+  main section{margin-top:8mm}
+  main section:first-child{margin-top:0}
+  main h3{
+    font-size:9.5pt;font-weight:700;text-transform:uppercase;letter-spacing:0.8pt;
+    color:#111827;margin-bottom:3mm;padding-bottom:1.5mm;border-bottom:1px solid #9ca3af
+  }
+  main p{font-size:10.5pt;margin:1mm 0;color:#1f2937}
+  main p strong{display:inline-block;min-width:44mm;font-weight:600;color:#374151}
+
+  /* Fee tables */
+  main .fee-table{width:100%;border-collapse:collapse;margin-top:1mm}
+  main .fee-table td{padding:1.2mm 0;font-size:10.5pt;border-bottom:1px dotted #e5e7eb}
+  main .fee-table td:last-child{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  main .fee-table tr:last-child td{border-bottom:none}
+  main .fee-total{margin-top:3mm;display:flex;justify-content:space-between;align-items:baseline;
+    padding:2mm 0;border-top:2px solid #111827;border-bottom:2px solid #111827;
+    font-weight:700;text-transform:uppercase;letter-spacing:0.6pt;font-size:10.5pt}
+  main .fee-total .amount{font-variant-numeric:tabular-nums}
+
+  /* Terms list — the OL itself MUST be allowed to break across pages.
+     Putting page-break-inside:avoid on the whole list caused Chromium to
+     chop the last clause mid-word when the content was taller than A4
+     (2026-05-22 client report on the cut-off "stated a..." rendering).
+     Per-list-item break-inside:avoid keeps each numbered clause whole
+     across the page boundary, which is what we actually want. */
+  main ol{padding-left:6mm;margin-top:1mm}
+  main ol li{font-size:10pt;margin:1.5mm 0;line-height:1.5;padding-left:1mm;break-inside:avoid;page-break-inside:avoid}
+
+  /* Terms & Conditions starts on its own page — keeps the totals/summary
+     and the signature block out of competition for the same page (client
+     report 2026-05-22, screenshot 4e429e19). The OL inside still wraps
+     across pages thanks to the per-LI break-inside rule above. */
+  .tnc-section{page-break-before:always}
+
+  /* Signature block — applicant-only, bottom-right.
+     Flex with justify-end pins the 80mm signature column to the right and
+     leaves the left side as whitespace. */
+  .signature-section{margin-top:12mm;page-break-inside:avoid}
+  .sig-grid{display:flex;justify-content:flex-end}
+  .sig-grid > .sig-col{width:80mm}
+  .sig-col h4{
+    font-size:9pt;font-weight:700;text-transform:uppercase;letter-spacing:0.8pt;
+    color:#111827;margin-bottom:4mm
+  }
+  .sig-img-wrap{height:26mm;display:flex;align-items:flex-end;padding-bottom:1mm}
+  .sig-img-wrap img{max-width:60mm;max-height:24mm}
+  .sig-line{border-bottom:1px solid #111827;margin-top:1mm}
+  .sig-fields{width:100%;border-collapse:collapse;margin-top:3mm}
+  .sig-fields td{padding:1mm 0;font-size:9pt;vertical-align:top;line-height:1.4}
+  .sig-fields td:first-child{width:24mm;font-weight:600;color:#4b5563;letter-spacing:0.3pt}
+  .sig-fields td:last-child{color:#111827}
+  .audit-footer{margin-top:10mm;padding-top:3mm;border-top:1px solid #e5e7eb;
+    font-size:8pt;color:#6b7280;text-align:center;letter-spacing:0.2pt}
+</style></head><body><div class='page'><header class="doc-header"><div class="zone-left"></div><div class="zone-center"><h1>KAEN Properties</h1><p>Reg No: 1610050-V</p><p>Service Tax ID: W10-2506-32000179</p><p>NO. 27-3, Jalan Perdana 10/12</p><p>Pandan Perdana, 55300 Kuala Lumpur</p><p>Email: kaenproperties@gmail.com</p><p>Contact: +601136111763</p></div><div class="zone-right"><h2>Unit Reservation Form</h2><p class="ref-label">Reference Number:</p><p class="ref-value"><strong>KAEN RES-99999</strong></p><p>Date: 13/5/2026</p><p>Due Date: 20/5/2026</p></div></header><main><section><h3>Body</h3><p>Hello</p></section></main><footer class="signature-section"><div class="sig-grid"><div class="sig-col"><h4>Signed by the Applicant</h4><div class="sig-img-wrap"><img src="data:image/png;base64,SIGSTUB" alt="signature"/></div><div class="sig-line"></div><table class="sig-fields"><tbody><tr><td>Name</td><td>Snapshot Signer</td></tr><tr><td>Date</td><td>14 May 2026</td></tr></tbody></table></div></div><p class="audit-footer">Signed digitally — Signed by: Snapshot Signer · 14 May 2026 · IP 9.9.9.9</p></footer></div></body></html>"
+`;

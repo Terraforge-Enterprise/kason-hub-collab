@@ -1,0 +1,1 @@
+Unit uniqueness scoped by type (allows same code per type)

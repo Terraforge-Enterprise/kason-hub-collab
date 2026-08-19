@@ -1,0 +1,17 @@
+-- Pre-deploy safety net: if Supabase prod still has the OLD AuditLog shape
+-- (with description/userName/metadata/ipAddress/userId), this migration is
+-- INTENTIONALLY EMPTY because the upstream deploy step (see docs/runbooks/
+-- phase1-deploy.md) handles it via TRUNCATE + reseed (Path A) OR an explicit
+-- UPDATE ... JSONB backfill followed by `prisma migrate resolve` (Path B).
+--
+-- This file exists ONLY so the migration history records that the audit-log
+-- reshape performed by 20260423_phase1_expansion was acknowledged as
+-- data-destructive and that an operator-in-the-loop deploy runbook was
+-- produced. If you are applying this migration on a fresh/empty database,
+-- it is a no-op. If you are applying it on a populated prod database, you
+-- MUST follow the runbook BEFORE 20260423_phase1_expansion is applied.
+--
+-- Related review findings: Schema #1 + #2 (CRITICAL).
+-- Runbook: docs/runbooks/phase1-deploy.md
+-- Deploy task: T6.2
+SELECT 1;

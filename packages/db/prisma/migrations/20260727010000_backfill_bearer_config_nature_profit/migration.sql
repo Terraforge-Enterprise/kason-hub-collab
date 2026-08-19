@@ -1,0 +1,25 @@
+-- charge-nature gate (2026-07-27), part 2 of 2 — BACKFILL existing units to the nature they
+-- were ALREADY billing under.
+--
+-- Companion to 20260727000000_bearer_config_scalar_nature, which added the columns NULL. NULL
+-- means "the admin has never decided", and the new bill-time guard
+-- (billableNatureUnresolved, apps/api/src/modules/bills-grid/service.ts) fails a Bill closed on
+-- it. For a BRAND-NEW unit that is exactly right. For units that already exist and already
+-- bill, it would block every one of them at once — `UnitBillsBearerConfig.cleaningRecurringAmount`
+-- defaults to 100, so materialize seeds `cleaning = 100` on effectively every unit.
+--
+-- 'profit' is chosen because it is IDENTICAL to what NULL already did: the pre-gate mint treated
+-- a null nature as manager_revenue (owner -> an IVOWN line, tenant -> IVTEN). So this backfill
+-- changes NO money routing anywhere — it only makes the existing implicit choice EXPLICIT and,
+-- for the first time, visible and changeable in the Unit setting drawer. Deliberately NOT the
+-- recurring editor's defaultNatureForKind (Cleaning->Profit, WiFi->Expense): WiFi->Expense would
+-- move owner WiFi off IVOWN onto a payout deduction and tenant WiFi onto an Expense Bill, which
+-- is a real routing change and must be a per-unit decision, not a migration's.
+--
+-- Scoped to EXISTING rows only (WHERE ... IS NULL, run once). A config row created after this
+-- migration is born NULL and still fails closed — the gate keeps its teeth for new units.
+--
+-- Rollback: UPDATE "UnitBillsBearerConfig" SET "cleaningNature" = NULL, "wifiNature" = NULL;
+--   (safe: restores the pre-gate state, at which point Bills fail closed again until re-decided)
+UPDATE "UnitBillsBearerConfig" SET "cleaningNature" = 'profit' WHERE "cleaningNature" IS NULL;
+UPDATE "UnitBillsBearerConfig" SET "wifiNature"     = 'profit' WHERE "wifiNature"     IS NULL;

@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "1.0.0",
+  "instrumentationVersion": "sdd-timing/1.0.0",
+  "runId": "run-1",
+  "taskId": "task-7",
+  "reviewSpanId": "rev-adv-7",
+  "reviewerRole": "adversarial",
+  "reviewedBaseCommit": "aaa111",
+  "reviewedHeadCommit": "bbb222",
+  "generatedAtEpochMs": 1784500000000,
+  "findings": [
+    {
+      "findingId": "F1",
+      "reviewSpanId": "rev-adv-7",
+      "severity": "high",
+      "category": "money",
+      "summary": "SST rounding off by 0.01",
+      "file": "apps/api/src/modules/owner-billing/service.ts",
+      "line": 212,
+      "reviewerClaimedNewlyDiscovered": true,
+      "duplicateOfFindingId": null,
+      "relatedFindingIds": [
+        "F2"
+      ]
+    },
+    {
+      "findingId": "F2",
+      "reviewSpanId": "rev-adv-7",
+      "severity": "low",
+      "category": "style",
+      "summary": "naming nit",
+      "file": "apps/api/src/x.ts",
+      "line": 5,
+      "reviewerClaimedNewlyDiscovered": false,
+      "duplicateOfFindingId": null,
+      "relatedFindingIds": []
+    }
+  ],
+  "outcome": "changes-requested",
+  "artifactId": "d0e6773b156b11c0f15ed111bbc2b3d6c9140b472c758afaaead10f49ebc433b"
+}

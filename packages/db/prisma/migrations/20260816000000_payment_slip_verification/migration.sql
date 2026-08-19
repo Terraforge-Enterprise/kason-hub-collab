@@ -1,0 +1,60 @@
+-- Tenant transfer-slip verification: an admin's refusal of a tenant-submitted
+-- bank transfer needs somewhere to record WHY, WHEN, and BY WHOM.
+--
+-- A tenant who paid outside FPX (cheque, bank app transfer) submits the payment
+-- with a slip; it lands `pending_approval` and settles nothing. An admin either
+-- posts it (existing path, status -> "posted") or refuses it (new path, status
+-- -> "rejected"). Only the refusal path stamps these columns.
+--
+-- `rejectionReason` is TENANT-VISIBLE by design — it is shown back to them so a
+-- blurry or wrong-amount slip can be re-submitted. This is why it is a dedicated
+-- column and not appended to "referenceNote", which is an internal admin note
+-- that the void path already writes history lines into.
+--
+-- "rejected" is deliberately NOT "void": void reverses money the org ACCEPTED,
+-- whereas a rejected slip is money that never arrived.
+--
+-- Inertness is NOT universal — do not read the following as "safe everywhere".
+-- Every reader that goes through CASH_ALLOCATION_WHERE
+-- (packages/shared/src/billing/cash-allocation.ts) keys on status = 'posted'
+-- and therefore ignores a rejected row, exactly as it ignores the existing
+-- "expired"/"failed" rows. That covers the billing documents, the bills grid,
+-- the portal, and the payments summary.
+--
+-- Four owner-ledger reads USED to query PaymentAllocation with no payment
+-- filter at all, counting any allocation as collected cash. That hole PRE-DATED
+-- this work ("pending_approval"/"expired" already reached it), but
+-- tenant-submitted slips make non-posted allocations far more common — reject a
+-- slip against a charge in a frozen month and prior-period-collection would pay
+-- the owner money that never arrived. All four now spread
+-- CASH_ALLOCATION_WHERE:
+--   apps/api/src/modules/owner-ledger/prior-period-collection.ts
+--   apps/api/src/modules/owner-ledger/reconciliation/preflight.ts (x2)
+--   apps/api/src/modules/owner-ledger/reconciliation/source-to-ledger.ts
+-- ⚠️ Two legs, two different questions — do NOT collapse them again. Counting
+-- CASH asks "is this posted". Posting a CLAWBACK asks "was the owner ever
+-- CREDITED", which payment status cannot answer: `posted`-only hides a voided
+-- allocation so the clawback never posts (owner keeps money the org returned),
+-- while widening to void/refunded lets a reversal on a never-credited
+-- allocation debit the owner out of nothing. The reversal leg is gated on the
+-- ledger's own rows instead — see `recognisedCreditAllocIds` in
+-- owner-ledger/prior-period-collection.ts.
+--
+-- An earlier revision of this comment asserted the opposite ("the filter
+-- belongs on the QUERY"); that design was reverted. Left recorded here because
+-- the wrong version shipped twice.
+--
+-- ADDITIVE + REVERSIBLE: three nullable columns, no backfill, no row rewritten,
+-- no existing value reinterpreted. No FK on "reviewedById" — it mirrors the
+-- plain-column convention already used by PaymentAllocationReversal.reversedById.
+--
+-- Rollback:
+--   ALTER TABLE "Payment"
+--     DROP COLUMN "rejectionReason",
+--     DROP COLUMN "reviewedAt",
+--     DROP COLUMN "reviewedById";
+
+ALTER TABLE "Payment"
+  ADD COLUMN "rejectionReason" TEXT,
+  ADD COLUMN "reviewedAt"      TIMESTAMP(3),
+  ADD COLUMN "reviewedById"    UUID;

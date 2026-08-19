@@ -1,0 +1,356 @@
+@import "tailwindcss";
+
+/* Tailwind v4: enable class-based dark mode via .dark on <html> */
+@custom-variant dark (&:is(.dark *));
+
+/* ------------------------------------------------------------------ */
+/* shadcn/ui theme tokens for Tailwind v4                             */
+/* ------------------------------------------------------------------ */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* ------------------------------------------------------------------ */
+/* Design tokens: Navy + Gold + Glassmorphism                         */
+/* ------------------------------------------------------------------ */
+
+:root {
+  color-scheme: light;
+
+  /* Brand */
+  --gold:          #D4AF37;
+  --gold-light:    #E8CF6D;
+  --gold-dark:     #B8963E;
+  --gold-muted:    #C5A55A;
+  --gold-gradient: linear-gradient(135deg, #B8963E, #D4AF37, #E8CF6D);
+  --gold-fg:       #0a0e1f;
+
+  /* Sidebar */
+  --sidebar-bg:    #0a0e1f;
+  --sidebar-ink:   #e2e8f0;
+  --sidebar-muted: #94a3b8;
+  --sidebar-border: rgba(255,255,255,0.10);
+  --sidebar-hover:  rgba(255,255,255,0.05);
+  --sidebar-active-bg: rgba(212,175,55,0.12);
+  --sidebar-active-border: rgba(212,175,55,0.4);
+
+  /* shadcn semantic tokens — light */
+  --background:    #F9F8F6;
+  --foreground:    #1a1a1a;
+  --card:          #FFFFFF;
+  --card-foreground: #1a1a1a;
+  --popover:       #FFFFFF;
+  --popover-foreground: #1a1a1a;
+  --primary:       #2563EB;
+  --primary-foreground: #FFFFFF;
+  --secondary:     #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted:         #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent:        #f1f5f9;
+  --accent-foreground: #0f172a;
+  --destructive:   #EF4444;
+  --destructive-foreground: #FFFFFF;
+  --border:        #e5e5e5;
+  --input:         #d1d5db;
+  --ring:          rgba(37,99,235,0.2);
+  --radius:        0.75rem;
+
+  /* Surfaces (legacy compat) */
+  --page-bg:       var(--background);
+  --card-bg:       var(--card);
+  --card-border:   var(--border);
+  --card-shadow:   0 1px 3px rgba(0,0,0,0.06), 0 8px 24px -12px rgba(0,0,0,0.08);
+
+  /* Text (legacy compat) */
+  --text-primary:  var(--foreground);
+  --text-secondary: var(--muted-foreground);
+  --text-muted:    #9ca3af;
+
+  /* Functional (legacy compat) */
+  --primary-hover: #1D4ED8;
+  --primary-ring:  rgba(37,99,235,0.2);
+  --success:       #10B981;
+  --warning:       #F59E0B;
+  --danger:        var(--destructive);
+
+  /* Borders & misc (legacy compat) */
+  --input-border:  var(--input);
+
+  /* Glow card */
+  --glow-hue:      43;
+  --glow-saturation: 74;
+  --glow-lightness: 52;
+  --glow-opacity:  0.08;
+  --glow-border-opacity: 0.6;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --background:    #0c0f1a;
+  --foreground:    #F0EDE6;
+  --card:          rgba(255,255,255,0.04);
+  --card-foreground: #F0EDE6;
+  --popover:       #1a1d2e;
+  --popover-foreground: #F0EDE6;
+  --primary:       #3b82f6;
+  --primary-foreground: #FFFFFF;
+  --secondary:     rgba(255,255,255,0.06);
+  --secondary-foreground: #e2e8f0;
+  --muted:         rgba(255,255,255,0.06);
+  --muted-foreground: #9ca3af;
+  --accent:        rgba(255,255,255,0.08);
+  --accent-foreground: #e2e8f0;
+  --destructive:   #ef4444;
+  --destructive-foreground: #FFFFFF;
+  --border:        rgba(255,255,255,0.08);
+  --input:         rgba(255,255,255,0.15);
+  --ring:          rgba(212,175,55,0.25);
+
+  /* Legacy compat */
+  --page-bg:       var(--background);
+  --card-bg:       var(--card);
+  --card-border:   var(--border);
+  --card-shadow:   0 1px 3px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.4);
+  --text-primary:  var(--foreground);
+  --text-secondary: var(--muted-foreground);
+  --text-muted:    #6b7280;
+  --input-border:  var(--input);
+
+  --glow-opacity:  0.12;
+  --glow-border-opacity: 0.8;
+
+  --sidebar-bg:    #060812;
+  --gold-fg:       #0a0e1f;
+}
+
+/* ------------------------------------------------------------------ */
+/* Base reset                                                         */
+/* ------------------------------------------------------------------ */
+
+* { box-sizing: border-box; }
+
+html {
+  background: var(--page-bg);
+}
+
+@layer base {
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    font-family: var(--font-sans);
+    background: var(--page-bg);
+    color: var(--text-primary);
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: inherit; text-decoration: none; }
+  button, input, textarea, select { font: inherit; }
+  ::selection { background: rgba(212,175,55,0.2); }
+}
+
+/* ------------------------------------------------------------------ */
+/* Animations                                                         */
+/* ------------------------------------------------------------------ */
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(12px) scale(0.995); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translate3d(0,0,0); }
+  50%      { transform: translate3d(0,12px,0); }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 400ms cubic-bezier(0.22,1,0.36,1);
+}
+
+.animate-float {
+  animation: float 12s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in-up,
+  .animate-float {
+    animation: none;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Utility classes                                                    */
+/* ------------------------------------------------------------------ */
+
+.font-display {
+  font-family: var(--font-sans);
+  letter-spacing: -0.025em;
+}
+
+.gold-text {
+  background: var(--gold-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gold-border {
+  border-image: var(--gold-gradient) 1;
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
+
+/* Slim, theme-subtle scrollbar — tuned for dark surfaces (e.g. the sidebar).
+   Replaces the chunky default browser "roller" with a 6px translucent-white
+   thumb on a transparent track that intensifies on hover. */
+.scrollbar-slim {
+  scrollbar-width: thin;                                  /* Firefox */
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent; /* Firefox: thumb track */
+  &::-webkit-scrollbar { width: 6px; height: 6px; }
+  &::-webkit-scrollbar-track { background: transparent; }
+  &::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.14);
+    border-radius: 9999px;
+  }
+  &::-webkit-scrollbar-thumb:hover { background-color: rgba(255, 255, 255, 0.28); }
+}
+
+/* Glass effect for dark mode cards */
+.glass {
+  background: var(--card-bg);
+  backdrop-filter: blur(16px) saturate(1.5);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5);
+  border: 1px solid var(--card-border);
+}
+
+/* ------------------------------------------------------------------ */
+/* 21st.dev GlowCard effect                                           */
+/* ------------------------------------------------------------------ */
+
+[data-glow]::before,
+[data-glow]::after {
+  pointer-events: none;
+  content: "";
+  position: absolute;
+  inset: calc(var(--border-size, 2px) * -1);
+  border: var(--border-size, 2px) solid transparent;
+  border-radius: calc(var(--radius, 14) * 1px);
+  background-attachment: fixed;
+  background-size: calc(100% + (2 * var(--border-size, 2px))) calc(100% + (2 * var(--border-size, 2px)));
+  background-repeat: no-repeat;
+  background-position: 50% 50%;
+  mask:
+    linear-gradient(transparent, transparent),
+    linear-gradient(white, white);
+  mask-clip: padding-box, border-box;
+  mask-composite: intersect;
+}
+
+[data-glow]::before {
+  background-image: radial-gradient(
+    calc(var(--spotlight-size, 150px) * 0.75) calc(var(--spotlight-size, 150px) * 0.75) at
+    calc(var(--x, 0) * 1px)
+    calc(var(--y, 0) * 1px),
+    hsl(var(--hue, 210) calc(var(--saturation, 100) * 1%) calc(var(--lightness, 50) * 1%) / var(--border-spot-opacity, 1)),
+    transparent 100%
+  );
+  filter: brightness(2);
+}
+
+[data-glow]::after {
+  background-image: radial-gradient(
+    calc(var(--spotlight-size, 150px) * 0.5) calc(var(--spotlight-size, 150px) * 0.5) at
+    calc(var(--x, 0) * 1px)
+    calc(var(--y, 0) * 1px),
+    hsl(0 100% 100% / var(--border-light-opacity, 1)),
+    transparent 100%
+  );
+}
+
+[data-glow] [data-glow] {
+  position: absolute;
+  inset: 0;
+  will-change: filter;
+  opacity: var(--outer, 1);
+  border-radius: calc(var(--radius, 14) * 1px);
+  border-width: calc(var(--border-size, 2px) * 20);
+  filter: blur(calc(var(--border-size, 2px) * 10));
+  background: none;
+  pointer-events: none;
+  border: none;
+}
+
+[data-glow] > [data-glow]::before {
+  inset: -10px;
+  border-width: 10px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Auth page styles                                                   */
+/* ------------------------------------------------------------------ */
+
+.auth-shell {
+  position: relative;
+}
+
+.auth-shell::before {
+  content: "";
+  position: absolute;
+  inset: 18px;
+  z-index: -1;
+  border-radius: 36px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.54), rgba(255, 255, 255, 0.08)),
+    repeating-linear-gradient(
+      135deg,
+      rgba(37, 99, 235, 0.03) 0,
+      rgba(37, 99, 235, 0.03) 1px,
+      transparent 1px,
+      transparent 22px
+    );
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.auth-enter {
+  animation: fade-in-up 480ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.auth-orb {
+  animation: float 12s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-enter,
+  .auth-orb {
+    animation: none;
+  }
+}
