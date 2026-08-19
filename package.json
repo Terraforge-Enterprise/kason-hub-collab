@@ -14,10 +14,9 @@
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
     "backfill:unit-month-ledger": "tsx scripts/backfill-unit-month-ledger.ts",
-    "db:reset": "bash scripts/local-db-reset.sh reset",
-    "db:reset:bare": "bash scripts/local-db-reset.sh reset --bare",
-    "db:snapshot": "bash scripts/local-db-reset.sh snapshot",
-    "db:status": "bash scripts/local-db-reset.sh status"
+    "db:generate": "npm run prisma:generate -w @kason/db",
+    "db:migrate": "npm run prisma:migrate:dev -w @kason/db",
+    "db:seed": "npm run prisma:seed -w @kason/db"
   },
   "devDependencies": {
     "dotenv": "^17.4.1",

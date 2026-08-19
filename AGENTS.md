@@ -47,11 +47,19 @@ is **not** a bug to fix:
 
 ```bash
 npm install
-cp .env.example .env      # fill in your own local values
+cp .env.example .env
+cp apps/web/.env.example apps/web/.env
+createdb kasonhub
+npm run db:generate && npm run db:migrate && npm run db:seed
 npm run dev
 ```
 
-`.env.example` documents every variable the application reads.
+Set `SESSION_SECRET` in `.env` to any random 32+ character string; the API will
+not boot without it. `DATABASE_URL` and `SESSION_SECRET` are the only required
+variables — email, storage, WhatsApp and payments all fall back to mocks when
+left blank. `.env.example` documents every variable the application reads.
+
+Seed accounts are defined in `packages/db/prisma/seed.ts`.
 
 ## Layout
 

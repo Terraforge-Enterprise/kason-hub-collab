@@ -32,15 +32,40 @@ out on that side.
 
 ## Getting started
 
+You need Node (see `.nvmrc`) and a local PostgreSQL server. Nothing else — no
+cloud account, no API key, no access to any hosted environment.
+
 ```bash
+# 1. install
 npm install
-cp .env.example .env      # then fill in your own local values
+
+# 2. configure — the defaults in these two files work as-is for local dev
+cp .env.example .env
+cp apps/web/.env.example apps/web/.env
+
+# 3. set a session secret in .env (the API will not start without one)
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+
+# 4. create the database and load the schema
+createdb kasonhub
+npm run db:generate
+npm run db:migrate
+
+# 5. seed demo data (properties, units, tenancies and login accounts)
+npm run db:seed
+
+# 6. run it — API on :3001, web on :5173
 npm run dev
 ```
 
-You will need your own local PostgreSQL database. `.env.example` documents
-every variable the application reads. No credentials are supplied in this
-repository, and none should ever be committed to it.
+Open http://localhost:5173. The accounts the seed creates are defined in
+`packages/db/prisma/seed.ts` — read the file to see the emails and passwords.
+They exist only in your own local database.
+
+Only `DATABASE_URL` and `SESSION_SECRET` are actually required. Every other
+variable is optional: email, file storage, WhatsApp and online-banking payments
+all fall back to mocks or no-ops when left blank, so the app runs fine without
+a single real credential. `.env.example` documents each one.
 
 ## Deployment
 
