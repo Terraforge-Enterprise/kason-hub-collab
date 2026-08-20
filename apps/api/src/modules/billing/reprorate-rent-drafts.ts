@@ -174,6 +174,17 @@ async function loadCandidates(
   const tenancyById = new Map(tenancies.map((t) => [t.id, t]));
   const overrideByTenancy = new Map(overrides.flatMap((o) => (o.tenancyId ? [[o.tenancyId, o] as const] : [])));
   const chargeByNumber = new Map(charges.map((c) => [c.chargeNumber, c]));
+  // A manager-approved manual amount is a period-specific exception. Later
+  // tenancy date edits must not silently overwrite that explicit decision.
+  const manualEvents = charges.length === 0 ? [] : await db.chargeEvent.findMany({
+    where: {
+      organizationId: orgId,
+      chargeId: { in: charges.map((c) => c.id) },
+      eventType: "draft.amount_manually_edited",
+    },
+    select: { chargeId: true },
+  });
+  const manuallyEditedChargeIds = new Set(manualEvents.map((event) => event.chargeId));
 
   const out: Candidate[] = [];
   for (const inv of invoices) {
@@ -188,7 +199,9 @@ async function loadCandidates(
     const charge = chargeByNumber.get(rentChargeNumber(periodMonth, inv.tenancyId));
     if (!charge || charge.invoiceId !== inv.id) continue;
 
-    const correctAmount = !isBillableStatus(t.status)
+    const correctAmount = manuallyEditedChargeIds.has(charge.id)
+      ? charge.amount.toString()
+      : !isBillableStatus(t.status)
       ? "0.00"
       : computeProratedRent(
           pickBaseRent(

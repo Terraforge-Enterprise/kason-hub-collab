@@ -15,7 +15,6 @@ import { inventoryRoutes } from "./modules/inventory";
 import { apartmentRoutes } from "./modules/inventory/apartment.routes";
 import { carparkRoutes } from "./modules/carpark";
 import { amenitiesRoutes } from "./modules/inventory/amenities";
-import { workCategoriesRoutes } from "./modules/inventory/work-categories";
 import { propertyTypesRoutes } from "./modules/inventory/property-types";
 import { listingsRoutes } from "./modules/listings";
 import { tenantTrackerRoutes } from "./modules/tenant-tracker";
@@ -33,7 +32,6 @@ import { renovationSettingsRoutes } from "./modules/renovation-settings";
 import { renovationStagesRoutes } from "./modules/renovation-stages";
 import { salesClaimDefaultsRoutes } from "./modules/sales-claim-defaults";
 import { partiesRoutes } from "./modules/parties";
-import { tasksRoutes, ticketsRoutes, unitScopedTasksRoutes, analyticsRoutes, sprintsRoutes } from "./modules/tasks";
 import { ownerBillingRoutes } from "./modules/owner-billing";
 import { ownerLedgerRoutes } from "./modules/owner-ledger";
 import { ownerRemittanceRoutes, ownerReceivableOffsetRoutes } from "./modules/owner-remittance";
@@ -150,7 +148,6 @@ app.route("/api/owner-funding-requests", ownerFundingRequestsRoutes);
 // `/api/inventory/amenities` is matched by the dedicated router rather than
 // being shadowed by any future sub-route on the inventory module.
 app.route("/api/inventory/amenities", amenitiesRoutes);
-app.route("/api/inventory/work-categories", workCategoriesRoutes);
 app.route("/api/inventory/property-types", propertyTypesRoutes);
 app.route("/api/inventory", inventoryRoutes);
 // Admin apartment-level mutations (flip-mode, shared-fields update). Lives
@@ -200,11 +197,6 @@ app.route("/api/parties", partiesRoutes);
 // gate (canonical 404 while dark). NOTE: /api/units is the unit-scoped
 // tasks/tickets surface; inventory units live under /api/inventory — the
 // prefixes do not overlap.
-app.route("/api/tasks", tasksRoutes);
-app.route("/api/tickets", ticketsRoutes);
-app.route("/api/units", unitScopedTasksRoutes);
-app.route("/api/analytics", analyticsRoutes);
-app.route("/api/sprints", sprintsRoutes);
 // Owner-Billing (M6) — mounted UNCONDITIONALLY; the router's first middleware
 // gates every request on ENABLE_PHASE2_OWNER_BILLING per-request (public-card
 // precedent), so flag-off returns the canonical 404.

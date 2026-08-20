@@ -11,6 +11,8 @@ export type RawAuditRow = {
   entityId: string;
   ip: string | null;
   userAgent: string | null;
+  diff: unknown;
+  meta: unknown;
   createdAt: Date;
 };
 
@@ -26,6 +28,8 @@ export type EnrichedAuditRow = {
   ip: string | null;
   userAgent: string | null;
   deviceName: string | null;
+  diff: unknown;
+  meta: unknown;
   createdAt: string;
 };
 
@@ -142,6 +146,8 @@ export async function enrichAuditRows(db: Db, rows: RawAuditRow[]): Promise<Enri
     ip: primaryIp(r.ip),
     userAgent: r.userAgent,
     deviceName: parseUserAgent(r.userAgent),
+    diff: r.diff,
+    meta: r.meta,
     createdAt: r.createdAt.toISOString(),
   }));
 }

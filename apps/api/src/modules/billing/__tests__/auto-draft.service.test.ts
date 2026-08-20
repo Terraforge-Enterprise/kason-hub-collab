@@ -129,6 +129,7 @@ import {
   attachChargeService,
   createDraftConfigService,
   detachChargeService,
+  editDraftChargeAmountService,
   editInvoiceDatesService,
   getDraftConfigService,
   getDraftInvoiceService,
@@ -900,6 +901,46 @@ describe("editInvoiceDatesService", () => {
     expect(r.ok).toBe(false);
     expect(r.status).toBe(409);
     expect(recordAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe("editDraftChargeAmountService", () => {
+  it("updates a draft charge amount + outstanding, recomputes total, and audits", async () => {
+    mockInvoiceFindFirst.mockResolvedValue({ id: INVOICE_ID, status: "draft", updatedAt: new Date(ISO) });
+    mockChargeFindFirst.mockResolvedValue({
+      id: "charge-x", invoiceId: INVOICE_ID, status: "draft", chargeType: "security_deposit",
+      amount: { toString: () => "1064.52" },
+    });
+    vi.mocked(recomputeInvoiceTotalTx).mockResolvedValue(1200);
+
+    const r = await editDraftChargeAmountService(txCtx, INVOICE_ID, "charge-x", {
+      amount: 1200,
+      expectedUpdatedAt: ISO,
+    });
+
+    expect(r).toEqual({ ok: true, status: 200, data: { id: INVOICE_ID, chargeId: "charge-x", totalAmount: 1200 } });
+    expect(mockChargeUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "charge-x", organizationId: ORG },
+      data: { amount: "1200.00", outstandingAmount: "1200.00" },
+    }));
+    expect(recomputeInvoiceTotalTx).toHaveBeenCalledWith(fakeTx, ORG, INVOICE_ID);
+    expect(fakeTx.chargeEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ eventType: "draft.amount_manually_edited" }),
+    }));
+    expect(recordAudit).toHaveBeenCalledWith(fakeTx, expect.objectContaining({
+      action: "billing.invoice.charge_amount_edited",
+    }));
+  });
+
+  it("refuses to edit a non-draft invoice", async () => {
+    mockInvoiceFindFirst.mockResolvedValue({ id: INVOICE_ID, status: "approved", updatedAt: new Date(ISO) });
+    const r = await editDraftChargeAmountService(txCtx, INVOICE_ID, "charge-x", {
+      amount: 1200,
+      expectedUpdatedAt: ISO,
+    });
+    expect(r.ok).toBe(false);
+    expect(r.status).toBe(409);
+    expect(mockChargeUpdate).not.toHaveBeenCalled();
   });
 });
 

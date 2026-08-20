@@ -106,16 +106,35 @@ describe("toExpensesDto", () => {
       { bearer: "owner", amount: new Prisma.Decimal("15.50"), withSST: false },
     ]);
     expect(dto).toEqual({
-      tenant: { total: "80.00", withSstTotal: "50.00", count: 2 },
-      owner: { total: "35.50", withSstTotal: "20.00", count: 2 },
+      tenant: { total: "80.00", withSstTotal: "50.00", count: 2, nonSstCount: 1, withSstCount: 1, nonSstActionRequiredCount: 1, withSstActionRequiredCount: 1, nonSstGrossMargin: "30.00", withSstGrossMargin: "50.00" },
+      owner: { total: "35.50", withSstTotal: "20.00", count: 2, nonSstCount: 1, withSstCount: 1, nonSstActionRequiredCount: 1, withSstActionRequiredCount: 1, nonSstGrossMargin: "15.50", withSstGrossMargin: "20.00" },
     });
   });
 
   it("an empty array maps to all '0.00' totals", () => {
     expect(toExpensesDto([])).toEqual({
-      tenant: { total: "0.00", withSstTotal: "0.00", count: 0 },
-      owner: { total: "0.00", withSstTotal: "0.00", count: 0 },
+      tenant: { total: "0.00", withSstTotal: "0.00", count: 0, nonSstCount: 0, withSstCount: 0, nonSstActionRequiredCount: 0, withSstActionRequiredCount: 0, nonSstGrossMargin: "0.00", withSstGrossMargin: "0.00" },
+      owner: { total: "0.00", withSstTotal: "0.00", count: 0, nonSstCount: 0, withSstCount: 0, nonSstActionRequiredCount: 0, withSstActionRequiredCount: 0, nonSstGrossMargin: "0.00", withSstGrossMargin: "0.00" },
     });
+  });
+
+  it("counts cost actions independently per SST cell and clears completed Paid costs including RM0", () => {
+    const dto = toExpensesDto([
+      { bearer: "tenant", amount: new Prisma.Decimal("120.00"), withSST: false, actualCost: null, costPaymentStatus: "unpaid" },
+      { bearer: "tenant", amount: new Prisma.Decimal("100.00"), withSST: true, actualCost: new Prisma.Decimal("0.00"), costPaymentStatus: "paid" },
+    ]);
+    expect(dto.tenant.nonSstActionRequiredCount).toBe(1);
+    expect(dto.tenant.withSstActionRequiredCount).toBe(0);
+    expect(dto.tenant.withSstGrossMargin).toBe("100.00");
+  });
+
+  it("calculates profit and loss independently for each SST cell", () => {
+    const dto = toExpensesDto([
+      { bearer: "tenant", amount: new Prisma.Decimal("120.00"), withSST: false, actualCost: new Prisma.Decimal("100.00"), costPaymentStatus: "paid" },
+      { bearer: "tenant", amount: new Prisma.Decimal("100.00"), withSST: true, actualCost: new Prisma.Decimal("130.00"), costPaymentStatus: "paid" },
+    ]);
+    expect(dto.tenant.nonSstGrossMargin).toBe("20.00");
+    expect(dto.tenant.withSstGrossMargin).toBe("-30.00");
   });
 });
 
@@ -377,8 +396,8 @@ describe("toGridRowDto", () => {
     );
     // P5: real rooms with no reading ⇒ updatedAt/lastEditedByName both null. Tenant phone passes through.
     expect(dto.subRows).toEqual([
-      { listingId: "L1", tenancyId: "T1", partyName: "Ali bin Ahmad", partyPhone: "012-3456789", previousKwh: null, currentKwh: null, amount: null, ratePerKwh: "0.5500", rateConfigured: true, rental: "1800.00", updatedAt: null, lastEditedByName: null, numberOfPax: null },
-      { listingId: "L2", tenancyId: null, partyName: null, partyPhone: null, previousKwh: null, currentKwh: null, amount: null, ratePerKwh: "0.6000", rateConfigured: false, rental: null, updatedAt: null, lastEditedByName: null, numberOfPax: null },
+      { listingId: "L1", tenancyId: "T1", partyId: null, partyName: "Ali bin Ahmad", partyPhone: "012-3456789", previousKwh: null, currentKwh: null, amount: null, ratePerKwh: "0.5500", rateConfigured: true, rental: "1800.00", rentalBillingState: null, deposit: null, depositBillingState: null, updatedAt: null, lastEditedByName: null, numberOfPax: null },
+      { listingId: "L2", tenancyId: null, partyId: null, partyName: null, partyPhone: null, previousKwh: null, currentKwh: null, amount: null, ratePerKwh: "0.6000", rateConfigured: false, rental: null, rentalBillingState: null, deposit: null, depositBillingState: null, updatedAt: null, lastEditedByName: null, numberOfPax: null },
     ]);
   });
 
@@ -486,7 +505,7 @@ describe("toGridRowDto", () => {
     );
     // P5: this orphan-reading fixture carries no updatedAt/updatedById ⇒ both null.
     expect(dto.subRows).toEqual([
-      { listingId: "L-ORPHAN", tenancyId: null, partyName: null, partyPhone: null, previousKwh: null, currentKwh: null, amount: null, ratePerKwh: "0.6000", rateConfigured: false, rental: null, updatedAt: null, lastEditedByName: null, numberOfPax: null },
+      { listingId: "L-ORPHAN", tenancyId: null, partyId: null, partyName: null, partyPhone: null, previousKwh: null, currentKwh: null, amount: null, ratePerKwh: "0.6000", rateConfigured: false, rental: null, rentalBillingState: null, deposit: null, depositBillingState: null, updatedAt: null, lastEditedByName: null, numberOfPax: null },
     ]);
   });
 
