@@ -18,8 +18,10 @@ export type ChargeListItem = {
   tenancyCode: string | null;
   unitCode: string | null;
   chargeType: string;
+  description: string | null;
   status: string;
   dueDate: string;
+  billingMonth: string | null;
   amount: number;
   outstandingAmount: number;
   currency: string;
@@ -30,9 +32,10 @@ export type ChargeListItem = {
 
 /**
  * A party's open (outstanding) charges — GET
- * /billing/charges?partyId=&outstandingOnly=true&pageSize=200. No `page`/`pageSize`
- * pagination footer is used here; `pageSize=200` returns the party's charges in
- * one shot for the allocation grid. DISABLED when `partyId === null`. Returns the
+ * /billing/charges?partyId=&outstandingOnly=true&pageSize=100. The shared billing
+ * query contract caps pageSize at 100; using 200 makes the API reject the preview
+ * with HTTP 400. Additional pages are fetched so Total Outstanding never omits
+ * an older open charge. DISABLED when `partyId === null`. Returns the
  * charge list items (server response is `{ data: ChargeListItem[], total }` because
  * pageSize is present — only `.data` is surfaced).
  */
@@ -40,10 +43,16 @@ export function usePartyOpenCharges(partyId: string | null) {
   return useQuery({
     queryKey: ["billing", "charges", "open", partyId],
     queryFn: async (): Promise<ChargeListItem[]> => {
-      const res = await apiFetch<{ data: ChargeListItem[]; total: number }>(
-        `/billing/charges?partyId=${encodeURIComponent(partyId!)}&outstandingOnly=true&pageSize=200`,
+      const base = `/billing/charges?partyId=${encodeURIComponent(partyId!)}&outstandingOnly=true&pageSize=100`;
+      const first = await apiFetch<{ data: ChargeListItem[]; total: number }>(`${base}&page=1`);
+      const pageCount = Math.ceil(first.total / 100);
+      if (pageCount <= 1) return first.data;
+      const rest = await Promise.all(
+        Array.from({ length: pageCount - 1 }, (_, index) =>
+          apiFetch<{ data: ChargeListItem[]; total: number }>(`${base}&page=${index + 2}`),
+        ),
       );
-      return res.data;
+      return [first.data, ...rest.map((page) => page.data)].flat();
     },
     enabled: partyId !== null,
   });

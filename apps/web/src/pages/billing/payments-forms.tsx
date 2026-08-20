@@ -218,7 +218,7 @@ function MultiChargeCard({
       <div className="flex items-center justify-between rounded-lg border border-[var(--card-border)] bg-[var(--card-bg)] px-4 py-2 text-sm">
         <span className="text-[var(--text-secondary)]">Selected total</span>
         <span className="font-semibold text-[var(--text-primary)]">
-          MYR {selectedTotal.toFixed(2)}
+          RM {selectedTotal.toFixed(2)}
         </span>
       </div>
 

@@ -264,8 +264,6 @@ describe("bills-grid Excel affordances (UI Task 4)", () => {
         onColumnFilterChange={() => {}}
         dateRange={{ from: null, to: null }}
         onDateRangeChange={() => {}}
-        maximized={false}
-        onToggleMaximized={() => {}}
         hasSelection={false}
         onApplyColour={() => {}}
         columns={CURRENT_COLUMNS}
@@ -318,8 +316,6 @@ describe("bills-grid Excel affordances (UI Task 4)", () => {
         onColumnFilterChange={() => {}}
         dateRange={{ from: null, to: null }}
         onDateRangeChange={() => {}}
-        maximized={false}
-        onToggleMaximized={() => {}}
         hasSelection={false}
         onApplyColour={() => {}}
         columns={CURRENT_COLUMNS}

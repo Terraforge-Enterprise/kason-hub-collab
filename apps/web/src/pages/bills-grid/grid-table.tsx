@@ -9,27 +9,32 @@
 // ALWAYS present (server sends defaults when no config row exists) — treating
 // it as possibly-absent here would itself be a contract regression.
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { Paperclip, Eye, History } from "lucide-react";
+import { Building2, Paperclip, Eye, History, ReceiptText, ListPlus, FileText, Download } from "lucide-react";
 import type { GridRow, GridSubRow } from "@/api/bills-grid";
 import { visibleSubRows } from "./occupancy";
 import { DataTable, TableHead, StatusPill, EmptyRow } from "@/components/ui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { OwnerDetailPanel } from "@/pages/parties/owner-detail-panel";
+import { TenantDetailPanel } from "@/pages/parties/tenant-detail-panel";
 import { PHASE2_STATUS_TONES } from "@kason/shared";
 import type { StatusTone, SettlementState } from "@kason/shared";
-import { isCellLocked, isRowLocked, scalarGeneratedAmount, scalarSettingsLock } from "./row-lock";
+import { isCellLocked, isRowLocked, scalarGeneratedAmount, scalarSettingsLock, type GovernableScalarColumn } from "./row-lock";
 import { cn } from "@/lib/utils";
 import type { ColumnId, GridColumn } from "./columns";
-import { SETTLEMENT_BUCKET_OF_COLUMN } from "./columns";
+import { settlementBucketForColumn } from "./columns";
 import { parseAmountCell } from "./cell-parser";
 import { cleaningSeed } from "./cell-seed";
 import { isApplicable, showsTenantBorneMark } from "./cell-applicability";
+import { projectedOwnerPayout } from "./owner-payout";
 // ui-task-10e: pointer/selection/colour extension — `SelectionCell` is the
 // hook's (ui-4, use-grid-selection.ts) cell-identity shape. Importing the
 // TYPE only keeps this file free of the hook's runtime/state; the page shell
 // (bills-grid-page.tsx) owns the actual useGridSelection() instance.
 import type { SelectionCell } from "./use-grid-selection";
+import type { GridDisplayMode } from "./grid-toolbar";
 // Excel-Web V2 (grid-gestures.ts): the SINGLE resolver for pointer/click
 // modifiers. `resolvePointerGesture` turns a raw pointerdown into select /
 // context / ignore (platform-aware: Cmd=multi on mac, Ctrl+click=right-click on
@@ -65,20 +70,25 @@ function CountBadge({ count, testId }: { count: number; testId: string }) {
 // backfill — every pre-existing prod/UAT row has this null while carrying a
 // real updatedAt). Spec R7 + Error Handling define the null contract on the
 // NAME, not the timestamp.
-function AuditIcon({ name, at }: { name: string | null | undefined; at: string | null | undefined }) {
-  if (!name) return <span className="text-muted-foreground/50" title="Not edited">—</span>;
+function AuditIcon({ name, at, onClick, unitCode }: { name: string | null | undefined; at: string | null | undefined; onClick?: () => void; unitCode: string }) {
   const when = at ? new Date(at).toLocaleString() : "";
-  const title = `Edited by ${name}${when ? ` · ${when}` : ""}`;
+  const title = name ? `Edited by ${name}${when ? ` · ${when}` : ""}` : "Not edited";
   return (
-    <span
-      className="inline-flex text-muted-foreground/60"
+    <button
+      type="button"
+      className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground/70 transition hover:bg-muted hover:text-[var(--navy)]"
       title={title}
-      aria-label={title}
+      aria-label={`View activity log for ${unitCode}`}
       data-testid="audit-icon"
+      onClick={(event) => { event.stopPropagation(); onClick?.(); }}
     >
-      <History className="h-3 w-3" />
-    </span>
+      <History className="h-5 w-5" />
+    </button>
   );
+}
+
+function hasNativeTextSelection(): boolean {
+  return typeof window !== "undefined" && Boolean(window.getSelection()?.toString());
 }
 
 export type ExpenseBearer = "tenant" | "owner";
@@ -89,17 +99,25 @@ export type RecurringBearer = "tenant" | "owner";
 const ENTRY_STATUS_TONES: Record<string, StatusTone> = PHASE2_STATUS_TONES.billsGridEntry;
 
 export type CellKey = string; // apartmentId (unit-grain) or listingId (subRow-grain)
+export type SelectionEdges = { top: boolean; right: boolean; bottom: boolean; left: boolean; bottomRight: boolean };
 
 export type CellEditHandler = (cellKey: CellKey, columnId: ColumnId, value: string) => void;
 
 export interface GridTableProps {
   rows: GridRow[];
   columns: GridColumn[];
+  displayMode?: GridDisplayMode;
+  density?: "comfortable" | "compact";
   onCellEdit?: CellEditHandler;
   onOpenSettings?: (apartmentId: string) => void; // R11 — per-unit bearer drawer
-  onViewExpenses?: (apartmentId: string, bearer: ExpenseBearer) => void; // R27 — expense eye-icon
+  onViewExpenses?: (apartmentId: string, bearer: ExpenseBearer, withSST: boolean) => void;
   onViewRecurring?: (apartmentId: string, bearer: RecurringBearer) => void; // recurring-charges — recurring dialog trigger
   onOpenAttachments?: (apartmentId: string) => void; // attachments panel
+  onViewTenantSummary?: (row: GridRow) => void;
+  onViewTenantDocuments?: (row: GridRow) => void;
+  onViewOwnerReport?: (row: GridRow) => void;
+  onDownloadOwnerReport?: (row: GridRow) => void;
+  onViewActivity?: (row: GridRow) => void;
   // ui-task-10e (R31 a/c/d, via useGridSelection — ui-4): ALL optional —
   // absent ⇒ every cell renders exactly as before this task (Task-3/ui-10b
   // parity). Wired on the EDITABLE numeric cells only (LockedCell/billed
@@ -113,6 +131,7 @@ export interface GridTableProps {
   onCellPointerEnter?: (cell: SelectionCell) => void; // drag-over
   onCellPointerUp?: () => void;
   isCellSelected?: (cellKey: string, columnId: ColumnId) => boolean; // render selection highlight
+  selectionEdges?: (cellKey: string, columnId: ColumnId) => SelectionEdges | undefined;
   cellColour?: (cellKey: string, columnId: ColumnId) => string | undefined; // render background colour (localStorage-only, never a calc input)
   // P4 Task 3 (active-cell nav, R5): ALL optional — absent ⇒ byte-identical to
   // today (parity). Wired on EVERY navigable cell (editable inputs AND the
@@ -120,6 +139,8 @@ export interface GridTableProps {
   // expense-total ReadOnlyCells, and the raw inline sub-row rental <td>), so
   // arrow-nav landing on any of them gets an active ring + focus + click.
   isCellActive?: (cellKey: string, columnId: ColumnId) => boolean; // render the active-cell ring (distinct from selection)
+  isCellEditing?: (cellKey: string, columnId: ColumnId) => boolean; // true only after typing/F2/double-click
+  isCellPendingRebill?: (cellKey: string, columnId: ColumnId) => boolean;
   // Task 3: activate now carries a {shift,ctrl} mods object built from the
   // click event's modifier keys — so a shift/ctrl click extends/toggles the
   // selection via the SAME path instead of collapsing it through the plain
@@ -265,6 +286,7 @@ function seedValue(row: GridRow, columnId: ColumnId): string {
     case "cleaningTenant":
       return cleaningSeed(row);
     case "tnbOwner":
+    case "tnbTenant":
       return entry?.tnbTotal ?? "";
     case "airOwner":
     case "airTenant":
@@ -291,10 +313,16 @@ function readOnlyValue(row: GridRow, columnId: ColumnId): string {
       return row.expenses.owner.withSstTotal;
     case "ownerExpNonSst":
       return subtractMoney(row.expenses.owner.total, row.expenses.owner.withSstTotal);
+    case "managementFeeNonSst":
+      return row.managementFee?.nonSst ?? "0.00";
+    case "managementFeeSst":
+      return row.managementFee?.sst ?? "0.00";
     case "ownerRecurring":
       return row.recurring?.owner.total ?? "0.00";
     case "tenantRecurring":
       return row.recurring?.tenant.total ?? "0.00";
+    case "ownerPayout":
+      return projectedOwnerPayout(row).toFixed(2);
     default:
       return "";
   }
@@ -411,6 +439,166 @@ function painted(state: SettlementState | undefined): PaintedSettlement | undefi
   return state === "paid" || state === "partial" ? state : undefined;
 }
 
+/**
+ * Content-led column sizing. Short Owner/Tenant/SST columns should not consume
+ * the same space as meter labels, expense actions, or the owner report cell.
+ * These are also used as proportional weights in Fit All mode, so the table
+ * remains one-page wide without squeezing every column equally.
+ */
+function preferredColumnWidth(columnId: ColumnId): number {
+  switch (columnId) {
+    case "previousKwh":
+    case "currentKwh":
+      return 126;
+    case "ownerPayout":
+      return 142;
+    case "tenantExpNonSst":
+    case "tenantExpWithSst":
+    case "ownerExpNonSst":
+    case "ownerExpWithSst":
+      return 108;
+    case "rental":
+    case "deposit":
+    case "amount":
+    case "maintenanceFee":
+    case "managementFeeNonSst":
+    case "managementFeeSst":
+      return 102;
+    default:
+      return 90;
+  }
+}
+
+type BillingCellState = "saved" | "billed-unpaid" | "paid" | "changed";
+
+const BILLING_STATE_COLOUR: Record<BillingCellState, string> = {
+  saved: "#FF8C00",          // saved, never billed — bright orange
+  "billed-unpaid": "#FFFF00", // billed, tenant not paid — bright yellow
+  paid: "#00FF00",           // paid — fluorescent cyan-green
+  changed: "#FF0000",        // changed after billing, saved, needs re-bill — bright red
+};
+
+function isDashDisplay(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed === "—" || trimmed === "-";
+}
+
+function hasBillableDisplay(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed || isDashDisplay(trimmed)) return false;
+  const numeric = Number(trimmed.replace(/,/g, ""));
+  return Number.isFinite(numeric) ? numeric !== 0 : true;
+}
+
+/** Shared by the renderer and the page-level colour filter so both surfaces use
+ * exactly the same automatic billing-state rules. */
+export function billingStateForCell(
+  row: GridRow,
+  cellKey: string,
+  columnId: ColumnId,
+  isPendingRebill?: (cellKey: string, columnId: ColumnId) => boolean,
+): BillingCellState | undefined {
+  if (columnId === "deposit") {
+    const subRow = row.subRows.find((candidate) => candidate.listingId === cellKey) ?? row.subRows[0];
+    return subRow?.depositBillingState ?? undefined;
+  }
+  const hasLiveBill = row.billed ?? row.billedAt != null;
+  if (columnId === "rental") {
+    const subRow = row.subRows.find((candidate) => candidate.listingId === cellKey) ?? row.subRows[0];
+    // Real rental invoice state wins. The row-level fallback is kept only for
+    // older cached payloads that predate rentalBillingState.
+    if (subRow?.rentalBillingState) return subRow.rentalBillingState;
+    if (!hasLiveBill) return undefined;
+    return row.settlement?.status === "paid" || row.paymentStatus.toLowerCase() === "paid" ? "paid" : "billed-unpaid";
+  }
+  if (row.entryId == null) return undefined;
+  if (isPendingRebill?.(cellKey, columnId)) return "changed";
+  if (!hasLiveBill) return "saved";
+  const bucket = settlementBucketForColumn(row, columnId);
+  if (!bucket || !row.settlement) return undefined;
+  const state = row.settlement.rooms?.[cellKey]?.[bucket] ?? row.settlement.cells[bucket];
+  if (state === "paid") return "paid";
+  if (state === "unpaid" || state === "partial") return "billed-unpaid";
+  return undefined;
+}
+
+/** TRUE when at least one visible money/data cell in this unit has the requested
+ * automatic colour. A match keeps the WHOLE unit row, including its checkbox. */
+export function rowHasBillingState(
+  row: GridRow,
+  target: BillingCellState,
+  columns: GridColumn[],
+  isPendingRebill?: (cellKey: string, columnId: ColumnId) => boolean,
+): boolean {
+  const governed = new Set<ColumnId>(["cleaningOwner", "cleaningTenant", "wifiOwner", "wifiTenant", "maintenanceFee"]);
+  for (const col of columns) {
+    if (col.id === "unitCode" || col.id === "ownerPayout") continue;
+    if (col.id === "rental" || col.id === "deposit") {
+      for (const sub of row.subRows) {
+        const value = col.id === "rental" ? sub.rental : sub.deposit;
+        if (value && hasBillableDisplay(value) && billingStateForCell(row, sub.listingId, col.id, isPendingRebill) === target) return true;
+      }
+      continue;
+    }
+    if (col.grain === "subRow") {
+      for (const sub of row.subRows) {
+        const value = sub[col.id as "previousKwh" | "currentKwh" | "amount"];
+        if (value && hasBillableDisplay(value) && billingStateForCell(row, sub.listingId, col.id, isPendingRebill) === target) return true;
+      }
+      continue;
+    }
+    if (!isApplicable(row, col.id)) continue;
+    const generated = governed.has(col.id)
+      ? scalarGeneratedAmount(row, col.id as GovernableScalarColumn)
+      : "";
+    const value = generated || seedValue(row, col.id) || readOnlyValue(row, col.id);
+    if (hasBillableDisplay(value) && billingStateForCell(row, row.apartmentId, col.id, isPendingRebill) === target) return true;
+  }
+  return false;
+}
+
+const CATEGORY_START_COLUMNS = new Set<ColumnId>([
+  "rental", "cleaningOwner", "tnbOwner", "airOwner", "wifiOwner",
+  "maintenanceFee", "ownerRecurring", "tenantExpNonSst", "ownerExpNonSst", "managementFeeNonSst",
+  "ownerPayout",
+]);
+const CATEGORY_END_COLUMNS = new Set<ColumnId>([
+  "deposit", "cleaningTenant", "amount", "airTenant", "wifiTenant",
+  "maintenanceFee", "tenantRecurring", "tenantExpWithSst", "ownerExpWithSst", "managementFeeSst",
+  "ownerPayout",
+]);
+
+/** Strong vertical borders around a category; inner sub-columns keep normal lines. */
+function categoryDividerClass(columnId: ColumnId): string {
+  return cn(
+    CATEGORY_START_COLUMNS.has(columnId) && "border-l-2 border-l-[var(--navy)]",
+    CATEGORY_END_COLUMNS.has(columnId) && "border-r-2 border-r-[var(--navy)]",
+    columnId === "ownerPayout" && "sticky right-0 z-10",
+  );
+}
+
+function billingStateStyle(state: BillingCellState | undefined, value: string): React.CSSProperties | undefined {
+  return state && hasBillableDisplay(value)
+    ? { backgroundColor: BILLING_STATE_COLOUR[state], color: "#082B4F" }
+    : undefined;
+}
+
+function selectionOutlineStyle(edges?: SelectionEdges): React.CSSProperties | undefined {
+  if (!edges) return undefined;
+  const green = "#008A3B";
+  return { boxShadow: [
+    edges.top && `inset 0 3px 0 ${green}`,
+    edges.right && `inset -3px 0 0 ${green}`,
+    edges.bottom && `inset 0 -3px 0 ${green}`,
+    edges.left && `inset 3px 0 0 ${green}`,
+  ].filter(Boolean).join(", ") };
+}
+
+function SelectionFillHandle({ edges }: { edges?: SelectionEdges }) {
+  if (!edges?.bottomRight) return null;
+  return <span aria-hidden="true" className="pointer-events-none absolute -bottom-1 -right-1 z-30 h-2.5 w-2.5 border border-white bg-[#008A3B]" />;
+}
+
 function EditableCell({
   columnId,
   value,
@@ -422,8 +610,11 @@ function EditableCell({
   onCellPointerEnter,
   onCellPointerUp,
   selected,
+  selectionEdges,
   colour,
   active,
+  editing,
+  billingState,
   onActivate,
   onContextMenu,
   onDoubleClick,
@@ -449,6 +640,7 @@ function EditableCell({
   onCellPointerEnter?: () => void;
   onCellPointerUp?: () => void;
   selected?: boolean;
+  selectionEdges?: SelectionEdges;
   colour?: string;
   // P4 Task 3: active-cell nav. All optional — absent ⇒ no marker, no click
   // handler, no node registration (parity). `registerCell` targets the
@@ -456,6 +648,8 @@ function EditableCell({
   // Task 3 (mouse-selection V2): onActivate now receives the click event so a
   // shift/ctrl click can carry its modifiers up to onCellActivate.
   active?: boolean;
+  editing?: boolean;
+  billingState?: BillingCellState;
   onActivate?: (e: React.MouseEvent) => void;
   // Excel-Web V2: right-click (context menu) + double-click (enter edit mode).
   // Both optional ⇒ parity when the page doesn't opt in.
@@ -490,6 +684,7 @@ function EditableCell({
   // activate effect (which .select()s its text) each get the same element —
   // they COEXIST (Hard Point A): the page focuses, EditableCell selects.
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const typeToEditRef = useRef(false);
   const setInputRef = useCallback(
     (node: HTMLInputElement | null) => {
       inputRef.current = node;
@@ -498,21 +693,37 @@ function EditableCell({
     [registerCell],
   );
 
-  // On activation, select the input's full text so the FIRST keystroke REPLACES
-  // the saved value (Excel type-to-edit) instead of appending. Runs on the
-  // `active` edge; the page's focus effect (nav.active change) focuses the node,
-  // and this selects its text — order-independent since selecting text does not
-  // require prior focus in jsdom/DOM (calling .select() also focuses). Guarded
-  // on `active` so a non-active editable cell is never disturbed (parity).
+  // In Excel selection mode the input may hold DOM focus for keyboard routing,
+  // but it remains read-only with a hidden caret. Only edit mode selects the
+  // existing value and exposes the normal text caret.
   useEffect(() => {
-    if (active) inputRef.current?.select();
-  }, [active]);
+    if (!active || (editing !== undefined && !editing)) return;
+
+    const input = inputRef.current;
+    if (!input) return;
+
+    if (typeToEditRef.current) {
+      typeToEditRef.current = false;
+      // The first typed character replaces the selected cell value. Place the
+      // caret after it so the next character appends, just like Excel.
+      requestAnimationFrame(() => {
+        const end = input.value.length;
+        input.setSelectionRange(end, end);
+      });
+      return;
+    }
+
+    input.select();
+  }, [active, editing]);
+
+  const excelMode = editing !== undefined;
 
   return (
     <td
       className={cn(
-        "px-2 py-1.5 text-sm text-[var(--text-primary)]",
-        numeric && "text-right",
+        "overflow-hidden px-1.5 py-1.5 align-middle text-[18px] text-[var(--text-primary)]",
+        categoryDividerClass(columnId),
+        numeric && "whitespace-nowrap text-center tabular-nums",
         // Task 3 (mouse-selection V2): the in-range visual is a light --primary
         // TINT FILL — a rectangle of tinted cells reads as one continuous block
         // (the old ring-inset outlined every cell individually, breaking the
@@ -521,13 +732,13 @@ function EditableCell({
         // tint (so the active cell inside a range stays unambiguous). V2: bumped
         // to /15 so the block reads clearly now that the competing native
         // text-selection (the gold ::selection) is suppressed on the grid.
-        selected && !active && "bg-[var(--primary)]/15",
+        selected && "relative",
         // P4 Task 4/6: the active cell reads as a strong SOLID --primary border
         // (Excel active-cell look) — non-inset/outset, high-contrast and, per
         // Fix 1 above, always distinct from the inset --primary selection ring
         // (the selection ring is suppressed on the active cell). active wins the
         // outline whether or not the cell is also in the range.
-        active && "ring-2 ring-[var(--primary)]",
+        active && !selected && "ring-2 ring-[var(--primary)]",
         // Settled wash sits BELOW selection/active in the class order above, so a
         // paid cell that is also selected still reads as selected — payment state
         // must never swallow the gesture feedback the admin is driving.
@@ -537,7 +748,7 @@ function EditableCell({
         // washes already carry `relative`, so this only adds it when they don't.
         tenantBorne && "relative",
       )}
-      style={colour ? { backgroundColor: colour } : undefined}
+      style={Object.assign({}, billingStateStyle(billingState, value) ?? (colour ? { backgroundColor: colour } : undefined), selectionOutlineStyle(selectionEdges))}
       data-testid={`cell-${columnId}`}
       // The mark's tooltip: the cell is the hoverable element (the mark itself is
       // pointer-events-none, so a title there would never fire).
@@ -548,6 +759,7 @@ function EditableCell({
       data-settlement={settlement}
       data-selected={selected ? "true" : undefined}
       data-active={active ? "true" : undefined}
+      data-billing-state={hasBillableDisplay(value) ? billingState : undefined}
       onPointerDown={onCellPointerDown}
       onPointerEnter={onCellPointerEnter}
       onPointerUp={onCellPointerUp}
@@ -572,6 +784,16 @@ function EditableCell({
         inputMode="decimal"
         value={value}
         onChange={(e) => handleChange(e.target.value)}
+        readOnly={excelMode && !editing}
+        onKeyDown={(e) => {
+          if (!excelMode || editing || e.metaKey || e.ctrlKey || e.altKey) return;
+          if (e.key.length === 1 && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            typeToEditRef.current = true;
+            handleChange(e.key);
+            onDoubleClick?.();
+          }
+        }}
         title={amountError ?? undefined}
         aria-invalid={amountError ? true : undefined}
         // Excel-Web V2: the grid surface sets `user-select:none` to kill native
@@ -580,10 +802,12 @@ function EditableCell({
         // `selection:` recolours the in-field highlight to the --primary tint so
         // it never reads as the old gold ::selection (the reported "yellow").
         className={cn(
-          "w-24 select-text rounded-md border border-[var(--input-border)] bg-[var(--card-bg)] px-2 py-1 text-sm text-[var(--text-primary)] outline-none transition selection:bg-[var(--primary)]/25 focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--ring)]",
-          numeric && "text-right",
+          "box-border block w-full min-w-0 max-w-full rounded-md border border-[var(--input-border)] bg-[var(--card-bg)] px-1 py-1 text-[clamp(13px,1em,18px)] text-[var(--text-primary)] outline-none transition selection:bg-[var(--primary)]/25 focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--ring)]",
+          editing === false ? "cursor-cell select-none caret-transparent" : "select-text caret-auto",
+          numeric && "whitespace-nowrap text-center tabular-nums",
           amountError && "border-rose-500 focus:ring-rose-400",
         )}
+        style={billingStateStyle(billingState, value)}
       />
       {amountError && (
         <span className="mt-0.5 block text-[10px] leading-tight text-rose-600" data-testid={`amount-error-${columnId}`}>
@@ -592,6 +816,7 @@ function EditableCell({
       )}
       {settlement && <SettlementMarker state={settlement} />}
       {tenantBorne && <TenantBorneMark />}
+      <SelectionFillHandle edges={selectionEdges} />
     </td>
   );
 }
@@ -604,6 +829,8 @@ function LockedCell({
   tenantBorne,
   active,
   selected,
+  selectionEdges,
+  billingState,
   onCellPointerDown,
   onCellPointerEnter,
   onCellPointerUp,
@@ -631,6 +858,8 @@ function LockedCell({
   // (amount / billed / rental) reads as ONE solid block. onContextMenu wires the
   // custom right-click menu. Both optional ⇒ parity.
   selected?: boolean;
+  selectionEdges?: SelectionEdges;
+  billingState?: BillingCellState;
   // Selection (drag start/grow/end) is orthogonal to editing — a read-only cell
   // is selectable/copyable but not editable. Same handler types as EditableCell.
   onCellPointerDown?: (e: React.PointerEvent<HTMLTableCellElement>) => void;
@@ -640,18 +869,22 @@ function LockedCell({
   onContextMenu?: (e: React.MouseEvent) => void;
   registerCell?: (node: HTMLElement | null) => void;
 }) {
+  const dashOnly = isDashDisplay(display);
   return (
     <td
       ref={registerCell}
       className={cn(
-        "px-2 py-1.5 text-sm text-muted-foreground",
-        numeric && "text-right",
+        "px-2 py-1.5 align-middle text-[18px] text-muted-foreground",
+        categoryDividerClass(columnId),
+        numeric && !dashOnly && "whitespace-nowrap text-center tabular-nums",
+        dashOnly && "bg-transparent text-center align-middle",
         // V2: one bg utility via ternary (no Tailwind bg conflict) — the
         // selection tint when in-range-and-not-active, else the muted lock bg.
-        selected && !active ? "bg-[var(--primary)]/15" : "bg-muted/60",
+        dashOnly ? "bg-transparent" : "bg-muted/60",
         // P4 Task 4: visible SOLID --primary active ring (non-inset), matching
         // EditableCell — see its comment for the visibility rationale.
-        active && "ring-2 ring-[var(--primary)]",
+        selected && "relative",
+        active && !selected && "ring-2 ring-[var(--primary)]",
         // Settlement wash last so it overrides the default muted lock bg — but a
         // SELECTED cell keeps the selection tint (the ternary above already won
         // the bg slot, and this only repaints when not selected).
@@ -659,8 +892,8 @@ function LockedCell({
         // This is the branch that answers "locked but GREEN, not grey": a paid cell
         // inside a now-locked row renders here, and the emerald wash beats the
         // `bg-muted/60` lock default, so locking a paid row does not turn it grey.
-        settlement && !selected && SETTLEMENT_PAINT[settlement].wash,
-        settlement && selected && "relative",
+        settlement && !dashOnly && !selected && SETTLEMENT_PAINT[settlement].wash,
+        settlement && !dashOnly && selected && "relative",
         // See EditableCell: the corner mark needs a positioned ancestor of its own.
         tenantBorne && "relative",
       )}
@@ -672,6 +905,8 @@ function LockedCell({
       data-active={active ? "true" : undefined}
       data-selected={selected ? "true" : undefined}
       data-copy-value={display}
+      data-billing-state={hasBillableDisplay(display) ? billingState : undefined}
+      style={Object.assign({}, billingStateStyle(billingState, display), selectionOutlineStyle(selectionEdges))}
       aria-readonly="true"
       tabIndex={registerCell ? -1 : undefined}
       onPointerDown={onCellPointerDown}
@@ -681,8 +916,9 @@ function LockedCell({
       onContextMenu={onContextMenu}
     >
       {display}
-      {settlement && <SettlementMarker state={settlement} />}
+      {settlement && !dashOnly && <SettlementMarker state={settlement} />}
       {tenantBorne && <TenantBorneMark />}
+      <SelectionFillHandle edges={selectionEdges} />
     </td>
   );
 }
@@ -693,11 +929,18 @@ function ReadOnlyCell({
   numeric,
   settlement,
   onView,
+  onSecondary,
   viewLabel,
   viewTestId,
+  viewKind = "view",
+  ownerReportStatus,
   badgeCount,
+  costActionRequired = false,
+  costMargin,
   active,
   selected,
+  selectionEdges,
+  billingState,
   onCellPointerDown,
   onCellPointerEnter,
   onCellPointerUp,
@@ -711,9 +954,15 @@ function ReadOnlyCell({
   /** Server-derived payment state of the live grid charges behind this column. Visual only. */
   settlement?: PaintedSettlement;
   onView?: () => void;
+  onSecondary?: () => void;
   viewLabel?: string;
   viewTestId?: string;
+  viewKind?: "view" | "expense" | "recurring" | "report";
+  ownerReportStatus?: "draft" | "first_checked" | "approved";
   badgeCount?: number;
+  costActionRequired?: boolean;
+  /** Completed charged amount minus actual cost for this exact SST cell. */
+  costMargin?: number | null;
   // P4 Task 3: active-cell nav for the read-only expense totals. All optional
   // — absent ⇒ parity. The <td> is the registered/focused node; the inner
   // eye-Button (onView) keeps its own onClick and stops propagation so
@@ -723,6 +972,8 @@ function ReadOnlyCell({
   active?: boolean;
   // Excel-Web V2: selection tint + custom right-click menu (see LockedCell).
   selected?: boolean;
+  selectionEdges?: SelectionEdges;
+  billingState?: BillingCellState;
   // Selection is orthogonal to editing (see LockedCell): the read-only expense/
   // recurring totals are selectable + copyable, never editable.
   onCellPointerDown?: (e: React.PointerEvent<HTMLTableCellElement>) => void;
@@ -732,19 +983,22 @@ function ReadOnlyCell({
   onContextMenu?: (e: React.MouseEvent) => void;
   registerCell?: (node: HTMLElement | null) => void;
 }) {
+  const dashOnly = isDashDisplay(display);
   return (
     <td
       ref={registerCell}
       className={cn(
-        "px-2 py-1.5 text-sm text-[var(--text-primary)]",
-        numeric && "text-right",
+        "relative overflow-hidden px-1.5 py-1.5 align-middle text-[18px] text-[var(--text-primary)]",
+        categoryDividerClass(columnId),
+        numeric && !dashOnly && "whitespace-nowrap text-center tabular-nums",
+        dashOnly && "bg-transparent text-center align-middle",
         // V2: selection tint when in-range-and-not-active (see LockedCell).
-        selected && !active && "bg-[var(--primary)]/15",
+        selected && "relative",
         // P4 Task 4: visible SOLID --primary active ring (non-inset), matching
         // EditableCell — see its comment for the visibility rationale.
-        active && "ring-2 ring-[var(--primary)]",
+        active && !selected && "ring-2 ring-[var(--primary)]",
         // Settlement wash — after selection/active so it never swallows their feedback.
-        settlement && SETTLEMENT_PAINT[settlement].wash,
+        settlement && !dashOnly && SETTLEMENT_PAINT[settlement].wash,
       )}
       data-testid={`cell-${columnId}`}
       data-settled={settlement === "paid" ? "true" : undefined}
@@ -752,6 +1006,15 @@ function ReadOnlyCell({
       data-active={active ? "true" : undefined}
       data-selected={selected ? "true" : undefined}
       data-copy-value={display}
+      data-billing-state={hasBillableDisplay(display) ? billingState : undefined}
+      style={Object.assign(
+        {},
+        ownerReportStatus ? {
+          backgroundColor: ownerReportStatus === "draft" ? "#FF8C00" : ownerReportStatus === "first_checked" ? "#FFFF00" : "#00FF00",
+          color: "#082B4F",
+        } : billingStateStyle(billingState, display),
+        selectionOutlineStyle(selectionEdges),
+      )}
       tabIndex={registerCell ? -1 : undefined}
       onPointerDown={onCellPointerDown}
       onPointerEnter={onCellPointerEnter}
@@ -760,13 +1023,14 @@ function ReadOnlyCell({
       onContextMenu={onContextMenu}
     >
       {onView ? (
-        <div className={cn("flex items-center gap-1", numeric && "justify-end")}>
-          <span>{display}</span>
-          <span className="relative inline-flex">
+        <div className="flex min-w-0 max-w-full items-center justify-center gap-0.5">
+          <span className="flex min-w-0 max-w-full items-center justify-center gap-0.5">
+            <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{display}</span>
+            <span className="relative inline-flex min-w-0 shrink-0">
             <Button
               type="button"
               variant="ghost"
-              size="icon-xs"
+              size={viewKind === "view" ? "icon-xs" : "icon"}
               aria-label={viewLabel}
               data-testid={viewTestId}
               // When the cell is nav-wired (onActivate present), stop the click
@@ -774,17 +1038,53 @@ function ReadOnlyCell({
               // expense drawer must not also move the active cell. Parity: when
               // onActivate is absent this is exactly the old `onClick={onView}`.
               onClick={onActivate ? (e) => { e.stopPropagation(); onView?.(); } : onView}
-              className="text-muted-foreground hover:text-foreground"
+              className={cn(
+                "text-muted-foreground hover:text-foreground",
+                viewKind !== "view" && "h-8 w-8 shrink-0 text-[var(--navy)] hover:bg-[var(--gold)]/15",
+              )}
             >
-              <Eye />
+              {viewKind === "expense" ? <ReceiptText className="h-5 w-5" /> : viewKind === "recurring" ? <ListPlus className="h-5 w-5" /> : viewKind === "report" ? <FileText className="h-5 w-5" /> : <Eye />}
             </Button>
+            {viewKind === "report" && onSecondary && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0 text-[var(--navy)] hover:bg-[var(--gold)]/15"
+                aria-label="Download owner income report PDF"
+                data-testid="owner-report-download-btn"
+                onClick={(e) => { e.stopPropagation(); onSecondary(); }}
+              >
+                <Download className="h-5 w-5" />
+              </Button>
+            )}
             {badgeCount != null && <CountBadge count={badgeCount} testId={`${viewTestId}-badge`} />}
+            </span>
           </span>
+          {viewKind === "expense" && costActionRequired && (
+            <Button type="button" variant="outline" size="sm" className="absolute bottom-2 left-1 right-1 h-7 min-w-0 overflow-hidden border-orange-500 bg-orange-50 px-1 text-[clamp(9px,0.7vw,12px)] font-extrabold whitespace-nowrap text-orange-900 shadow-sm hover:bg-orange-100" onClick={onActivate ? (e) => { e.stopPropagation(); onView?.(); } : onView}>
+              Add Cost
+            </Button>
+          )}
+          {viewKind === "expense" && !costActionRequired && badgeCount != null && badgeCount > 0 && costMargin != null && (
+            <span
+              data-testid={`${viewTestId}-margin`}
+              className={cn(
+                "pointer-events-none absolute bottom-2 left-1 right-1 h-7 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap rounded-md border px-1 py-1 text-center text-[clamp(8px,0.65vw,12px)] font-extrabold shadow-sm",
+                costMargin > 0 && "border-emerald-600 bg-emerald-50 text-emerald-800",
+                costMargin < 0 && "border-red-600 bg-red-50 text-red-800",
+                costMargin === 0 && "border-slate-500 bg-slate-50 text-slate-700",
+              )}
+            >
+              {costMargin > 0 ? "Profit" : costMargin < 0 ? "Loss" : "Break-even"} RM{Math.abs(costMargin).toFixed(2)}
+            </span>
+          )}
         </div>
       ) : (
         display
       )}
-      {settlement && <SettlementMarker state={settlement} />}
+      {settlement && !dashOnly && <SettlementMarker state={settlement} />}
+      <SelectionFillHandle edges={selectionEdges} />
     </td>
   );
 }
@@ -794,17 +1094,27 @@ function ReadOnlyCell({
 export function GridTable({
   rows,
   columns,
+  displayMode = "easy-read",
+  density = "comfortable",
   onCellEdit,
   onOpenSettings,
   onViewExpenses,
   onViewRecurring,
   onOpenAttachments,
+  onViewTenantSummary,
+  onViewTenantDocuments,
+  onViewOwnerReport,
+  onDownloadOwnerReport,
+  onViewActivity,
   onCellPointerDown,
   onCellPointerEnter,
   onCellPointerUp,
   isCellSelected,
+  selectionEdges,
   cellColour,
   isCellActive,
+  isCellEditing,
+  isCellPendingRebill,
   onCellActivate,
   onCellContextMenu,
   onCellDoubleClick,
@@ -821,7 +1131,17 @@ export function GridTable({
   showVacant,
 }: GridTableProps) {
   const bandGroups = groupBands(columns);
+  const propertyGroups = Array.from(
+    rows.reduce((groups, row) => {
+      const key = row.propertyId || row.propertyName || "unknown";
+      const existing = groups.get(key);
+      if (existing) existing.rows.push(row);
+      else groups.set(key, { key, name: row.propertyName || "Unknown condo", rows: [row] });
+      return groups;
+    }, new Map<string, { key: string; name: string; rows: GridRow[] }>()),
+  ).map(([, group]) => group);
   const dataColumns = columns.filter((c) => c.band); // everything except unitCode
+  const preferredDataWidth = dataColumns.reduce((sum, column) => sum + preferredColumnWidth(column.id), 0);
 
   // Per-cell keystroke-echo buffer: `${cellKey}:${columnId}` -> user-TYPED
   // value. This is GridTable's own internal state, kept separate from the
@@ -881,6 +1201,61 @@ export function GridTable({
     return false;
   }
 
+  function visibleSubRows(row: GridRow): GridSubRow[] {
+    return showVacant ? row.subRows : row.subRows.filter((subRow) => subRow.tenancyId != null);
+  }
+
+  /** Totals reflect the currently filtered rows and any staged values visible in the grid. */
+  function columnTotal(columnId: ColumnId): string {
+    // Meter readings are snapshots, not money; adding meter positions would be misleading.
+    if (columnId === "previousKwh" || columnId === "currentKwh") return "—";
+    if (columnId === "ownerPayout") {
+      return rows.reduce((sum, row) => sum + projectedOwnerPayout(row), 0).toFixed(2);
+    }
+    let total = 0;
+    const add = (raw: string | null | undefined) => {
+      if (raw == null || raw === "" || raw === "—") return;
+      const value = Number(raw);
+      if (!Number.isFinite(value)) return;
+      total += value;
+    };
+
+    for (const row of rows) {
+      if (columnId === "rental" || columnId === "deposit") {
+        for (const subRow of visibleSubRows(row)) add(columnId === "rental" ? subRow.rental : subRow.deposit);
+        continue;
+      }
+      if (columnId === "amount") {
+        // Whole-unit tenancies do not use room-level meter readings, so any
+        // legacy reading snapshot must not leak into the visible money total.
+        if (row.isWholeUnit) continue;
+        for (const subRow of visibleSubRows(row)) {
+          const prev = stagedOrSeed(subRow.listingId, "previousKwh", subRow.previousKwh ?? "");
+          const cur = stagedOrSeed(subRow.listingId, "currentKwh", subRow.currentKwh ?? "");
+          const edited = isStaged(subRow.listingId, "previousKwh") || isStaged(subRow.listingId, "currentKwh");
+          add(edited ? amountPreview(subRow, prev, cur) : subRow.amount);
+        }
+        continue;
+      }
+      if (["tenantExpNonSst", "tenantExpWithSst", "ownerExpNonSst", "ownerExpWithSst", "managementFeeNonSst", "managementFeeSst", "ownerRecurring", "tenantRecurring"].includes(columnId)) {
+        add(readOnlyValue(row, columnId));
+        continue;
+      }
+      if (!isApplicable(row, columnId)) continue;
+      const seed = seedValue(row, columnId);
+      let displayedSeed = seed;
+      if (columnId === "cleaningOwner" || columnId === "cleaningTenant" || columnId === "wifiOwner" || columnId === "wifiTenant" || columnId === "maintenanceFee") {
+        const governed = scalarSettingsLock(row, columnId);
+        const generated = scalarGeneratedAmount(row, columnId);
+        displayedSeed = governed === false ? seed : (generated || seed);
+      }
+      add(stagedOrSeed(row.apartmentId, columnId, displayedSeed));
+    }
+    // Every remaining column is monetary. A blank monetary total means zero,
+    // not "not applicable"; reserve the dash for meter snapshots above.
+    return total.toFixed(2);
+  }
+
   return (
     // Task 11 (R4b): NOT <TableWrap> (components/ui.tsx, frozen/shared with
     // other tables) — same visual classes (rounded border), but WITHOUT its
@@ -905,12 +1280,37 @@ export function GridTable({
     // native-selection conflict. The active cell's <input> re-enables it
     // (`select-text`, see EditableCell) so in-cell editing keeps a working caret
     // and text selection.
-    <div className="select-none rounded-lg border border-[var(--border)]">
-      <DataTable>
+    <div
+      data-density={density}
+      className={cn(
+        "select-none rounded-lg border border-[var(--border)] bg-white dark:bg-card",
+        density === "compact" && "[&_tbody_td]:py-1",
+      )}
+    >
+      <DataTable
+        className={cn(
+          "billing-matrix w-full table-fixed",
+          displayMode === "easy-read"
+            ? "text-[18px]"
+            : "min-w-[1680px] text-[15px] [&_td]:text-[15px] [&_th]:text-[15px] [&_input]:text-[15px]",
+        )}
+        {...(displayMode === "easy-read" ? { style: { minWidth: `${300 + preferredDataWidth}px` } } : {})}
+      >
+        <colgroup>
+          <col style={displayMode === "easy-read" ? { width: "300px" } : { width: "13%" }} />
+          {dataColumns.map((column) => (
+            <col
+              key={column.id}
+              style={displayMode === "easy-read"
+                ? { width: `${preferredColumnWidth(column.id)}px` }
+                : { width: `${87 * preferredColumnWidth(column.id) / Math.max(preferredDataWidth, 1)}%` }}
+            />
+          ))}
+        </colgroup>
         <TableHead>
           <tr>
-            <th rowSpan={2} className="sticky left-0 top-0 z-30 bg-[var(--page-bg)] min-w-[13rem] px-4 py-3 text-left font-semibold align-bottom">
-              <div className="flex items-center gap-2">
+              <th rowSpan={2} className="sticky left-0 top-0 z-30 select-text border-r-2 border-r-[var(--navy)] bg-[var(--page-bg)] px-3 py-1 text-center text-[18px] font-bold tracking-normal align-middle">
+              <div className="flex items-center justify-center gap-2">
                 {/* Select-all: checks every BILLABLE unit at once (indeterminate
                     when only some are). §15 bulk-selection — toggles the visible
                     billable set only, never a silent full-filter select. Disabled
@@ -918,7 +1318,7 @@ export function GridTable({
                     selection (parity for GridTable-only tests). */}
                 {onToggleSelectAllForBill && (
                   <Checkbox
-                    aria-label="Select all billable units for billing"
+                    aria-label="Select all visible units"
                     data-testid="bill-select-all"
                     checked={!!allBillableSelected}
                     indeterminate={!!someBillableSelected}
@@ -936,10 +1336,10 @@ export function GridTable({
                 data-testid="band-header"
                 // Excel-Web V2: a band header selects EVERY sub-column under it
                 // (all rows). cursor-pointer + hover cue when interactive.
-                onClick={onSelectColumns ? (e) => onSelectColumns(g.columns.map((c) => c.id), resolveClickMods(e)) : undefined}
+                onClick={onSelectColumns ? (e) => { if (!hasNativeTextSelection()) onSelectColumns(g.columns.map((c) => c.id), resolveClickMods(e)); } : undefined}
                 title={onSelectColumns ? `Select all ${g.band} columns` : undefined}
                 className={cn(
-                  "sticky top-0 z-20 h-9 bg-[var(--page-bg)] px-4 py-2 text-center font-semibold border-l border-[var(--border)]",
+                  "sticky top-0 z-20 h-10 select-text whitespace-nowrap border-x-2 border-x-[var(--navy)] bg-[var(--page-bg)] px-2 py-1 text-center text-[18px] font-bold leading-none tracking-normal align-middle",
                   onSelectColumns && "cursor-pointer transition hover:bg-[var(--primary)]/10",
                 )}
               >
@@ -953,11 +1353,11 @@ export function GridTable({
                 key={c.id}
                 data-testid={`col-header-${c.id}`}
                 // Excel-Web V2: a sub-column header selects that ONE column (all rows).
-                onClick={onSelectColumns ? (e) => onSelectColumns([c.id], resolveClickMods(e)) : undefined}
+                onClick={onSelectColumns ? (e) => { if (!hasNativeTextSelection()) onSelectColumns([c.id], resolveClickMods(e)); } : undefined}
                 title={onSelectColumns ? "Select column" : undefined}
                 className={cn(
-                  "sticky top-9 z-20 bg-[var(--page-bg)] px-2 py-2 font-medium border-l border-[var(--border)]",
-                  c.numeric && "text-right",
+                  "sticky top-10 z-20 h-10 select-text whitespace-nowrap bg-[var(--page-bg)] px-2 py-1 text-center text-[18px] font-bold leading-none tracking-normal align-middle border-l border-[var(--border)]",
+                  categoryDividerClass(c.id),
                   onSelectColumns && "cursor-pointer transition hover:bg-[var(--primary)]/10",
                 )}
               >
@@ -968,35 +1368,65 @@ export function GridTable({
         </TableHead>
         <tbody>
           {rows.length === 0 && <EmptyRow colSpan={columns.length} label="No apartments for this period." />}
-          {rows.map((row) => (
-            <GridUnitRowGroup
-              key={row.apartmentId}
-              row={row}
-              dataColumns={dataColumns}
-              stagedOrSeed={stagedOrSeed}
-              isStaged={isStaged}
-              stageEdit={stageEdit}
-              onOpenSettings={onOpenSettings}
-              onViewExpenses={onViewExpenses}
-              onViewRecurring={onViewRecurring}
-              onOpenAttachments={onOpenAttachments}
-              onCellPointerDown={onCellPointerDown}
-              onCellPointerEnter={onCellPointerEnter}
-              onCellPointerUp={onCellPointerUp}
-              isCellSelected={isCellSelected}
-              cellColour={cellColour}
-              isCellActive={isCellActive}
-              onCellActivate={onCellActivate}
-              onCellContextMenu={onCellContextMenu}
-              onCellDoubleClick={onCellDoubleClick}
-              registerCell={registerCell}
-              selectableForBill={!!billableApartmentIds?.has(row.apartmentId)}
-              selectedForBill={!!selectedForBill?.has(row.apartmentId)}
-              onToggleBillSelection={onToggleBillSelection}
-              showVacant={showVacant}
-            />
+          {propertyGroups.map((group) => (
+            <Fragment key={group.key}>
+              <tr data-testid="property-divider" className="border-y-2 border-[var(--gold)] bg-[var(--navy)]">
+                <td colSpan={columns.length} className={cn("select-text px-4 text-left text-[18px] font-bold text-[var(--gold-light)]", density === "compact" ? "py-1" : "py-2.5")}>
+                  <span className="inline-flex items-center gap-2"><Building2 className="h-5 w-5" />{group.name}</span>
+                </td>
+              </tr>
+              {group.rows.map((row) => (
+                <GridUnitRowGroup
+                  key={row.apartmentId}
+                  row={row}
+                  dataColumns={dataColumns}
+                  stagedOrSeed={stagedOrSeed}
+                  isStaged={isStaged}
+                  stageEdit={stageEdit}
+                  onOpenSettings={onOpenSettings}
+                  onViewExpenses={onViewExpenses}
+                  onViewRecurring={onViewRecurring}
+                  onOpenAttachments={onOpenAttachments}
+                  onViewTenantSummary={onViewTenantSummary}
+                  onViewTenantDocuments={onViewTenantDocuments}
+                  onViewOwnerReport={onViewOwnerReport}
+                  onDownloadOwnerReport={onDownloadOwnerReport}
+                  onViewActivity={onViewActivity}
+                  onCellPointerDown={onCellPointerDown}
+                  onCellPointerEnter={onCellPointerEnter}
+                  onCellPointerUp={onCellPointerUp}
+                  isCellSelected={isCellSelected}
+                  selectionEdges={selectionEdges}
+                  cellColour={cellColour}
+                  isCellActive={isCellActive}
+                  isCellEditing={isCellEditing}
+                  isCellPendingRebill={isCellPendingRebill}
+                  onCellActivate={onCellActivate}
+                  onCellContextMenu={onCellContextMenu}
+                  onCellDoubleClick={onCellDoubleClick}
+                  registerCell={registerCell}
+                  selectableForBill={!!billableApartmentIds?.has(row.apartmentId)}
+                  selectedForBill={!!selectedForBill?.has(row.apartmentId)}
+                  onToggleBillSelection={onToggleBillSelection}
+                  showVacant={showVacant}
+                  density={density}
+                />
+              ))}
+            </Fragment>
           ))}
         </tbody>
+        {rows.length > 0 && (
+          <tfoot data-testid="grid-total-row">
+            <tr className="border-t-2 border-[var(--gold)] bg-[var(--navy)] text-[var(--gold-light)]">
+              <td className="sticky bottom-0 left-0 z-30 border-r-2 border-r-[var(--gold)] bg-[var(--navy)] px-4 py-3 text-center text-[18px] font-extrabold">TOTAL</td>
+              {dataColumns.map((column) => (
+                <td key={column.id} data-testid={`total-${column.id}`} className={cn("sticky bottom-0 z-20 bg-[var(--navy)] px-2 py-3 text-center text-[18px] font-extrabold tabular-nums", categoryDividerClass(column.id))}>
+                  {columnTotal(column.id)}
+                </td>
+              ))}
+            </tr>
+          </tfoot>
+        )}
       </DataTable>
     </div>
   );
@@ -1014,12 +1444,20 @@ function GridUnitRowGroup({
   onViewExpenses,
   onViewRecurring,
   onOpenAttachments,
+  onViewTenantSummary,
+  onViewTenantDocuments,
+  onViewOwnerReport,
+  onDownloadOwnerReport,
+  onViewActivity,
   onCellPointerDown,
   onCellPointerEnter,
   onCellPointerUp,
   isCellSelected,
+  selectionEdges,
   cellColour,
   isCellActive,
+  isCellEditing,
+  isCellPendingRebill,
   onCellActivate,
   onCellContextMenu,
   onCellDoubleClick,
@@ -1028,6 +1466,7 @@ function GridUnitRowGroup({
   selectedForBill,
   onToggleBillSelection,
   showVacant,
+  density,
 }: {
   row: GridRow;
   dataColumns: GridColumn[];
@@ -1035,15 +1474,23 @@ function GridUnitRowGroup({
   isStaged: (cellKey: string, columnId: ColumnId) => boolean;
   stageEdit: (cellKey: string, columnId: ColumnId, value: string) => void;
   onOpenSettings?: (apartmentId: string) => void;
-  onViewExpenses?: (apartmentId: string, bearer: ExpenseBearer) => void;
+  onViewExpenses?: (apartmentId: string, bearer: ExpenseBearer, withSST: boolean) => void;
   onViewRecurring?: (apartmentId: string, bearer: RecurringBearer) => void;
   onOpenAttachments?: (apartmentId: string) => void;
+  onViewTenantSummary?: (row: GridRow) => void;
+  onViewTenantDocuments?: (row: GridRow) => void;
+  onViewOwnerReport?: (row: GridRow) => void;
+  onDownloadOwnerReport?: (row: GridRow) => void;
+  onViewActivity?: (row: GridRow) => void;
   onCellPointerDown?: (cell: SelectionCell, mods: { shift: boolean; ctrl: boolean }) => void;
   onCellPointerEnter?: (cell: SelectionCell) => void;
   onCellPointerUp?: () => void;
   isCellSelected?: (cellKey: string, columnId: ColumnId) => boolean;
+  selectionEdges?: (cellKey: string, columnId: ColumnId) => SelectionEdges | undefined;
   cellColour?: (cellKey: string, columnId: ColumnId) => string | undefined;
   isCellActive?: (cellKey: string, columnId: ColumnId) => boolean;
+  isCellEditing?: (cellKey: string, columnId: ColumnId) => boolean;
+  isCellPendingRebill?: (cellKey: string, columnId: ColumnId) => boolean;
   onCellActivate?: (cellKey: string, columnId: ColumnId, mods: { shift: boolean; ctrl: boolean }) => void;
   onCellContextMenu?: (cell: { cellKey: string; columnId: ColumnId }, e: React.MouseEvent) => void;
   onCellDoubleClick?: (cellKey: string, columnId: ColumnId) => void;
@@ -1054,7 +1501,9 @@ function GridUnitRowGroup({
   selectedForBill?: boolean;
   onToggleBillSelection?: (apartmentId: string) => void;
   showVacant?: boolean;
+  density: "comfortable" | "compact";
 }) {
+  const [partyPreview, setPartyPreview] = useState<{ id: string; type: "owner" | "tenant"; name: string } | null>(null);
   // R2/R3 (Task 6 re-base): grain-lock is now server-derived via
   // `row.isWholeUnit` (Apartment.listingMode === "WHOLE") — a partitioned
   // apartment nests its readings as tenant-sub-rows; a whole-unit tenancy
@@ -1131,7 +1580,12 @@ function GridUnitRowGroup({
   // (bug: it used to, keyed on the ambiguous `billedAt != null`, which is set on
   // BOTH the first Bill and a re-Bill). Billed vs Re-Billed are mutually
   // exclusive below — a re-Billed row shows Re-Billed only, never both.
-  const isReBilled = (row.billRevision ?? 0) > 0;
+  const hasLiveBill = row.billed ?? row.billedAt != null;
+  const needsBill = row.entryId != null && (!hasLiveBill || row.hasUnbilledChanges === true);
+
+  function cellBillingState(cellKey: string, columnId: ColumnId): BillingCellState | undefined {
+    return billingStateForCell(row, cellKey, columnId, isCellPendingRebill);
+  }
 
   // ui-task-10e: builds the pointer/selection/colour props for one editable
   // cell (unit-grain, inline subRow, or nested sub-row — all three sites
@@ -1154,7 +1608,7 @@ function GridUnitRowGroup({
    * distinct hue and glyph says "money in, not finished" without ever reading as done.
    */
   function cellSettlement(cellKey: string, columnId: ColumnId): PaintedSettlement | undefined {
-    const bucket = SETTLEMENT_BUCKET_OF_COLUMN[columnId];
+    const bucket = settlementBucketForColumn(row, columnId);
     if (!bucket || !row.settlement) return undefined;
     return painted(row.settlement.rooms?.[cellKey]?.[bucket] ?? row.settlement.cells[bucket]);
   }
@@ -1163,6 +1617,7 @@ function GridUnitRowGroup({
     const selCell: SelectionCell = { cellKey, columnId, value: cellNumericValue(rawValue) };
     return {
       settlement: cellSettlement(cellKey, columnId),
+      billingState: cellBillingState(cellKey, columnId),
       // Excel-Web V2: resolve the raw pointerdown ONCE, platform-aware. Only a
       // primary-button "select" gesture starts cell selection — a right-click
       // (or macOS Ctrl-click) resolves to "context" and MUST NOT start a
@@ -1178,8 +1633,10 @@ function GridUnitRowGroup({
       onCellPointerEnter: onCellPointerEnter ? () => onCellPointerEnter(selCell) : undefined,
       onCellPointerUp,
       selected: isCellSelected?.(cellKey, columnId),
+      selectionEdges: selectionEdges?.(cellKey, columnId),
       colour: cellColour?.(cellKey, columnId),
       active: isCellActive?.(cellKey, columnId),
+      editing: isCellEditing?.(cellKey, columnId),
       // Task 3 (V2): activate carries the click's modifiers (platform-aware) so a
       // shift/ctrl click extends/toggles the selection instead of collapsing it.
       onActivate: onCellActivate
@@ -1206,6 +1663,7 @@ function GridUnitRowGroup({
     const selCell: SelectionCell = { cellKey, columnId };
     return {
       settlement: cellSettlement(cellKey, columnId),
+      billingState: cellBillingState(cellKey, columnId),
       // Same platform-aware gesture resolution as editableCellProps: only a
       // primary-button "select" starts a drag; right-click resolves to "context".
       onCellPointerDown: onCellPointerDown
@@ -1220,6 +1678,7 @@ function GridUnitRowGroup({
       // Excel-Web V2: read-only navigable cells paint the same selection tint, so a
       // range that spans them reads as one solid block.
       selected: isCellSelected?.(cellKey, columnId),
+      selectionEdges: selectionEdges?.(cellKey, columnId),
       // Task 3 (V2): carry the click's modifiers (platform-aware) up to
       // onCellActivate (same as the editable path) so a shift/ctrl click on a
       // read-only navigable cell extends/toggles the selection.
@@ -1234,19 +1693,19 @@ function GridUnitRowGroup({
   return (
     <Fragment>
       <tr className="border-b border-[var(--border)] transition hover:bg-[var(--page-bg)]">
-        <td className="sticky left-0 z-10 bg-[var(--page-bg)] px-4 py-3 text-sm text-[var(--text-primary)] align-top">
+        <td className={cn("sticky left-0 z-10 select-text border-r-2 border-r-[var(--navy)] bg-[var(--page-bg)] px-4 text-[18px] text-[var(--text-primary)] align-top selection:bg-[var(--primary)]/25", density === "compact" ? "py-1.5" : "py-3")}>
           {/* Identity line — the primary scan target. The unit code must read
               on ONE line: `whitespace-nowrap` stops the browser breaking a
               hyphenated code (e.g. "A-08-02") at each "-", and `shrink-0` stops
               it being squeezed when the sticky column is tight. Status pill sits
               beside it; row actions cluster to the right via `ml-auto`. */}
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             {/* Per-unit Bill selection — only billable rows (saved, not yet
                 billed) render a checkbox. Billing a checked unit issues ALL its
                 tenants' invoices + the owner invoice in one backend op. */}
             {onToggleBillSelection && selectableForBill && (
               <Checkbox
-                aria-label={`Select ${row.unitCode} for billing`}
+                aria-label={`Select ${row.unitCode}`}
                 data-testid={`bill-select-${row.apartmentId}`}
                 checked={!!selectedForBill}
                 onCheckedChange={() => onToggleBillSelection(row.apartmentId)}
@@ -1258,29 +1717,28 @@ function GridUnitRowGroup({
                 type="button"
                 data-testid="unit-code-btn"
                 aria-label={`Settings for ${row.unitCode}`}
-                onClick={() => onOpenSettings(row.apartmentId)}
-                className="shrink-0 whitespace-nowrap font-mono font-semibold underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-[var(--ring)] rounded"
+                onClick={() => { if (!hasNativeTextSelection()) onOpenSettings(row.apartmentId); }}
+                title={`${row.propertyName} ${row.unitCode}`.trim()}
+                className="min-w-0 select-text truncate whitespace-nowrap rounded font-semibold underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
               >
-                {row.unitCode}
+                {row.propertyName && <span>{row.propertyName} </span>}
+                <span className="font-mono">{row.unitCode}</span>
               </button>
             ) : (
-              <span className="shrink-0 whitespace-nowrap font-mono font-semibold">{row.unitCode}</span>
+              <span className="min-w-0 select-text truncate whitespace-nowrap font-semibold" title={`${row.propertyName} ${row.unitCode}`.trim()}>
+                {row.propertyName && <span>{row.propertyName} </span>}
+                <span className="font-mono">{row.unitCode}</span>
+              </span>
             )}
+          </div>
+          <div className={cn("flex min-w-0 flex-wrap items-center gap-2", density === "compact" ? "mt-0.5 pr-32" : "mt-2 pr-20")}>
             <StatusPill tone={settlementTone} testId="entry-payment-pill">
               {settlementLabel}
             </StatusPill>
-            {/* Rule 2: a `Billed` tag whenever this unit-month has a LIVE grid-workflow
-                invoice — driven by the provenance-based `row.billed` (NOT billedAt/
-                invoicedAt), so it still shows after a legacy sourceGridEntryId=null
-                orphaning. Suppressed once the row has been re-Billed: Billed and
-                Re-Billed are mutually exclusive (a re-Billed row shows Re-Billed only). */}
-            {row.billed && !isReBilled && (
-              <Badge variant="emerald" data-testid="billed-badge">Billed</Badge>
-            )}
-            {/* Re-Billed: shown ONLY after a genuine re-Bill (billRevision > 0),
-                replacing the Billed tag. A first-time Bill never reaches here. */}
-            {row.billed && isReBilled && (
-              <Badge variant="amber" data-testid="rebill-badge">Re-Billed</Badge>
+            {needsBill && (
+              <Badge variant="amber" data-testid="needs-bill-badge">
+                {hasLiveBill ? "Needs Re-Bill" : "Needs Bill"}
+              </Badge>
             )}
             {/* R13 — money settled against a proforma line whose tax invoice never got
                 minted. The MONEY IS CORRECT; only the document is missing, which is why
@@ -1290,7 +1748,40 @@ function GridUnitRowGroup({
             {row.graduationPending && (
               <Badge variant="amber" data-testid="graduation-pending-badge">Invoice pending</Badge>
             )}
-            <span className="ml-auto flex shrink-0 items-center gap-1">
+            <span className={cn(
+              "absolute right-2 grid shrink-0 gap-0.5 rounded-lg border border-[var(--border)]/70 bg-[var(--page-bg)]/95 p-0.5 shadow-sm backdrop-blur-sm",
+              density === "compact"
+                ? "top-7 grid-cols-4 [&_button]:h-7 [&_button]:w-7"
+                : "top-11 grid-cols-2",
+            )}>
+              {onViewTenantDocuments && row.subRows.some((sub) => sub.partyId) && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`View invoices and receipts for ${row.unitCode}`}
+                  title="Tenant invoices & receipts"
+                  data-testid="tenant-documents-btn"
+                  onClick={(e) => { e.stopPropagation(); onViewTenantDocuments(row); }}
+                  className="text-[var(--navy)] hover:bg-[var(--gold)]/15 hover:text-[var(--gold)]"
+                >
+                  <ReceiptText className="h-4 w-4" />
+                </Button>
+              )}
+              {onViewTenantSummary && row.subRows.some((sub) => sub.partyId) && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`View tenant bill summary for ${row.unitCode}`}
+                  title="View what the tenant sees"
+                  data-testid="tenant-bill-summary-btn"
+                  onClick={(e) => { e.stopPropagation(); onViewTenantSummary(row); }}
+                  className="text-[var(--navy)] hover:text-[var(--gold)]"
+                >
+                  <Eye className="h-4 w-4" />
+                </Button>
+              )}
               {row.warnings.length > 0 && (
                 <span className="text-xs text-amber-600" title={row.warnings.map((w) => w.code).join(", ")}>
                   ⚠
@@ -1313,7 +1804,7 @@ function GridUnitRowGroup({
                   <Button
                     type="button"
                     variant="ghost"
-                    size="icon-xs"
+                    size="icon"
                     // Names the SCOPE, not just the noun: this opens the unit-level
                     // (owner-only) panel, never the per-line tenant-visible one.
                     aria-label={`Owner unit bills for ${row.unitCode}`}
@@ -1322,12 +1813,17 @@ function GridUnitRowGroup({
                     onClick={(e) => { e.stopPropagation(); onOpenAttachments(row.apartmentId); }}
                     className="text-muted-foreground hover:text-foreground"
                   >
-                    <Paperclip />
+                    <Paperclip className="h-4 w-4" />
                   </Button>
                   <CountBadge count={row.attachments.length} testId="attachment-badge" />
                 </span>
               )}
-              <AuditIcon name={row.entry?.lastEditedByName ?? null} at={row.entry?.updatedAt ?? null} />
+              <AuditIcon
+                name={row.entry?.lastEditedByName ?? null}
+                at={row.entry?.updatedAt ?? null}
+                unitCode={row.unitCode}
+                onClick={onViewActivity ? () => onViewActivity(row) : undefined}
+              />
             </span>
           </div>
           {/* Context lines — occupancy/tenant then the parent property/condo
@@ -1337,50 +1833,71 @@ function GridUnitRowGroup({
               sticky column wider (which is what was crushing the code above).
               The occupancy element keeps its exact text — tests assert its
               textContent verbatim ("Whole unit · {name}" / "3 rooms"). */}
-          <div className="mt-1 max-w-[15rem] space-y-0.5">
+          <div className={cn("max-w-[24rem] text-[18px]", density === "compact" ? "mt-0 space-y-0 pr-32 leading-tight" : "mt-1 space-y-0.5 pr-20")}>
             {/* Whole-unit tenant name lives in this tag ("Whole unit · {name}"). It used to
                 `truncate` and got clipped by the narrow unit column — now it WRAPS within the
                 capped width so the full tenant name shows without dragging the column wider.
                 textContent is unchanged, so the verbatim-tag tests still hold. */}
-            <div data-testid="unit-occupancy-tag" className="whitespace-normal break-words text-xs text-muted-foreground" title={occupancyTag}>
-              {occupancyTag}
-            </div>
-            {row.propertyName && (
-              // Visibility bump (was text-muted-foreground/70 — too faint to identify the
-              // building at a glance): full-contrast secondary text + medium weight.
-              <div className="truncate text-xs font-medium text-foreground/80" title={row.propertyName}>
-                {row.propertyName}
+            {row.isWholeUnit ? (
+              <div
+                data-testid="unit-occupancy-tag"
+                className="whitespace-normal break-words text-[18px] text-muted-foreground"
+                title={`Whole unit: ${row.ownerName ?? "—"}`}
+              >
+                <span className="text-muted-foreground/70">Whole unit: </span>
+                {row.ownerPartyId ? (
+                  <button
+                    type="button"
+                    className="select-text font-semibold text-[var(--navy)] underline decoration-[var(--gold)] decoration-2 underline-offset-4 hover:text-[var(--gold)]"
+                    onClick={(event) => { event.stopPropagation(); if (!hasNativeTextSelection()) setPartyPreview({ id: row.ownerPartyId!, type: "owner", name: row.ownerName ?? "Owner" }); }}
+                  >{row.ownerName ?? "—"}</button>
+                ) : <span className="font-medium text-foreground/80">{row.ownerName ?? "—"}</span>}
+              </div>
+            ) : (
+              <div
+                data-testid="unit-occupancy-tag"
+                className="whitespace-normal break-words text-[18px] text-muted-foreground"
+                title={occupancyTag}
+              >
+                {occupancyTag}
               </div>
             )}
-            {row.ownerName && (
-              <div
-                data-testid="owner-line"
-                className="truncate text-xs text-muted-foreground"
-                title={`Owner: ${row.ownerName}`}
-              >
-                <span className="text-muted-foreground/70">Owner</span>{" "}
-                <span className="font-medium text-foreground/80">{row.ownerName}</span>
+            {row.isWholeUnit && inlineSubRow?.partyName && (
+              <div data-testid="whole-unit-tenant" className="break-words text-[18px] text-muted-foreground">
+                <span className="text-muted-foreground/70">Tenant: </span>
+                {inlineSubRow.partyId ? (
+                  <button
+                    type="button"
+                    className="select-text font-semibold text-[var(--navy)] underline decoration-[var(--gold)] decoration-2 underline-offset-4 hover:text-[var(--gold)]"
+                    onClick={(event) => { event.stopPropagation(); if (!hasNativeTextSelection()) setPartyPreview({ id: inlineSubRow.partyId!, type: "tenant", name: inlineSubRow.partyName ?? "Tenant" }); }}
+                  >{inlineSubRow.partyName}</button>
+                ) : <span className="font-medium text-foreground/80">{inlineSubRow.partyName}</span>}
               </div>
             )}
-            {/* Whole-unit tenant phone: a whole unit renders inline (no nested sub-rows),
-                so its tenant's phone would otherwise be dropped — the tenant NAME already
-                shows in the "Whole unit · {name}" occupancy tag above, this adds the phone.
-                `inlineSubRow` is only set for whole units, so this never doubles up with the
-                per-room phone on a partitioned unit's nested rows. */}
-            {inlineSubRow?.partyPhone && (
-              <div
-                data-testid="whole-unit-tenant-phone"
-                className="break-words text-xs text-muted-foreground"
-                title={`Tenant: ${inlineSubRow.partyName ?? "—"} · ${inlineSubRow.partyPhone}`}
-              >
-                <span className="text-muted-foreground/70">Tenant</span>{" "}
-                <span className="tabular-nums text-foreground/80">{inlineSubRow.partyPhone}</span>
+            {!row.isWholeUnit && row.ownerName && (
+              <div data-testid="owner-line" className="truncate text-[18px] text-muted-foreground" title={`Owner: ${row.ownerName}`}>
+                <span className="text-muted-foreground/70">Owner: </span>
+                {row.ownerPartyId ? (
+                  <button
+                    type="button"
+                    className="select-text font-semibold text-[var(--navy)] underline decoration-[var(--gold)] decoration-2 underline-offset-4 hover:text-[var(--gold)]"
+                    onClick={(event) => { event.stopPropagation(); if (!hasNativeTextSelection()) setPartyPreview({ id: row.ownerPartyId!, type: "owner", name: row.ownerName ?? "Owner" }); }}
+                  >{row.ownerName}</button>
+                ) : <span className="font-medium text-foreground/80">{row.ownerName}</span>}
               </div>
             )}
           </div>
         </td>
         {dataColumns.map((col) => {
           if (col.grain === "subRow") {
+            // A whole-unit tenancy is billed through the unit-level TNB
+            // Owner/Tenant cells. It does not use Previous/Current meter
+            // readings, and therefore has no meter-derived Amount either.
+            // Keep any legacy saved readings untouched in the database, but
+            // make all three cells visibly non-applicable and non-editable.
+            if (row.isWholeUnit) {
+              return <LockedCell key={col.id} columnId={col.id} display="—" numeric={col.numeric} />;
+            }
             // Grain lock (R3): rendered on the unit row ONLY when there are
             // no nested sub-rows to show the reading in — otherwise this cell
             // is a hard lock (the real value lives in the nested rows below).
@@ -1424,6 +1941,24 @@ function GridUnitRowGroup({
             );
           }
           if (!col.editable) {
+            if (col.id === "ownerPayout") {
+              const payout = projectedOwnerPayout(row);
+              return (
+                <ReadOnlyCell
+                  key={col.id}
+                  columnId={col.id}
+                  display={payout.toFixed(2)}
+                  numeric
+                  onView={onViewOwnerReport && row.ownerPartyId ? () => onViewOwnerReport(row) : undefined}
+                  viewLabel={`View owner monthly report for ${row.unitCode}`}
+                  viewTestId="owner-report-btn"
+                  viewKind="report"
+                  onSecondary={onDownloadOwnerReport && row.ownerPartyId ? () => onDownloadOwnerReport(row) : undefined}
+                  ownerReportStatus={row.ownerPartyId ? (row.ownerPayoutStatus ?? "draft") : undefined}
+                  {...readOnlyCellProps(row.apartmentId, col.id)}
+                />
+              );
+            }
             // Recurring-charges (R6 refined; Maintenance joined 2026-08-06): a governable scalar
             // cell is read-only ONLY when an ENABLED recurring def governs it (settings-controlled).
             // When the server explicitly says NOT governed (=== false) — no def, disabled def, or a
@@ -1478,20 +2013,25 @@ function GridUnitRowGroup({
                   onView={onViewRecurring ? () => onViewRecurring(row.apartmentId, recBearer) : undefined}
                   viewLabel={recBearer === "tenant" ? "View tenant recurring charges" : "View owner recurring charges"}
                   viewTestId={recBearer === "tenant" ? "view-recurring-tenant" : "view-recurring-owner"}
+                  viewKind="recurring"
                   badgeCount={recBearer === "tenant" ? (row.recurring?.tenant.count ?? 0) : (row.recurring?.owner.count ?? 0)}
                   {...readOnlyCellProps(row.apartmentId, col.id)}
                 />
               );
             }
-            const isExpenseWithSst = col.id === "tenantExpWithSst" || col.id === "ownerExpWithSst";
-            const bearer: ExpenseBearer = col.id === "tenantExpWithSst" ? "tenant" : "owner";
+            const isExpense = ["tenantExpNonSst", "tenantExpWithSst", "ownerExpNonSst", "ownerExpWithSst"].includes(col.id);
+            const expenseWithSst = col.id === "tenantExpWithSst" || col.id === "ownerExpWithSst";
+            const bearer: ExpenseBearer = col.id.startsWith("tenantExp") ? "tenant" : "owner";
             // Task 6: Rental is read-only, sourced from the whole-unit
             // tenancy's own sub-row (rental moved off `entry` onto
             // `SubRow.rental`, Task 5) — "—" when unset, mirroring every
             // other LockedCell's empty-value convention.
-            if (col.id === "rental") {
+            if (col.id === "rental" || col.id === "deposit") {
+              const display = col.id === "rental"
+                ? (row.subRows[0]?.rental ?? "—")
+                : (row.subRows[0]?.deposit ?? "—");
               return (
-                <LockedCell key={col.id} columnId={col.id} display={row.subRows[0]?.rental ?? "—"} numeric={col.numeric} {...readOnlyCellProps(row.apartmentId, col.id)} />
+                <LockedCell key={col.id} columnId={col.id} display={display} numeric={col.numeric} {...readOnlyCellProps(row.apartmentId, col.id)} />
               );
             }
             return (
@@ -1500,10 +2040,27 @@ function GridUnitRowGroup({
                 columnId={col.id}
                 display={readOnlyValue(row, col.id)}
                 numeric={col.numeric}
-                onView={isExpenseWithSst && onViewExpenses ? () => onViewExpenses(row.apartmentId, bearer) : undefined}
-                viewLabel={bearer === "tenant" ? "View tenant expenses" : "View owner expenses"}
+                onView={isExpense && onViewExpenses ? () => onViewExpenses(row.apartmentId, bearer, expenseWithSst) : undefined}
+                viewLabel={`${expenseWithSst ? "Add With SST" : "Add Non SST"} ${bearer} expense`}
                 viewTestId={bearer === "tenant" ? "view-expenses-tenant" : "view-expenses-owner"}
-                badgeCount={bearer === "tenant" ? row.expenses.tenant.count : row.expenses.owner.count}
+                viewKind={isExpense ? "expense" : "view"}
+                badgeCount={(() => {
+                  const counts = bearer === "tenant" ? row.expenses.tenant : row.expenses.owner;
+                  return expenseWithSst
+                    ? (counts.withSstCount ?? counts.count)
+                    : (counts.nonSstCount ?? Math.max(0, counts.count - (counts.withSstCount ?? 0)));
+                })()}
+                costActionRequired={(() => {
+                  const counts = bearer === "tenant" ? row.expenses.tenant : row.expenses.owner;
+                  return (expenseWithSst ? (counts.withSstActionRequiredCount ?? 0) : (counts.nonSstActionRequiredCount ?? 0)) > 0;
+                })()}
+                costMargin={(() => {
+                  const counts = bearer === "tenant" ? row.expenses.tenant : row.expenses.owner;
+                  const raw = expenseWithSst ? counts.withSstGrossMargin : counts.nonSstGrossMargin;
+                  if (raw == null) return null;
+                  const margin = Number(raw);
+                  return Number.isFinite(margin) ? margin : null;
+                })()}
                 {...readOnlyCellProps(row.apartmentId, col.id)}
               />
             );
@@ -1525,9 +2082,8 @@ function GridUnitRowGroup({
           }
           const seed = seedValue(row, col.id);
           const unitValue = stagedOrSeed(row.apartmentId, col.id, seed);
-          // TNB has one money column, so its Owner/Tenant setting has no column to move
-          // between — it shows as a corner mark instead. showsTenantBorneMark owns the
-          // rule (and reads the entry snapshot first, exactly like isApplicable).
+          // Maintenance remains the only single money column that may need a
+          // tenant-borne corner mark. TNB now moves between explicit Owner/Tenant columns.
           const tenantBorne = showsTenantBorneMark(row, col.id);
           if (cellLocked(col.id)) {
             return <LockedCell key={col.id} columnId={col.id} display={unitValue} numeric={col.numeric} tenantBorne={tenantBorne} {...readOnlyCellProps(row.apartmentId, col.id)} />;
@@ -1554,13 +2110,16 @@ function GridUnitRowGroup({
             data-listing-id={subRow.listingId}
             className="border-b border-[var(--border)] bg-background/30 transition hover:bg-[var(--page-bg)]"
           >
-            <td className="sticky left-0 z-10 bg-background px-4 py-2 pl-8 text-xs italic text-muted-foreground">
+            <td className="sticky left-0 z-10 border-r-2 border-r-[var(--navy)] bg-background px-4 py-2 pl-8 text-xs italic text-muted-foreground">
               <span className="inline-flex items-center gap-1.5">
-                ↳ {subRow.partyName ?? "Vacant"}
-                {subRow.partyPhone && (
-                  <span className="not-italic tabular-nums text-muted-foreground/80" data-testid="subrow-phone">· {subRow.partyPhone}</span>
-                )}
-                <AuditIcon name={subRow.lastEditedByName ?? null} at={subRow.updatedAt ?? null} />
+                ↳ {subRow.partyId && subRow.partyName ? (
+                  <button
+                    type="button"
+                    className="not-italic font-semibold text-[var(--navy)] underline decoration-[var(--gold)] decoration-2 underline-offset-4 hover:text-[var(--gold)]"
+                    onClick={(event) => { event.stopPropagation(); setPartyPreview({ id: subRow.partyId!, type: "tenant", name: subRow.partyName ?? "Tenant" }); }}
+                  >{subRow.partyName}</button>
+                ) : (subRow.partyName ?? "Vacant")}
+                <AuditIcon name={subRow.lastEditedByName ?? null} at={subRow.updatedAt ?? null} unitCode={row.unitCode} />
               </span>
             </td>
             {dataColumns.map((col) => {
@@ -1578,36 +2137,48 @@ function GridUnitRowGroup({
                 // 1 enumerator); every other off-grain cell renders null and
                 // stays byte-identical to before (parity). Keyed on the
                 // sub-row's listingId.
-                const isNavRental = col.id === "rental";
-                const rentalNav = isNavRental ? readOnlyCellProps(subRow.listingId, col.id) : undefined;
-                const rentalDisplay = col.id === "rental" ? (subRow.rental ?? "—") : null;
+                const isNavTenantCharge = col.id === "rental" || col.id === "deposit";
+                const tenantChargeNav = isNavTenantCharge ? readOnlyCellProps(subRow.listingId, col.id) : undefined;
+                const tenantChargeDisplay = col.id === "rental"
+                  ? (subRow.rental ?? "—")
+                  : col.id === "deposit"
+                    ? (subRow.deposit ?? "—")
+                    : null;
                 return (
                   <td
                     key={col.id}
-                    ref={rentalNav?.registerCell}
+                    ref={tenantChargeNav?.registerCell}
                     className={cn(
-                      "px-2 py-2 text-sm text-muted-foreground",
-                      col.numeric && "text-right",
+                      "px-2 py-2 align-middle text-[18px] text-muted-foreground",
+                      categoryDividerClass(col.id),
+                      col.numeric && "text-center",
                       // V2: selection tint (matches every other navigable cell)
                       // so a range spanning this per-room rental cell reads solid.
-                      rentalNav?.selected && !rentalNav?.active && "bg-[var(--primary)]/15",
+                      tenantChargeNav?.selected && "relative",
                       // P4 Task 4: visible SOLID --primary active ring
                       // (non-inset), matching every other navigable cell.
-                      rentalNav?.active && "ring-2 ring-[var(--primary)]",
+                      tenantChargeNav?.active && !tenantChargeNav?.selected && "ring-2 ring-[var(--primary)]",
                     )}
                     data-testid={`cell-${col.id}`}
-                    data-active={rentalNav?.active ? "true" : undefined}
-                    data-selected={rentalNav?.selected ? "true" : undefined}
-                    data-copy-value={isNavRental ? (rentalDisplay ?? "") : undefined}
+                    data-active={tenantChargeNav?.active ? "true" : undefined}
+                    data-selected={tenantChargeNav?.selected ? "true" : undefined}
+                    data-copy-value={isNavTenantCharge ? (tenantChargeDisplay ?? "") : undefined}
+                    data-billing-state={tenantChargeDisplay && hasBillableDisplay(tenantChargeDisplay) ? tenantChargeNav?.billingState : undefined}
+                    style={Object.assign(
+                      {},
+                      tenantChargeDisplay ? billingStateStyle(tenantChargeNav?.billingState, tenantChargeDisplay) : undefined,
+                      selectionOutlineStyle(tenantChargeNav?.selectionEdges),
+                    )}
                     aria-readonly="true"
-                    tabIndex={isNavRental && rentalNav?.registerCell ? -1 : undefined}
-                    onPointerDown={rentalNav?.onCellPointerDown}
-                    onPointerEnter={rentalNav?.onCellPointerEnter}
-                    onPointerUp={rentalNav?.onCellPointerUp}
-                    onClick={rentalNav?.onActivate}
-                    onContextMenu={rentalNav?.onContextMenu}
+                    tabIndex={isNavTenantCharge && tenantChargeNav?.registerCell ? -1 : undefined}
+                    onPointerDown={tenantChargeNav?.onCellPointerDown}
+                    onPointerEnter={tenantChargeNav?.onCellPointerEnter}
+                    onPointerUp={tenantChargeNav?.onCellPointerUp}
+                    onClick={tenantChargeNav?.onActivate}
+                    onContextMenu={tenantChargeNav?.onContextMenu}
                   >
-                    {rentalDisplay}
+                    {tenantChargeDisplay}
+                    <SelectionFillHandle edges={tenantChargeNav?.selectionEdges} />
                   </td>
                 );
               }
@@ -1651,24 +2222,42 @@ function GridUnitRowGroup({
           data-testid="prior-month-strip"
           className="border-b border-[var(--border)] text-xs text-muted-foreground"
         >
-          <td className="sticky left-0 z-10 bg-[var(--page-bg)] px-4 py-1.5">{prior.period}</td>
-          <td colSpan={2} className="px-2 py-1.5" data-testid="prior-cleaning">
+          <td className="sticky left-0 z-10 border-r-2 border-r-[var(--navy)] bg-[var(--page-bg)] px-4 py-1.5">{prior.period}</td>
+          <td className="border-x-2 border-x-[var(--navy)] px-2 py-1.5 text-center">—</td>
+          <td colSpan={2} className="border-x-2 border-x-[var(--navy)] px-2 py-1.5" data-testid="prior-cleaning">
             {prior.cleaning ?? "—"}
           </td>
-          <td colSpan={4} className="px-2 py-1.5" data-testid="prior-tnb">
+          <td colSpan={5} className="border-x-2 border-x-[var(--navy)] px-2 py-1.5" data-testid="prior-tnb">
             {prior.tnb ?? "—"}
           </td>
-          <td colSpan={2} className="px-2 py-1.5" data-testid="prior-air">
+          <td colSpan={2} className="border-x-2 border-x-[var(--navy)] px-2 py-1.5" data-testid="prior-air">
             {prior.air ?? "—"}
           </td>
-          <td colSpan={2} className="px-2 py-1.5" data-testid="prior-wifi">
+          <td colSpan={2} className="border-x-2 border-x-[var(--navy)] px-2 py-1.5" data-testid="prior-wifi">
             {prior.wifi ?? "—"}
           </td>
-          <td colSpan={6} className="px-2 py-1.5" data-testid="prior-others">
+          <td colSpan={7} className="border-x-2 border-x-[var(--navy)] px-2 py-1.5" data-testid="prior-others">
             {prior.others}
           </td>
         </tr>
       ))}
+
+      <Dialog open={partyPreview != null} onOpenChange={(open) => { if (!open) setPartyPreview(null); }} lockProgress={false}>
+        <DialogContent className="max-w-4xl p-0">
+          <DialogHeader className="border-b border-[var(--border)] px-6 py-5">
+            <DialogTitle className="text-[22px]">
+              {partyPreview?.type === "owner" ? "Owner details" : "Tenant details"} · {partyPreview?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[70vh] overflow-y-auto px-6 py-5 text-[16px]">
+            {partyPreview?.type === "owner" && <OwnerDetailPanel partyId={partyPreview.id} />}
+            {partyPreview?.type === "tenant" && <TenantDetailPanel partyId={partyPreview.id} />}
+          </div>
+          <DialogFooter className="border-t border-[var(--border)] px-6 py-4">
+            <Button type="button" variant="outline" onClick={() => setPartyPreview(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Fragment>
   );
 }

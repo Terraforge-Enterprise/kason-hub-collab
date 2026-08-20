@@ -108,6 +108,8 @@ export interface PriorMonthStrip {
 export interface GridSubRow {
   listingId: string;
   tenancyId: string | null;
+  /** Tenant party billed for this room; used only for the admin's tenant-view preview. */
+  partyId?: string | null;
   partyName: string | null;
   /** Tenant's primaryPhone (display + search); null for a vacant room. Optional so
    * existing fixtures compile unchanged (server always sends it). */
@@ -123,6 +125,10 @@ export interface GridSubRow {
   rateConfigured: boolean;
   /** Task 5/6: per-room rental now lives HERE (moved off GridEntryDto). */
   rental: string | null;
+  rentalBillingState?: "saved" | "billed-unpaid" | "paid" | null;
+  /** Rental + utilities deposit charges belonging to this selected month. */
+  deposit?: string | null;
+  depositBillingState?: "saved" | "billed-unpaid" | "paid" | null;
   /** Task 6/7: per-row audit trail (optional — server always sends; optional
    * here so existing web fixtures compile unchanged). */
   updatedAt?: string | null;
@@ -196,8 +202,14 @@ export interface GridBearerConfigDto {
 }
 
 export interface GridExpensesDto {
-  tenant: { total: string; withSstTotal: string; count: number };
-  owner: { total: string; withSstTotal: string; count: number };
+  tenant: { total: string; withSstTotal: string; count: number; nonSstCount?: number; withSstCount?: number; nonSstActionRequiredCount?: number; withSstActionRequiredCount?: number; nonSstGrossMargin?: string; withSstGrossMargin?: string };
+  owner: { total: string; withSstTotal: string; count: number; nonSstCount?: number; withSstCount?: number; nonSstActionRequiredCount?: number; withSstActionRequiredCount?: number; nonSstGrossMargin?: string; withSstGrossMargin?: string };
+}
+
+export interface GridManagementFeeDto {
+  nonSst: string;
+  sst: string;
+  total: string;
 }
 
 export interface GridAttachmentBrief {
@@ -221,6 +233,11 @@ export interface GridRow {
    * unchanged (server always sends it, null when no owner party resolved). Owner phone is
    * intentionally NOT surfaced on this page. */
   ownerName?: string | null;
+  /** Owner party identity used only for navigation to Owner Details. */
+  ownerPartyId?: string | null;
+  /** Per-unit Owner Income Report workflow, joined client-side from Owner Statements. */
+  ownerPayoutStatus?: "draft" | "first_checked" | "approved";
+  ownerStatementId?: string | null;
   entryId: string | null;
   /** null when the apartment-month was never Saved, or when shaping/compute failed. */
   preview: GridPreview | null;
@@ -263,6 +280,8 @@ export interface GridRow {
   bearerConfig: GridBearerConfigDto;
   /** Task 10: active-only expense totals. */
   expenses: GridExpensesDto;
+  /** Base fee and government SST are deliberately separate. */
+  managementFee?: GridManagementFeeDto;
   /** Recurring-charges (R9): CUSTOM recurring-line totals (cleaning/WiFi excluded). Optional so
    * older web fixtures compile unchanged; the server always sends it flag-on. */
   recurring?: GridRecurringDto;
@@ -291,6 +310,57 @@ export interface GridResponse {
   period: string;
   periods: string[];
   rows: GridRow[];
+}
+
+export interface BillingFundsSummary {
+  tenantDue: string;
+  tenantOutstanding: string;
+  tenantCollected: string;
+  depositsHeld: string;
+  ownerExpenses: string;
+  managementFee: string;
+  managementFeeNonSst: string;
+  managementFeeSst: string;
+  companyFees: string;
+  tenantExpenseCharges: string;
+  tenantExpenseDirectCosts: string;
+  tenantExpenseGrossMargin: string;
+  tenantExpenseCostPendingCount: number;
+  tenantExpenseActionRequiredCount: number;
+  tenantExpenseActionItems: Array<{
+    expenseId: string; apartmentId: string; propertyName: string; unitCode: string;
+    description: string; chargeAmount: string; actualCost: string | null;
+    costPaymentStatus: string; withSST: boolean;
+  }>;
+  passThrough: string;
+  rental: { due: string; collected: string; outstanding: string };
+  deposit: { due: string; collected: string; outstanding: string };
+  tenantBreakdown: Array<{ key: string; label: string; due: string; collected: string; outstanding: string }>;
+  ownerPayout: string;
+  ownerPaid: string;
+  status: "safe" | "attention" | "shortfall";
+}
+
+export function fetchBillingFundsSummary(period: string): Promise<BillingFundsSummary> {
+  const qs = new URLSearchParams({ period: period.length === 7 ? `${period}-01` : period.slice(0, 10) });
+  return gridFetch<BillingFundsSummary>(`/bills-grid/funds-summary?${qs.toString()}`);
+}
+
+export type BillingSummaryNote = { apartmentId: string; note: string; updatedAt: string };
+
+export async function fetchBillingSummaryNotes(period: string): Promise<BillingSummaryNote[]> {
+  const normalized = period.length === 7 ? `${period}-01` : period.slice(0, 10);
+  const response = await gridFetch<{ data: { items: BillingSummaryNote[] } }>(`/bills-grid/summary-notes?${new URLSearchParams({ period: normalized })}`);
+  return response.data.items;
+}
+
+export async function saveBillingSummaryNote(apartmentId: string, period: string, note: string): Promise<BillingSummaryNote> {
+  const normalized = period.length === 7 ? `${period}-01` : period.slice(0, 10);
+  const response = await gridFetch<{ data: BillingSummaryNote }>(`/bills-grid/apartments/${apartmentId}/summary-note`, {
+    method: "PUT",
+    body: JSON.stringify({ period: normalized, note }),
+  });
+  return response.data;
 }
 
 export interface FetchGridParams {
@@ -445,6 +515,12 @@ export interface ExpenseListItem {
   description: string;
   amount: string;
   withSST: boolean;
+  actualCost?: string | null;
+  costVendor?: string | null;
+  costPaymentStatus?: "unpaid" | "partial" | "paid";
+  costPaymentDate?: string | null;
+  costPaymentAccount?: string | null;
+  costNotes?: string | null;
   partyId: string | null;
   /** Item 1 (R1/R7): the owner's display name resolved from partyId, org-scoped.
    * Null when partyId is null or unresolvable in-org. Drives the "Expense owner:"

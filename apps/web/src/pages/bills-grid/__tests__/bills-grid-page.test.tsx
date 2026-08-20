@@ -253,6 +253,8 @@ function renderPage() {
 function selectAllAndBill() {
   fireEvent.click(screen.getByTestId("bill-select-all"));
   fireEvent.click(screen.getByRole("button", { name: /^bill/i }));
+  const confirm = screen.queryByTestId("bill-confirm-btn");
+  if (confirm) fireEvent.click(confirm);
 }
 
 beforeEach(() => {
@@ -322,7 +324,7 @@ describe("BillsGridPage", () => {
     });
   });
 
-  it("billing-month navigator: jumping to a future month refetches that month, flags it Upcoming, and gates Bill", async () => {
+  it("billing-month navigator: next month allows confirmed advance Bill; farther months stay gated", async () => {
     // Server answers with whatever anchor was asked for; the FIRST (default,
     // param-less) call defines the current month = 2026-07-01.
     fetchGrid.mockImplementation((params?: { period?: string }) => {
@@ -345,11 +347,25 @@ describe("BillsGridPage", () => {
       expect(fetchGrid).toHaveBeenCalledWith({ period: "2026-08-01", months: 1 });
     });
 
-    // Now Upcoming, Bill gated, and Jump-to-current returns to July.
+    // The immediately following month is Upcoming but eligible for advance Bill.
     await waitFor(() => {
       expect(screen.getByTestId("anchor-status-pill")).toHaveTextContent("Upcoming");
     });
+    expect(screen.queryByTestId("bill-period-locked")).not.toBeInTheDocument();
+    billRows.mockResolvedValue({ results: [{ apartmentId: "apt-1", outcome: "invoiced" }] });
+    fireEvent.click(screen.getByTestId("bill-select-apt-1"));
+    fireEvent.click(screen.getByRole("button", { name: "Bill (1)" }));
+    expect(await screen.findByRole("heading", { name: "Confirm advance Bill" })).toBeInTheDocument();
+    expect(billRows).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("advance-bill-confirm-btn"));
+    await waitFor(() => expect(billRows).toHaveBeenCalledWith(expect.objectContaining({ period: "2026-08-01" })));
+
+    // Two months ahead is preparation-only and remains blocked.
+    fireEvent.change(screen.getByTestId("anchor-month-input"), { target: { value: "2026-09" } });
+    await waitFor(() => expect(fetchGrid).toHaveBeenCalledWith({ period: "2026-09-01", months: 1 }));
     expect(screen.getByTestId("bill-period-locked")).toBeInTheDocument();
+
+    // Jump-to-current still returns to July.
     fireEvent.click(screen.getByTestId("anchor-jump-current"));
     await waitFor(() => {
       expect(fetchGrid).toHaveBeenCalledWith({ period: "2026-07-01", months: 1 });
@@ -1130,12 +1146,31 @@ describe("BillsGridPage", () => {
     fireEvent.click(screen.getByTestId("bill-select-apt-2"));
     fireEvent.click(screen.getByRole("button", { name: /^bill/i }));
 
+    // First issuance is always explicit: no API call until confirmation.
+    expect(await screen.findByRole("heading", { name: "Confirm Bill" })).toBeInTheDocument();
+    expect(screen.getByTestId("bill-confirm-units")).toHaveTextContent("A-2");
+    expect(screen.getByTestId("bill-confirm-units")).not.toHaveTextContent("A-1");
+    expect(billRows).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("bill-confirm-btn"));
+
     await waitFor(() => expect(billRows).toHaveBeenCalledTimes(1));
     // Exactly one row on the wire — apt-2 — never apt-1/apt-3.
     expect(billRows).toHaveBeenCalledWith(
       expect.objectContaining({ rows: [expect.objectContaining({ apartmentId: "apt-2" })] }),
     );
     expect(toast.success).toHaveBeenCalledWith("Billed 1 of 1");
+  });
+
+  it("Cancel on first-Bill confirmation keeps saved data unbilled", async () => {
+    fetchGrid.mockResolvedValue(gridResponse([makeRow({ apartmentId: "apt-1", unitCode: "A-1" })]));
+    renderPage();
+    await screen.findByText("A-1");
+    fireEvent.click(screen.getByTestId("bill-select-apt-1"));
+    fireEvent.click(screen.getByRole("button", { name: "Bill (1)" }));
+    await screen.findByRole("heading", { name: "Confirm Bill" });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(billRows).not.toHaveBeenCalled();
+    expect(screen.queryByRole("heading", { name: "Confirm Bill" })).not.toBeInTheDocument();
   });
 
   it("select-all checks every billable unit and clears on a second click", async () => {

@@ -75,8 +75,8 @@ describe("bills-grid export", () => {
     const wb = await buildGridWorkbook([row({ apartmentId: "a1", unitCode: "PV9 A-13-13" })], CURRENT_COLUMNS, ["2026-07-01"]);
     const ws = wb.getWorksheet("Tenant & Owner Billing")!;
     const merges = (ws.model as { merges?: string[] }).merges ?? [];
-    expect(merges.some((m) => m.startsWith("E1:"))).toBe(true); // TNB band spans 4 columns
-    expect(ws.getCell("E1").value).toBe("TNB");
+    expect(merges.some((m) => m.startsWith("F1:"))).toBe(true); // TNB band spans 5 columns
+    expect(ws.getCell("F1").value).toBe("TNB");
   });
 
   it("month strips: 3 periods → one current band + two compact prior strips", async () => {
@@ -142,8 +142,8 @@ describe("bills-grid export", () => {
       ["2026-07-01"],
     );
     const ws = wb.getWorksheet("Tenant & Owner Billing")!;
-    // Row 3 = the current-period unit row; column 3 = cleaningOwner (unitCode=1, rental=2, cleaningOwner=3).
-    expect(ws.getCell(3, 3).value).toBe(100);
+    // Row 3 = current unit row; cleaningOwner follows Unit, Rental and Deposit.
+    expect(ws.getCell(3, 4).value).toBe(100);
   });
 
   it("export mirrors on-screen cleaning: a saved entry.cleaning still wins over the recurring default", async () => {
@@ -160,7 +160,7 @@ describe("bills-grid export", () => {
       ["2026-07-01"],
     );
     const ws = wb.getWorksheet("Tenant & Owner Billing")!;
-    expect(ws.getCell(3, 3).value).toBe(80);
+    expect(ws.getCell(3, 4).value).toBe(80);
   });
 
   // Review finding 7: the AIR bearer split is the whole point of the export's
@@ -228,7 +228,7 @@ describe("bills-grid export", () => {
       expect(ws.getCell(DATA_ROW, colOf("tnbOwner")).value).toBeNull();
     });
 
-    it("tnbOwner still exports normally for both live bearer choices", async () => {
+    it("exports TNB under exactly the active Owner/Tenant bearer column", async () => {
       for (const tnbPattern of ["absorbed", "recharged"]) {
         const wb = await buildGridWorkbook(
           [
@@ -243,7 +243,11 @@ describe("bills-grid export", () => {
           ["2026-07-01"],
         );
         const ws = wb.getWorksheet("Tenant & Owner Billing")!;
-        expect(ws.getCell(DATA_ROW, colOf("tnbOwner")).value, `tnbPattern=${tnbPattern}`).toBe(500);
+        const ownerValue = ws.getCell(DATA_ROW, colOf("tnbOwner")).value;
+        const tenantValue = ws.getCell(DATA_ROW, colOf("tnbTenant")).value;
+        expect([ownerValue, tenantValue], `tnbPattern=${tnbPattern}`).toEqual(
+          tnbPattern === "absorbed" ? [500, null] : [null, 500],
+        );
       }
     });
   });

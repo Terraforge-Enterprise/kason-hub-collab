@@ -30,7 +30,6 @@ import { Surface, StatusPill } from "@/components/ui";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
-import { UnitChip } from "@/pages/tasks/unit-chip";
 import { formatMoney, formatRM, getStatusTone } from "@/components/format";
 import { useChargesGrouped, type ChargeGroup, type GroupedChargeRow } from "./use-billing-v2";
 import { ChargeRowMenu } from "./charge-row-menu";
@@ -104,7 +103,6 @@ function GroupCard({ group }: { group: ChargeGroup }) {
   return (
     <details open className="rounded-xl border border-[var(--card-border)] bg-[var(--card-bg)]">
       <summary className="flex cursor-pointer list-none flex-wrap items-center gap-3 px-4 py-3">
-        <UnitChip unit={{ unitCode: group.label, propertyName: group.propertyName }} />
         {group.apartmentId ? (
           <Link
             to={`/tenancy/owner-ledger/unit/${group.apartmentId}`}

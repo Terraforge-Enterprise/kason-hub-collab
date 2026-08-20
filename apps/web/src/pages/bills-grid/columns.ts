@@ -2,12 +2,13 @@
 // shared with the ui-8 exporter: column order and ids here must stay in sync
 // with whatever the exporter reads. Do not reorder without updating both.
 export type ColumnId =
-  | "unitCode" | "rental" | "cleaningOwner" | "cleaningTenant"
-  | "tnbOwner" | "previousKwh" | "currentKwh" | "amount"
+  | "unitCode" | "rental" | "deposit" | "cleaningOwner" | "cleaningTenant"
+  | "tnbOwner" | "tnbTenant" | "previousKwh" | "currentKwh" | "amount"
   | "airOwner" | "airTenant" | "wifiOwner" | "wifiTenant"
   | "maintenanceFee" | "ownerRecurring" | "tenantRecurring"
   | "tenantExpWithSst" | "tenantExpNonSst"
-  | "ownerExpWithSst" | "ownerExpNonSst";
+  | "ownerExpWithSst" | "ownerExpNonSst"
+  | "managementFeeNonSst" | "managementFeeSst" | "ownerPayout";
 
 export interface GridColumn {
   id: ColumnId; header: string; band?: string;
@@ -18,30 +19,35 @@ export interface GridColumn {
 // "AIR" is Air Selangor = WATER. Never label it Aircond.
 export const CURRENT_COLUMNS: GridColumn[] = [
   { id: "unitCode",         header: "Unit",            grain: "unit",   editable: false, numeric: false },
-  { id: "rental",           header: "Tenant",          band: "Rental",  grain: "unit",   editable: false, numeric: true },
+  { id: "rental",           header: "Rental",           band: "Rent & Deposit", grain: "unit", editable: false, numeric: true },
+  { id: "deposit",          header: "Deposit",          band: "Rent & Deposit", grain: "unit", editable: false, numeric: true },
   // Recurring-charges (R9): cleaning/WiFi are settings-controlled recurring fees, generated
   // read-only per period like rental — NOT editable grid cells (backend also 409s a direct edit).
   { id: "cleaningOwner",    header: "Owner",           band: "Cleaning", grain: "unit",  editable: false, numeric: true },
   { id: "cleaningTenant",   header: "Tenant",          band: "Cleaning", grain: "unit",  editable: false, numeric: true },
   { id: "tnbOwner",         header: "Owner",           band: "TNB",     grain: "unit",   editable: true,  numeric: true },
-  { id: "previousKwh",      header: "Previous Meter (kwh)", band: "TNB", grain: "subRow", editable: true, numeric: true },
-  { id: "currentKwh",       header: "Current Meter (kwh)",  band: "TNB", grain: "subRow", editable: true, numeric: true },
+  { id: "tnbTenant",        header: "Tenant",          band: "TNB",     grain: "unit",   editable: true,  numeric: true },
+  { id: "previousKwh",      header: "P. Meter (kWh)", band: "TNB", grain: "subRow", editable: true, numeric: true },
+  { id: "currentKwh",       header: "C. Meter (kWh)",  band: "TNB", grain: "subRow", editable: true, numeric: true },
   { id: "amount",           header: "Amount",          band: "TNB",     grain: "subRow", editable: false, numeric: true },
-  { id: "airOwner",         header: "Owner",           band: "AIR",     grain: "unit",   editable: true,  numeric: true },
-  { id: "airTenant",        header: "Tenant",          band: "AIR",     grain: "unit",   editable: true,  numeric: true },
+  { id: "airOwner",         header: "Owner",           band: "Water",   grain: "unit",   editable: true,  numeric: true },
+  { id: "airTenant",        header: "Tenant",          band: "Water",   grain: "unit",   editable: true,  numeric: true },
   { id: "wifiOwner",        header: "Owner",           band: "WiFi",    grain: "unit",   editable: false, numeric: true },
   { id: "wifiTenant",       header: "Tenant",          band: "WiFi",    grain: "unit",   editable: false, numeric: true },
   // editable:false since 2026-08-06 — maintenanceFee joined the governable scalars: like
   // cleaning/wifi it renders an EditableCell only while no enabled recurring def governs it.
-  { id: "maintenanceFee",   header: "Owner",           band: "Maintenance Fee", grain: "unit", editable: false, numeric: true },
+  { id: "maintenanceFee",   header: "Owner",           band: "Maint Fee", grain: "unit", editable: false, numeric: true },
   // Recurring-charges (R9): read-only CUSTOM recurring totals (owner/tenant) — cleaning/WiFi are
   // NOT re-counted here (they have their own columns). Opens a read-only itemised dialog.
   { id: "ownerRecurring",   header: "Owner",           band: "Recurring", grain: "unit", editable: false, numeric: true },
   { id: "tenantRecurring",  header: "Tenant",          band: "Recurring", grain: "unit", editable: false, numeric: true },
-  { id: "tenantExpWithSst", header: "With SST",        band: "Tenant Expenses", grain: "unit", editable: false, numeric: true },
   { id: "tenantExpNonSst",  header: "Non SST",         band: "Tenant Expenses", grain: "unit", editable: false, numeric: true },
-  { id: "ownerExpWithSst",  header: "With SST",        band: "Owner Expenses",  grain: "unit", editable: false, numeric: true },
+  { id: "tenantExpWithSst", header: "With SST",        band: "Tenant Expenses", grain: "unit", editable: false, numeric: true },
   { id: "ownerExpNonSst",   header: "Non SST",         band: "Owner Expenses",  grain: "unit", editable: false, numeric: true },
+  { id: "ownerExpWithSst",  header: "With SST",        band: "Owner Expenses",  grain: "unit", editable: false, numeric: true },
+  { id: "managementFeeNonSst", header: "Non SST",      band: "Management Fee", grain: "unit", editable: false, numeric: true },
+  { id: "managementFeeSst", header: "With SST",        band: "Management Fee", grain: "unit", editable: false, numeric: true },
+  { id: "ownerPayout",     header: "Total",           band: "Owner Payout", grain: "unit", editable: false, numeric: true },
 ];
 
 // R5: prior-month strip carries ONLY these five. No rental, no maintenance fee,
@@ -68,11 +74,13 @@ export const PRIOR_MONTH_COLUMNS = ["cleaning", "tnb", "air", "wifi", "others"] 
 export const SETTLEMENT_BUCKET_OF_COLUMN: Record<ColumnId, import("@kason/shared").SettlementBucket | null> = {
   unitCode: null,
   rental: null,
+  deposit: null,
   previousKwh: null,
   currentKwh: null,
   cleaningOwner: "cleaningOwner",
   cleaningTenant: "cleaningTenant",
   tnbOwner: "tnbOwner",
+  tnbTenant: "tnbTenant",
   amount: "tnbTenant",
   airOwner: "airOwner",
   airTenant: "airTenant",
@@ -85,4 +93,29 @@ export const SETTLEMENT_BUCKET_OF_COLUMN: Record<ColumnId, import("@kason/shared
   tenantExpNonSst: "expensesTenant",
   ownerExpWithSst: "expensesOwner",
   ownerExpNonSst: "expensesOwner",
+  managementFeeNonSst: null,
+  managementFeeSst: null,
+  ownerPayout: null,
 };
+
+/** Resolve the live charge bucket represented by a cell for this row. */
+export function settlementBucketForColumn(
+  row: {
+    entry?: Pick<NonNullable<import("@/api/bills-grid").GridRow["entry"]>, "tnbPattern" | "maintenanceFeeBearer"> | null;
+    bearerConfig?: Pick<import("@/api/bills-grid").GridRow["bearerConfig"], "tnbPattern" | "maintenanceFeeBearer">;
+  },
+  columnId: ColumnId,
+): import("@kason/shared").SettlementBucket | null {
+  // These are single visible columns whose actual invoice side is controlled by
+  // the entry's snapshotted setting, rather than by the word in the header.
+  if (columnId === "tnbOwner" || columnId === "tnbTenant") {
+    const pattern = row.entry?.tnbPattern ?? row.bearerConfig?.tnbPattern ?? "absorbed";
+    if (pattern === "tenant_direct") return null;
+    return columnId === "tnbOwner" ? "tnbOwner" : "tnbTenant";
+  }
+  if (columnId === "maintenanceFee") {
+    const bearer = row.entry?.maintenanceFeeBearer ?? row.bearerConfig?.maintenanceFeeBearer ?? "owner";
+    return bearer === "tenant" ? "maintenanceTenant" : "maintenanceOwner";
+  }
+  return SETTLEMENT_BUCKET_OF_COLUMN[columnId];
+}

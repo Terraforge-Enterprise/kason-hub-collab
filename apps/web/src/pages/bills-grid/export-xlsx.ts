@@ -22,6 +22,7 @@ import type { GridRow, GridSubRow, PriorMonthStrip } from "@/api/bills-grid";
 import type { ColumnId, GridColumn } from "./columns";
 import { cleaningSeed } from "./cell-seed";
 import { isApplicable } from "./cell-applicability";
+import { projectedOwnerPayout } from "./owner-payout";
 
 const WORKSHEET_NAME = "Tenant & Owner Billing";
 const DOWNLOAD_FILENAME = "tenant-owner-billing.xlsx";
@@ -93,7 +94,7 @@ function writeHeaderRows(ws: ExcelJS.Worksheet, columns: GridColumn[]): void {
  * TNB amount for a unit whose on-screen cell reads "—" and whose Bill discards it. One
  * call, no second rule to forget (2026-08-16).
  */
-function unitColumnValue(row: GridRow, columnId: ColumnId): string | number | null {
+export function gridUnitColumnValue(row: GridRow, columnId: ColumnId): string | number | null {
   const entry = row.entry;
   /** The cell's value when it IS the active side; `null` collapses it to a blank cell. */
   const whenApplicable = (value: string | number | null) => (isApplicable(row, columnId) ? value : null);
@@ -105,6 +106,8 @@ function unitColumnValue(row: GridRow, columnId: ColumnId): string | number | nu
       // cell (row.subRows[0]?.rental), same "export mirrors the on-screen
       // view" rule cleaningOwner/cleaningTenant already follow below.
       return toNumberOrNull(row.subRows[0]?.rental ?? null);
+    case "deposit":
+      return toNumberOrNull(row.subRows[0]?.deposit ?? null);
     case "cleaningOwner":
     case "cleaningTenant":
       // cleaningSeed (cell-seed.ts) falls back to bearerConfig.cleaningRecurringAmount for
@@ -112,6 +115,7 @@ function unitColumnValue(row: GridRow, columnId: ColumnId): string | number | nu
       // alone exported a blank where the screen showed the recurring default.
       return whenApplicable(toNumberOrNull(cleaningSeed(row)));
     case "tnbOwner":
+    case "tnbTenant":
       return whenApplicable(toNumberOrNull(entry?.tnbTotal));
     case "airOwner":
     case "airTenant":
@@ -129,17 +133,23 @@ function unitColumnValue(row: GridRow, columnId: ColumnId): string | number | nu
       return toNumberOrNull(row.expenses.owner.withSstTotal);
     case "ownerExpNonSst":
       return subtractMoney(row.expenses.owner.total, row.expenses.owner.withSstTotal);
+    case "managementFeeNonSst":
+      return toNumberOrNull(row.managementFee?.nonSst ?? null);
+    case "managementFeeSst":
+      return toNumberOrNull(row.managementFee?.sst ?? null);
     // Recurring-charges (R9): CUSTOM recurring totals — export mirrors the on-screen read-only cell.
     case "ownerRecurring":
       return toNumberOrNull(row.recurring?.owner.total ?? null);
     case "tenantRecurring":
       return toNumberOrNull(row.recurring?.tenant.total ?? null);
+    case "ownerPayout":
+      return projectedOwnerPayout(row);
     default:
       return null;
   }
 }
 
-function subRowValue(subRow: GridSubRow, columnId: ColumnId): number | null {
+export function gridSubRowValue(subRow: GridSubRow, columnId: ColumnId): number | null {
   switch (columnId) {
     case "previousKwh":
       return toNumberOrNull(subRow.previousKwh);
@@ -222,10 +232,10 @@ function writeApartmentBlock(
       return;
     }
     if (col.grain === "subRow") {
-      ws.getCell(cursor, c).value = inlineSubRow ? subRowValue(inlineSubRow, col.id) : null;
+      ws.getCell(cursor, c).value = inlineSubRow ? gridSubRowValue(inlineSubRow, col.id) : null;
       return;
     }
-    ws.getCell(cursor, c).value = unitColumnValue(row, col.id);
+    ws.getCell(cursor, c).value = gridUnitColumnValue(row, col.id);
   });
   cursor += 1;
 
@@ -238,7 +248,7 @@ function writeApartmentBlock(
           return;
         }
         if (col.grain === "subRow") {
-          ws.getCell(cursor, c).value = subRowValue(subRow, col.id);
+          ws.getCell(cursor, c).value = gridSubRowValue(subRow, col.id);
         }
         // Off-grain (unit-grain) columns stay blank on a nested tenant row —
         // the real value lives on the unit row above (grain discipline, R3).
@@ -300,7 +310,7 @@ export async function buildGridWorkbook(
  * serialization error (e.g. `writeBuffer` failure) propagates unchanged to
  * the caller so ui-10 can toast it — this function does not swallow errors.
  */
-export async function exportGridToXlsx(rows: GridRow[], columns: GridColumn[], periods: string[]): Promise<void> {
+export async function exportGridToXlsx(rows: GridRow[], columns: GridColumn[], periods: string[], filename = DOWNLOAD_FILENAME): Promise<void> {
   const wb = await buildGridWorkbook(rows, columns, periods);
   const out = await wb.xlsx.writeBuffer();
   const blob = new Blob([out], {
@@ -309,7 +319,7 @@ export async function exportGridToXlsx(rows: GridRow[], columns: GridColumn[], p
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = DOWNLOAD_FILENAME;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

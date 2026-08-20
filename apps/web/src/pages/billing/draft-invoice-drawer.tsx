@@ -16,7 +16,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CheckCircle, ReceiptText } from "lucide-react";
+import { Check, CheckCircle, Pencil, ReceiptText, X } from "lucide-react";
 import { PHASE2_STATUS_TONES } from "@kason/shared";
 
 import {
@@ -171,6 +171,8 @@ export function DraftInvoiceDrawer({ invoiceId, onClose }: Props) {
   const [invoiceDate, setInvoiceDate] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [datesDirty, setDatesDirty] = useState(false);
+  const [editingChargeId, setEditingChargeId] = useState<string | null>(null);
+  const [editedAmount, setEditedAmount] = useState("");
 
   // Dialog state
   const [approveOpen, setApproveOpen] = useState(false);
@@ -190,6 +192,8 @@ export function DraftInvoiceDrawer({ invoiceId, onClose }: Props) {
       setInvoiceDate(toDateInputValue(invoiceQ.data.invoiceDate));
       setDueDate(toDateInputValue(invoiceQ.data.dueDate));
       setDatesDirty(false);
+      setEditingChargeId(null);
+      setEditedAmount("");
     }
   }, [invoiceQ.data]);
 
@@ -228,6 +232,24 @@ export function DraftInvoiceDrawer({ invoiceId, onClose }: Props) {
     },
   });
 
+  const saveAmountMutation = useMutation({
+    mutationFn: ({ chargeId, amount }: { chargeId: string; amount: number }) =>
+      apiFetch(`/billing/invoices/${invoiceId}/charges/${chargeId}/amount`, {
+        method: "PATCH",
+        body: JSON.stringify({ amount, expectedUpdatedAt: inv!.updatedAt }),
+      }),
+    onSuccess: () => {
+      toast.success("Charge amount updated.");
+      setEditingChargeId(null);
+      setEditedAmount("");
+      void qc.invalidateQueries({ queryKey: ["billing", "invoice", invoiceId] });
+      void qc.invalidateQueries({ queryKey: ["billing", "draft-invoices"] });
+    },
+    onError: (err) => {
+      toast.error(err instanceof ApiError ? err.message : "Failed to update amount.");
+    },
+  });
+
   // ── Approve ───────────────────────────────────────────────────────────────
 
   const approveMutation = useMutation({
@@ -261,7 +283,7 @@ export function DraftInvoiceDrawer({ invoiceId, onClose }: Props) {
           if (!open) onClose();
         }}
       >
-        <SheetContent size="lg">
+        <SheetContent size="full">
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2">
               <ReceiptText className="h-5 w-5 text-primary" />
@@ -381,21 +403,28 @@ export function DraftInvoiceDrawer({ invoiceId, onClose }: Props) {
                 {/* ── Charges — READ-ONLY. This is the evidence for the Approve
                      decision, not an editing surface. ── */}
                 <div className="space-y-3">
-                  <h3 className="text-sm font-semibold text-foreground">Charges</h3>
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">Charges</h3>
+                    {canManage && inv.status === "draft" && inv.charges.some((c) => c.status === "draft") && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Draft amounts may be adjusted for approved exceptions before issuing. The total updates automatically.
+                      </p>
+                    )}
+                  </div>
 
                   <TableWrap>
-                    <DataTable>
+                    <DataTable className="w-full table-fixed">
                       <TableHead>
                         <tr>
                           {/* Description leads: "Monthly rent" is what an admin reads.
                               The chargeNumber is an internal key (RENT-202608-<uuid>) and
                               is demoted to a subtitle so it stays copyable for support
                               without dominating the row. */}
-                          <HeadCell>Charge</HeadCell>
-                          <HeadCell>Type</HeadCell>
-                          <HeadCell>Period</HeadCell>
-                          <HeadCell>Status</HeadCell>
-                          <HeadCell className="text-right">Amount</HeadCell>
+                          <HeadCell className="w-[34%]">Charge</HeadCell>
+                          <HeadCell className="w-[17%] whitespace-nowrap">Type</HeadCell>
+                          <HeadCell className="w-[13%] whitespace-nowrap">Period</HeadCell>
+                          <HeadCell className="w-[12%] whitespace-nowrap">Status</HeadCell>
+                          <HeadCell className="w-[24%] whitespace-nowrap text-right">Amount</HeadCell>
                         </tr>
                       </TableHead>
                       <tbody>
@@ -421,13 +450,73 @@ export function DraftInvoiceDrawer({ invoiceId, onClose }: Props) {
                                     {c.chargeNumber}
                                   </span>
                                 </BodyCell>
-                                <BodyCell>{prettyEnumLabel(c.chargeType)}</BodyCell>
-                                <BodyCell>{formatPeriodMonth(c.billingMonth)}</BodyCell>
-                                <BodyCell>
+                                <BodyCell className="whitespace-nowrap [overflow-wrap:normal]">
+                                  {prettyEnumLabel(c.chargeType)}
+                                </BodyCell>
+                                <BodyCell className="whitespace-nowrap [overflow-wrap:normal]">
+                                  {formatPeriodMonth(c.billingMonth)}
+                                </BodyCell>
+                                <BodyCell className="whitespace-nowrap [overflow-wrap:normal]">
                                   <StatusPill tone={chargeTone}>{c.status}</StatusPill>
                                 </BodyCell>
-                                <BodyCell className="text-right">
-                                  {formatMoney(c.amount)}
+                                <BodyCell className="whitespace-nowrap text-right tabular-nums">
+                                  {editingChargeId === c.id ? (
+                                    <div className="flex min-w-[190px] items-center justify-end gap-1.5">
+                                      <TextInput
+                                        type="number"
+                                        min={0}
+                                        step="0.01"
+                                        value={editedAmount}
+                                        aria-label={`Manual amount for ${c.description ?? c.chargeNumber}`}
+                                        onChange={(event) => setEditedAmount(event.target.value)}
+                                        className="h-9 w-28 text-right"
+                                      />
+                                      <Button
+                                        type="button"
+                                        size="icon-sm"
+                                        aria-label="Save manual amount"
+                                        disabled={
+                                          saveAmountMutation.isPending ||
+                                          editedAmount === "" ||
+                                          !Number.isFinite(Number(editedAmount)) ||
+                                          Number(editedAmount) < 0
+                                        }
+                                        onClick={() => saveAmountMutation.mutate({ chargeId: c.id, amount: Number(editedAmount) })}
+                                      >
+                                        <Check className="h-4 w-4" />
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        aria-label="Cancel amount edit"
+                                        onClick={() => {
+                                          setEditingChargeId(null);
+                                          setEditedAmount("");
+                                        }}
+                                      >
+                                        <X className="h-4 w-4" />
+                                      </Button>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center justify-end gap-2">
+                                      <span className="whitespace-nowrap">{formatMoney(c.amount)}</span>
+                                      {canManage && inv.status === "draft" && c.status === "draft" && (
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => {
+                                            setEditingChargeId(c.id);
+                                            setEditedAmount(c.amount.toFixed(2));
+                                          }}
+                                        >
+                                          <Pencil className="h-3.5 w-3.5" />
+                                          Edit
+                                        </Button>
+                                      )}
+                                    </div>
+                                  )}
                                 </BodyCell>
                               </Row>
                             );

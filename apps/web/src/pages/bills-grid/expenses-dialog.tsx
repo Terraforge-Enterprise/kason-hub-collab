@@ -66,6 +66,8 @@ export type ExpensesDialogProps = {
   apartmentId: string;
   periodMonth: string;
   bearer: "tenant" | "owner";
+  /** Column that opened the drawer: preselect SST for every newly-added line. */
+  defaultWithSST?: boolean;
   /**
    * Reachable-from-a-tenant-record case (brief R-tenant-popup): a
    * pre-resolved tenancy. Skips the picker entirely and auto-fills the name
@@ -98,6 +100,12 @@ type EditableRow = {
   description: string;
   amount: string;
   withSST: boolean;
+  actualCost: string;
+  costVendor: string;
+  costPaymentStatus: "unpaid" | "partial" | "paid";
+  costPaymentDate: string;
+  costPaymentAccount: string;
+  costNotes: string;
   /** T3, flag-gated: classify-only ChargeCategory FK. Never read when the picker flag is dark. */
   chargeCategoryId: string | null;
   /** Task B2, flag-gated: per-row Expense/Profit routing choice (GridExpense.nature).
@@ -123,12 +131,12 @@ type EditableRow = {
   settlement?: SettlementState;
 };
 
-type RowError = { field: "description" | "amount"; message: string };
+type RowError = { field: "description" | "amount" | "actualCost" | "costPaymentStatus"; message: string };
 
 let rowSeq = 0;
-function newRow(): EditableRow {
+function newRow(withSST = false): EditableRow {
   rowSeq += 1;
-  return { key: `new-${rowSeq}`, id: null, description: "", amount: "", withSST: false, chargeCategoryId: null, nature: DEFAULT_NATURE, partyId: null, partyName: null, seeded: false };
+  return { key: `new-${rowSeq}`, id: null, description: "", amount: "", withSST, actualCost: "", costVendor: "", costPaymentStatus: "unpaid", costPaymentDate: "", costPaymentAccount: "", costNotes: "", chargeCategoryId: null, nature: DEFAULT_NATURE, partyId: null, partyName: null, seeded: false };
 }
 
 /** Owner-avatar initials for the per-tenant group header (e.g. "Tan Wei Ming" → "TM").
@@ -165,15 +173,21 @@ function ReadOnlyValue({ children }: { children: React.ReactNode }) {
   );
 }
 
-function rowsFromActive(items: ExpenseListItem[]): EditableRow[] {
+function rowsFromActive(items: ExpenseListItem[], defaultWithSST = false): EditableRow[] {
   const active = items.filter((i) => i.status === "active");
-  if (active.length === 0) return [newRow()];
+  if (active.length === 0) return [newRow(defaultWithSST)];
   return active.map((i) => ({
     key: i.id,
     id: i.id,
     description: i.description,
     amount: i.amount,
     withSST: i.withSST,
+    actualCost: i.actualCost ?? "",
+    costVendor: i.costVendor ?? "",
+    costPaymentStatus: i.costPaymentStatus ?? "unpaid",
+    costPaymentDate: i.costPaymentDate?.slice(0, 10) ?? "",
+    costPaymentAccount: i.costPaymentAccount ?? "",
+    costNotes: i.costNotes ?? "",
     // ?? null: a stale/partial ExpenseListItem (e.g. an older cached fixture)
     // must degrade to "no category" rather than seed `undefined`, which would
     // make the dirty-check below fire a spurious PATCH on every untouched row
@@ -221,11 +235,18 @@ function validateRows(rows: EditableRow[]): Record<string, RowError> {
     }
     const amountError = validateAmount(row.amount);
     if (amountError) errors[row.key] = { field: "amount", message: amountError };
+    if (row.actualCost.trim()) {
+      const parsedCost = parseAmountCell(row.actualCost);
+      if (!parsedCost.ok) errors[row.key] = { field: "actualCost", message: parsedCost.message };
+    }
+    if (row.costPaymentStatus === "paid" && !row.actualCost.trim()) {
+      errors[row.key] = { field: "actualCost", message: "Enter the actual cost (enter 0 if there was no cost)" };
+    }
   }
   return errors;
 }
 
-export function ExpensesDialog({ apartmentId, periodMonth, bearer, initialTenancy, tenancyOptions }: ExpensesDialogProps) {
+export function ExpensesDialog({ apartmentId, periodMonth, bearer, defaultWithSST = false, initialTenancy, tenancyOptions }: ExpensesDialogProps) {
   const { user } = useAuth();
   const isManager = user?.role === "manager" || user?.role === "admin";
   const queryClient = useQueryClient();
@@ -261,6 +282,10 @@ export function ExpensesDialog({ apartmentId, periodMonth, bearer, initialTenanc
   // void lines are shown in the itemised view but never counted here.
   const activeItems = items.filter((i) => i.status === "active");
   const activeTotal = activeItems.reduce((sum, i) => sum + Number(i.amount), 0);
+  const costedItems = activeItems.filter((i) => i.actualCost != null);
+  const recordedCost = costedItems.reduce((sum, i) => sum + Number(i.actualCost), 0);
+  const recordedMargin = costedItems.reduce((sum, i) => sum + Number(i.amount) - Number(i.actualCost), 0);
+  const costActionRequiredCount = activeItems.filter((i) => i.actualCost == null || (i.costPaymentStatus ?? "unpaid") !== "paid").length;
 
   // "Who owes what" at a glance (tenant bearer): per-owner subtotals from each
   // line's stored owner snapshot, first-seen order — the same grouping key the
@@ -346,6 +371,14 @@ export function ExpensesDialog({ apartmentId, periodMonth, bearer, initialTenanc
           )}
         </div>
 
+        {activeItems.length > 0 && (
+          <div className="mt-3 grid grid-cols-3 gap-2 border-t border-border/50 pt-3 text-xs">
+            <div><span className="block text-muted-foreground">Direct costs</span><strong className="text-sm tabular-nums">{formatMoney(recordedCost)}</strong></div>
+            <div><span className="block text-muted-foreground">Gross Margin</span><strong className="text-sm tabular-nums">{formatMoney(recordedMargin)}</strong></div>
+            <div><span className="block text-muted-foreground">Action required</span><strong className={cn("text-sm", costActionRequiredCount > 0 && "text-orange-700")}>{costActionRequiredCount} item{costActionRequiredCount === 1 ? "" : "s"}</strong></div>
+          </div>
+        )}
+
         {/* Per-owner chips — only when more than one tenant carries expenses
             (a single owner is already fully described by the total above). */}
         {ownerBreakdown.length > 1 && (
@@ -385,6 +418,7 @@ export function ExpensesDialog({ apartmentId, periodMonth, bearer, initialTenanc
           apartmentId={apartmentId}
           periodMonth={periodMonth}
           bearer={bearer}
+          defaultWithSST={defaultWithSST}
           items={items}
           initialTenancy={initialTenancy}
           tenancyOptions={tenancyOptions}
@@ -431,6 +465,11 @@ function ExpenseViewDialog({
               >
                 <div>
                   <p className="text-sm text-foreground">{item.description}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {item.actualCost == null
+                      ? "Cost pending"
+                      : `Cost ${formatMoney(Number(item.actualCost))} · Margin ${formatMoney(Number(item.amount) - Number(item.actualCost))}`}
+                  </p>
                   {item.status !== "active" && <p className="text-xs text-rose-500">Void</p>}
                 </div>
                 <p className="text-sm tabular-nums text-foreground">
@@ -506,6 +545,7 @@ function ExpenseEditForm({
   apartmentId,
   periodMonth,
   bearer,
+  defaultWithSST,
   items,
   initialTenancy,
   tenancyOptions,
@@ -519,6 +559,7 @@ function ExpenseEditForm({
   apartmentId: string;
   periodMonth: string;
   bearer: "tenant" | "owner";
+  defaultWithSST: boolean;
   items: ExpenseListItem[];
   initialTenancy?: { tenancyId: string; partyName: string };
   tenancyOptions?: ExpensesDialogTenancyOption[];
@@ -537,7 +578,7 @@ function ExpenseEditForm({
   // inline. A background listExpenses refetch must never clobber in-progress
   // edits, so the parent remounts this component (via a key) after a successful
   // write to pull server truth. See ExpensesDialog.invalidateAndReseed.
-  const [rows, setRows] = useState<EditableRow[]>(() => rowsFromActive(items));
+  const [rows, setRows] = useState<EditableRow[]>(() => rowsFromActive(items, defaultWithSST));
   const [rowErrors, setRowErrors] = useState<Record<string, RowError>>({});
   const [tenancy, setTenancy] = useState<{ tenancyId: string; partyName: string } | null>(() => {
     if (initialTenancy) return initialTenancy;
@@ -582,6 +623,7 @@ function ExpenseEditForm({
         // would fail the WHOLE batch and lose the admin's edits to the OTHER lines.
         if (isExpenseLineLocked(r)) continue;
         const normalizedAmount = Number(r.amount).toFixed(2);
+        const normalizedActualCost = r.actualCost.trim() ? Number(r.actualCost).toFixed(2) : null;
         // `original.chargeCategoryId ?? null`: degrades a stale/partial fixture's
         // absent key to "no category" instead of comparing against `undefined`,
         // which would make this OR-clause true (and PATCH fire) on every
@@ -594,12 +636,20 @@ function ExpenseEditForm({
         // comparison like-for-like). Gated on natureRoutingOn so a flag-OFF save NEVER sends
         // `nature`, even if local state happens to differ from server truth.
         const natureChanged = natureRoutingOn && (original.nature === "profit" ? "profit" : DEFAULT_NATURE) !== r.nature;
+        const costChanged =
+          (original.actualCost ?? null) !== normalizedActualCost ||
+          (original.costVendor ?? "") !== r.costVendor.trim() ||
+          (original.costPaymentStatus ?? "unpaid") !== r.costPaymentStatus ||
+          (original.costPaymentDate?.slice(0, 10) ?? "") !== r.costPaymentDate ||
+          (original.costPaymentAccount ?? "") !== r.costPaymentAccount.trim() ||
+          (original.costNotes ?? "") !== r.costNotes.trim();
         if (
           original.description !== r.description.trim() ||
           original.amount !== normalizedAmount ||
           original.withSST !== r.withSST ||
           categoryChanged ||
-          natureChanged
+          natureChanged ||
+          costChanged
         ) {
           await updateExpense(r.id as string, {
             description: r.description.trim(),
@@ -622,6 +672,14 @@ function ExpenseEditForm({
             // untouched row never resends it, so a flag-OFF-when-saved / server-null
             // row is never spuriously overwritten.
             ...(natureChanged ? { nature: r.nature } : {}),
+            ...(costChanged ? {
+              actualCost: normalizedActualCost,
+              costVendor: r.costVendor.trim() || null,
+              costPaymentStatus: r.costPaymentStatus,
+              costPaymentDate: r.costPaymentDate || null,
+              costPaymentAccount: r.costPaymentAccount.trim() || null,
+              costNotes: r.costNotes.trim() || null,
+            } : {}),
           });
         }
       }
@@ -645,6 +703,12 @@ function ExpenseEditForm({
             // entirely (byte-identical wire to pre-B2), even though `r.nature`
             // always holds a concrete local value.
             ...(natureRoutingOn ? { nature: r.nature } : {}),
+            ...(r.actualCost.trim() ? { actualCost: Number(r.actualCost).toFixed(2) } : {}),
+            ...(r.costVendor.trim() ? { costVendor: r.costVendor.trim() } : {}),
+            ...(r.costPaymentStatus !== "unpaid" ? { costPaymentStatus: r.costPaymentStatus } : {}),
+            ...(r.costPaymentDate ? { costPaymentDate: r.costPaymentDate } : {}),
+            ...(r.costPaymentAccount.trim() ? { costPaymentAccount: r.costPaymentAccount.trim() } : {}),
+            ...(r.costNotes.trim() ? { costNotes: r.costNotes.trim() } : {}),
           })),
         });
       }
@@ -667,7 +731,7 @@ function ExpenseEditForm({
       // never collapses to an empty state.
       setRows((prev) => {
         const next = prev.filter((r) => r.id !== expenseId);
-        return next.length > 0 ? next : [newRow()];
+        return next.length > 0 ? next : [newRow(defaultWithSST)];
       });
       onVoided();
     },
@@ -707,7 +771,11 @@ function ExpenseEditForm({
   // the exact values just created (same normalization as the create body), so the
   // save's EXISTING dirty-check fires only when the current row differs — no
   // redundant PATCH when nothing changed after the attach.
-  const createdBaselinesRef = useRef<Map<string, { description: string; amount: string; withSST: boolean; chargeCategoryId: string | null; nature: ExpenseNature }>>(new Map());
+  const createdBaselinesRef = useRef<Map<string, {
+    description: string; amount: string; withSST: boolean; chargeCategoryId: string | null; nature: ExpenseNature;
+    actualCost: string | null; costVendor: string | null; costPaymentStatus: "unpaid" | "partial" | "paid";
+    costPaymentDate: string | null; costPaymentAccount: string | null; costNotes: string | null;
+  }>>(new Map());
   async function ensureRowPersisted(row: EditableRow): Promise<string | null> {
     if (row.id) return row.id; // already persisted
     if (persistingRef.current.has(row.key)) return null; // R7.4 lock (synchronous)
@@ -730,6 +798,12 @@ function ExpenseEditForm({
             withSST: row.withSST,
             ...(row.chargeCategoryId ? { chargeCategoryId: row.chargeCategoryId } : {}),
             ...(natureRoutingOn ? { nature: row.nature } : {}),
+            ...(row.actualCost.trim() ? { actualCost: Number(row.actualCost).toFixed(2) } : {}),
+            ...(row.costVendor.trim() ? { costVendor: row.costVendor.trim() } : {}),
+            ...(row.costPaymentStatus !== "unpaid" ? { costPaymentStatus: row.costPaymentStatus } : {}),
+            ...(row.costPaymentDate ? { costPaymentDate: row.costPaymentDate } : {}),
+            ...(row.costPaymentAccount.trim() ? { costPaymentAccount: row.costPaymentAccount.trim() } : {}),
+            ...(row.costNotes.trim() ? { costNotes: row.costNotes.trim() } : {}),
           },
         ],
       });
@@ -748,6 +822,12 @@ function ExpenseEditForm({
           withSST: row.withSST,
           chargeCategoryId: row.chargeCategoryId ?? null,
           nature: row.nature,
+          actualCost: row.actualCost.trim() ? Number(row.actualCost).toFixed(2) : null,
+          costVendor: row.costVendor.trim() || null,
+          costPaymentStatus: row.costPaymentStatus,
+          costPaymentDate: row.costPaymentDate || null,
+          costPaymentAccount: row.costPaymentAccount.trim() || null,
+          costNotes: row.costNotes.trim() || null,
         });
       }
       return newId;
@@ -757,7 +837,7 @@ function ExpenseEditForm({
   }
 
   function addRow() {
-    setRows((prev) => [...prev, newRow()]);
+    setRows((prev) => [...prev, newRow(defaultWithSST)]);
   }
 
   function removeRow(key: string) {
@@ -970,6 +1050,55 @@ function ExpenseEditForm({
                     />
                     SST
                   </label>
+                </div>
+
+                <div className="rounded-lg border border-amber-300/70 bg-amber-50/50 p-3">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-bold text-[var(--navy-text)]">Internal cost tracking</p>
+                    {row.actualCost.trim() && row.costPaymentStatus === "paid" ? (
+                      <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800">
+                        Gross Margin: {formatMoney(Number(row.amount || 0) - Number(row.actualCost || 0))}
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-orange-100 px-2.5 py-1 text-xs font-bold text-orange-800">
+                        {!row.actualCost.trim() ? "Enter actual cost" : "Payment follow-up"}
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <Field label="Actual cost (RM)" error={rowError?.field === "actualCost" ? rowError.message : null}>
+                      {locked ? <ReadOnlyValue>{row.actualCost || "Cost pending"}</ReadOnlyValue> : (
+                        <TextInput type="text" inputMode="decimal" aria-label={`Line ${index + 1} actual cost`} value={row.actualCost} onChange={(e) => updateRow(row.key, { actualCost: e.target.value })} placeholder="Leave blank if pending" />
+                      )}
+                    </Field>
+                    <Field label="Vendor / Paid to">
+                      {locked ? <ReadOnlyValue>{row.costVendor || "—"}</ReadOnlyValue> : (
+                        <TextInput aria-label={`Line ${index + 1} cost vendor`} value={row.costVendor} onChange={(e) => updateRow(row.key, { costVendor: e.target.value })} placeholder="Supplier or payee" />
+                      )}
+                    </Field>
+                    <Field label="Cost payment status" error={rowError?.field === "costPaymentStatus" ? rowError.message : null}>
+                      {locked ? <ReadOnlyValue>{row.costPaymentStatus}</ReadOnlyValue> : (
+                        <SelectInput aria-label={`Line ${index + 1} cost payment status`} value={row.costPaymentStatus} onChange={(e) => updateRow(row.key, { costPaymentStatus: e.target.value as EditableRow["costPaymentStatus"] })}>
+                          <option value="unpaid">Unpaid</option><option value="partial">Partially Paid</option><option value="paid">Paid</option>
+                        </SelectInput>
+                      )}
+                    </Field>
+                    <Field label="Payment date">
+                      {locked ? <ReadOnlyValue>{row.costPaymentDate || "—"}</ReadOnlyValue> : (
+                        <TextInput type="date" aria-label={`Line ${index + 1} cost payment date`} value={row.costPaymentDate} onChange={(e) => updateRow(row.key, { costPaymentDate: e.target.value })} />
+                      )}
+                    </Field>
+                    <Field label="Payment account">
+                      {locked ? <ReadOnlyValue>{row.costPaymentAccount || "—"}</ReadOnlyValue> : (
+                        <TextInput aria-label={`Line ${index + 1} cost payment account`} value={row.costPaymentAccount} onChange={(e) => updateRow(row.key, { costPaymentAccount: e.target.value })} placeholder="e.g. Maybank" />
+                      )}
+                    </Field>
+                    <Field label="Cost remarks">
+                      {locked ? <ReadOnlyValue>{row.costNotes || "—"}</ReadOnlyValue> : (
+                        <TextInput aria-label={`Line ${index + 1} cost remarks`} value={row.costNotes} onChange={(e) => updateRow(row.key, { costNotes: e.target.value })} placeholder="Payment/reference notes" />
+                      )}
+                    </Field>
+                  </div>
                 </div>
 
                 {/* Per-line attachments (T1, spec R5–R8). canUpload is the A1

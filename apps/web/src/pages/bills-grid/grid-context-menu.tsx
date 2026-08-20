@@ -13,10 +13,11 @@ import { Copy, Eraser, PaintBucket, EyeOff } from "lucide-react";
 
 // Same swatches as the toolbar (grid-toolbar.tsx) — cosmetic localStorage only.
 const COLOUR_SWATCHES: Array<{ colour: string; label: string }> = [
-  { colour: "#FDE68A", label: "Amber" },
-  { colour: "#BBF7D0", label: "Green" },
-  { colour: "#BFDBFE", label: "Blue" },
-  { colour: "#FBCFE8", label: "Pink" },
+  { colour: "#7C3AED", label: "Violet" },
+  { colour: "#4338CA", label: "Indigo" },
+  { colour: "#C026D3", label: "Fuchsia" },
+  { colour: "#92400E", label: "Brown" },
+  { colour: "#374151", label: "Charcoal" },
 ];
 
 export interface GridContextMenuProps {
@@ -123,7 +124,7 @@ export function GridContextMenu({
               disabled={!hasSelection}
               onClick={() => run(() => onApplyColour(s.colour))}
               style={{ backgroundColor: s.colour }}
-              className="h-5 w-5 rounded-full border border-[var(--border)] transition disabled:cursor-not-allowed disabled:opacity-40"
+              className="h-6 w-6 rounded-full border-2 border-white shadow-sm ring-1 ring-[var(--navy)] transition hover:scale-110 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--gold)] disabled:cursor-not-allowed disabled:opacity-65"
             />
           ))}
           <button

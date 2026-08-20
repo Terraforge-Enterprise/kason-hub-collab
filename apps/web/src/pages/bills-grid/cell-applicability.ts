@@ -118,8 +118,6 @@ function bearerOf(row: GridRow, field: BearerField): string {
  */
 export function showsTenantBorneMark(row: GridRow, columnId: ColumnId): boolean {
   switch (columnId) {
-    case "tnbOwner":
-      return isUtilityTenantBorne(bearerOf(row, "tnbPattern"));
     case "maintenanceFee":
       return bearerOf(row, "maintenanceFeeBearer") === "tenant";
     default:
@@ -172,7 +170,11 @@ export function isApplicable(row: GridRow, columnId: ColumnId): boolean {
     // instead (`tenantBorneMark` in grid-table.tsx), which reads the SAME
     // `isUtilityTenantBorne` predicate as the AIR split above.
     case "tnbOwner":
-      return !isProviderPaidByTenant(bearerOf(row, "tnbPattern"));
+      return bearerOf(row, "tnbPattern") === "absorbed";
+    case "tnbTenant": {
+      const pattern = bearerOf(row, "tnbPattern");
+      return isUtilityTenantBorne(pattern) && !isProviderPaidByTenant(pattern);
+    }
     // The per-room meter sub-rows are deliberately LEFT APPLICABLE. Their aircond amounts are
     // also unbillable under tenant_direct (the electricity component is skipped wholesale), but
     // a meter reading is a physical record with value independent of billing — blocking its

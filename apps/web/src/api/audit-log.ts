@@ -20,6 +20,8 @@ export type AuditTimelineEntry = {
   entityType: string;
   entityId: string;
   entityName: string | null;
+  diff: unknown;
+  meta: unknown;
   createdAt: string;
 };
 

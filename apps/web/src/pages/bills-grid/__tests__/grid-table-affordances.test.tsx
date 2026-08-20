@@ -294,7 +294,7 @@ describe("GridTable — affordances (ui-task-10b)", () => {
   // Bill (billedAt is set on both a first Bill and a re-Bill) and ALSO co-existed
   // with the Billed tag on a real re-Bill. Billed and Re-Billed are now mutually
   // exclusive: a first Bill shows Billed only; a re-Bill shows Re-Billed only.
-  it('"Billed vs Re-Billed tags are mutually exclusive" — a first Bill (billRevision 0) shows Billed only; a re-Bill (billRevision > 0) shows Re-Billed only; a fresh unbilled row shows neither', () => {
+  it('removes the redundant Billed and Re-Billed lifecycle tags from every row', () => {
     const rows = [
       makeRow({ apartmentId: "APT-FRESH", unitCode: "PV9 D-01-01", billed: false, billedAt: null, paymentStatus: "unpaid" }),
       makeRow({ apartmentId: "APT-FIRST", unitCode: "PV9 D-02-02", billed: true, billRevision: 0, billedAt: "2026-07-10T00:00:00.000Z", paymentStatus: "unpaid" }),
@@ -306,17 +306,10 @@ describe("GridTable — affordances (ui-task-10b)", () => {
     const firstRow = screen.getByRole("row", { name: /PV9 D-02-02/ });
     const rebillRow = screen.getByRole("row", { name: /PV9 D-03-03/ });
 
-    // Fresh unbilled row: neither tag.
-    expect(within(freshRow).queryByTestId("billed-badge")).toBeNull();
-    expect(within(freshRow).queryByTestId("rebill-badge")).toBeNull();
-
-    // First Bill: Billed only, NOT Re-Billed (the bug was Re-Bill showing here).
-    expect(within(firstRow).getByTestId("billed-badge")).toBeInTheDocument();
-    expect(within(firstRow).queryByTestId("rebill-badge")).toBeNull();
-
-    // Real re-Bill: Re-Billed only, NOT both (the bug was Billed + Re-Bill together).
-    expect(within(rebillRow).getByTestId("rebill-badge")).toHaveTextContent("Re-Billed");
-    expect(within(rebillRow).queryByTestId("billed-badge")).toBeNull();
+    for (const row of [freshRow, firstRow, rebillRow]) {
+      expect(within(row).queryByTestId("billed-badge")).toBeNull();
+      expect(within(row).queryByTestId("rebill-badge")).toBeNull();
+    }
   });
 
   it('`hasUnbilledChanges` renders NO tag — the field still arrives from the server, the grid just does not surface it', () => {
@@ -330,8 +323,8 @@ describe("GridTable — affordances (ui-task-10b)", () => {
     // start (57 ms of skew measured on a real never-amended row). Permanent red noise, not
     // a signal. Billed / Re-Billed are the only row tags again.
     const rows = [
-      makeRow({ apartmentId: "APT-BILLED", unitCode: "PV9 E-01-01", billed: true, billRevision: 0, billedAt: "2026-07-10T00:00:00.000Z", hasUnbilledChanges: true }),
-      makeRow({ apartmentId: "APT-REBILLED", unitCode: "PV9 E-03-03", billed: true, billRevision: 2, billedAt: "2026-07-10T00:00:00.000Z", hasUnbilledChanges: true }),
+      makeRow({ apartmentId: "APT-BILLED", unitCode: "PV9 E-01-01", entryId: "ENTRY-1", billed: true, billRevision: 0, billedAt: "2026-07-10T00:00:00.000Z", hasUnbilledChanges: true }),
+      makeRow({ apartmentId: "APT-REBILLED", unitCode: "PV9 E-03-03", entryId: "ENTRY-2", billed: true, billRevision: 2, billedAt: "2026-07-10T00:00:00.000Z", hasUnbilledChanges: true }),
     ];
     render(<GridTable rows={rows} columns={CURRENT_COLUMNS} />);
 
@@ -340,10 +333,12 @@ describe("GridTable — affordances (ui-task-10b)", () => {
 
     // Flagged dirty by the server, yet no tag renders — the point of the removal.
     expect(within(billedRow).queryByTestId("unbilled-changes-badge")).toBeNull();
-    expect(within(billedRow).getByTestId("billed-badge")).toBeInTheDocument();
+    expect(within(billedRow).queryByTestId("billed-badge")).toBeNull();
+    expect(within(billedRow).getByTestId("needs-bill-badge")).toHaveTextContent("Needs Re-Bill");
 
     expect(within(reBilledRow).queryByTestId("unbilled-changes-badge")).toBeNull();
-    expect(within(reBilledRow).getByTestId("rebill-badge")).toBeInTheDocument();
+    expect(within(reBilledRow).queryByTestId("rebill-badge")).toBeNull();
+    expect(within(reBilledRow).getByTestId("needs-bill-badge")).toHaveTextContent("Needs Re-Bill");
 
     expect(screen.queryByText("Unbilled changes")).toBeNull();
   });

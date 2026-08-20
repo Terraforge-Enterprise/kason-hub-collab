@@ -37,11 +37,13 @@ import { PageHeader } from "@/components/ui";
 import { Callout } from "@/components/ui/callout";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetBody, SheetTitle } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { isPhase2FlagEnabled } from "@/lib/feature-flags";
-import { loadCellColours, loadPref, savePref } from "@/lib/view-prefs";
+import { loadCellColours, saveCellColours, loadPref, savePref, type CellColourMap } from "@/lib/view-prefs";
 import {
   fetchGrid,
+  fetchBillingFundsSummary,
   saveEntry,
   saveReadings,
   billRows,
@@ -51,11 +53,12 @@ import {
   type SaveEntryInput,
   type SaveReadingInput,
   type BillRowResult,
+  type BillingFundsSummary,
 } from "@/api/bills-grid";
-import { GridTable, type CellEditHandler, type ExpenseBearer, type RecurringBearer } from "./grid-table";
+import { GridTable, rowHasBillingState, type CellEditHandler, type ExpenseBearer, type RecurringBearer, type SelectionEdges } from "./grid-table";
 import { billFailureReason, saveFailureReason } from "./bill-failure-reason";
 import { GridErrorBoundary } from "./grid-error-boundary";
-import { GridToolbar } from "./grid-toolbar";
+import { GridToolbar, type BillingColourFilter, type OwnerPayoutFilter, type GridDisplayMode } from "./grid-toolbar";
 import { CURRENT_COLUMNS, type ColumnId } from "./columns";
 import { useStagedEdits } from "./use-staged-edits";
 import { useGridKeyboard } from "./use-grid-keyboard";
@@ -63,23 +66,146 @@ import { useGridSelection, type SelectionCell } from "./use-grid-selection";
 import { useGridNav, type CellRef } from "./use-grid-nav";
 import { useMultiSelection } from "./use-multi-selection";
 import { applyFilters, type ColumnFilters, type DateRange } from "./use-column-filter";
-import { useFullscreenZoom } from "./use-fullscreen-zoom";
 import { visibleUnits } from "./occupancy";
 import { exportGridToXlsx } from "./export-xlsx";
+import { exportGridPdf, exportPayoutReportsZip, exportPayoutSummaryXlsx } from "./export-options";
+import type { GridExportKind } from "./grid-toolbar";
 import { SettingDrawer } from "./setting-drawer";
 import { ExpensesDialog } from "./expenses-dialog";
 import { RecurringDialog } from "./recurring-dialog";
 import { AttachmentsPanel } from "./attachments-panel";
+import { TenantBillSummaryDialog } from "./tenant-bill-summary-dialog";
+import { ActivityLogDrawer } from "./activity-log-drawer";
+import { OwnerReportDialog } from "./owner-report-dialog";
+import { UnitDocumentsDialog } from "./unit-documents-dialog";
+import { BillingSummaryTable } from "./billing-summary-table";
+import { BillingSummaryNotes } from "./billing-summary-notes";
 import { summarizeStagedByUnit, type SaveSkipReason, type UnitEditSummary } from "./staged-summary";
 import { GridContextMenu } from "./grid-context-menu";
 import { isCellLocked, isRowLocked } from "./row-lock";
 import { isApplicable } from "./cell-applicability";
 import { planRectangularCopy, matrixToTsv, countCells } from "./grid-copy";
 import { findUnbillableAmounts, type UnbillableRow } from "./unbillable-amounts";
+import { downloadLiveStatementPdf, useAllStatementsForMonth } from "@/api/owner-billing";
 
 // namespace for view-prefs' localStorage keys (colours + hidden columns) —
 // see use-grid-selection.ts's own `NS` constant, must match.
 const VIEW_PREFS_NS = "bills-grid";
+
+function rm(value: string): string {
+  const amount = Number(value);
+  return `RM ${Number.isFinite(amount) ? amount.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00"}`;
+}
+
+function FundsSummaryPanel({ data, onFillExpense }: { data?: BillingFundsSummary; onFillExpense: (item: BillingFundsSummary["tenantExpenseActionItems"][number]) => void }) {
+  const [actionsOpen, setActionsOpen] = useState(false);
+  if (!data) return (
+    <div className="flex h-16 w-44 items-center justify-center rounded-xl border border-amber-400 bg-amber-50 px-4 text-center text-sm font-semibold text-amber-900 sm:w-56" aria-label="Monthly funds summary unavailable">
+      Summary temporarily unavailable
+    </div>
+  );
+  const tone = data.status === "shortfall"
+    ? "border-red-500 bg-red-50 text-red-800"
+    : data.status === "attention"
+      ? "border-amber-500 bg-amber-50 text-amber-900"
+      : "border-emerald-500 bg-emerald-50 text-emerald-900";
+  const actionItems = data.tenantExpenseActionItems ?? [];
+  const actionCount = data.tenantExpenseActionRequiredCount ?? actionItems.length;
+  return (<>
+    <details className="group relative" data-testid="billing-funds-summary">
+      <summary className="relative cursor-pointer list-none overflow-visible rounded-xl border-2 border-[var(--border)] bg-white text-[var(--navy-text)] shadow-sm">
+        <span className="flex min-h-12 items-center justify-between gap-3 px-4 py-2 sm:hidden">
+          <span><span className="block text-xs font-semibold opacity-75">Outstanding</span><strong className="text-base">Need to collect</strong></span>
+          <strong className="whitespace-nowrap text-lg text-[var(--navy-text)]">{rm(data.tenantOutstanding)}</strong>
+        </span>
+        <span className="hidden grid-cols-4 sm:grid">
+          {[
+            { label: "To collect", value: data.tenantDue },
+            { label: "Received", value: data.tenantCollected, colour: Number(data.tenantCollected) > 0 ? "#00FF00" : undefined },
+            { label: "Outstanding", value: data.tenantOutstanding, colour: Number(data.tenantOutstanding) > 0 ? "#FFFF00" : undefined },
+            { label: "Management Fee", value: data.managementFee },
+          ].map(({ label, value, colour }, index) => (
+            <span key={label} className={cn("min-w-32 px-3 py-2", index > 0 && "border-l border-[var(--border)]")} style={colour ? { backgroundColor: colour } : undefined}>
+              <span className="block text-xs font-semibold opacity-75">{label}</span>
+              <span className="block whitespace-nowrap text-lg font-extrabold text-[var(--navy-text)]">{rm(value)}</span>
+            </span>
+          ))}
+        </span>
+      </summary>
+      <div className="absolute right-0 z-50 mt-2 w-[min(560px,calc(100vw-2rem))] rounded-xl border border-[var(--border)] bg-white p-4 text-[var(--navy-text)] shadow-2xl">
+        <div className="mb-3 flex items-center justify-between">
+          <div><p className="text-lg font-bold">Monthly money breakdown</p><p className="text-sm text-[var(--text-secondary)]">To collect, received and outstanding amounts by category</p></div>
+          <span className={cn("rounded-full border px-3 py-1 text-sm font-bold", tone)}>{data.status === "safe" ? "Funds healthy" : data.status === "attention" ? "Review funds" : "Payout risk"}</span>
+        </div>
+        <div className="mb-4 grid grid-cols-2 gap-2">
+          {([ ["Total Rental", data.rental], ["Total Deposit", data.deposit] ] as const).map(([label, totals]) => (
+            <div key={label} className="rounded-lg border border-[var(--border)] bg-[var(--page-bg)] p-3">
+              <strong className="text-base text-[var(--navy-text)]">{label}</strong>
+              <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
+                <dt className="text-[var(--text-secondary)]">Due</dt><dd className="text-right font-bold">{rm(totals.due)}</dd>
+                <dt className="text-[var(--text-secondary)]">Collected</dt><dd className="text-right font-bold">{rm(totals.collected)}</dd>
+                <dt className="text-[var(--text-secondary)]">Outstanding</dt><dd className="text-right font-bold">{rm(totals.outstanding)}</dd>
+              </dl>
+            </div>
+          ))}
+        </div>
+        <div className="overflow-hidden rounded-lg border border-[var(--border)]">
+          <table className="w-full table-fixed text-sm">
+            <thead className="bg-[var(--table-header)] text-[var(--navy-text)]">
+              <tr><th className="w-[40%] px-3 py-2 text-left">Category</th><th className="px-2 py-2 text-right">Due</th><th className="px-2 py-2 text-right">Collected</th><th className="px-3 py-2 text-right">Outstanding</th></tr>
+            </thead>
+            <tbody>
+              {data.tenantBreakdown.map((line) => (
+                <tr key={line.key} className="border-t border-[var(--border)]">
+                  <td className="px-3 py-2 font-semibold text-[var(--navy-text)]">{line.label}</td>
+                  <td className="px-2 py-2 text-right">{rm(line.due)}</td>
+                  <td className="px-2 py-2 text-right">{rm(line.collected)}</td>
+                  <td className="bg-[#FFFF00] px-3 py-2 text-right font-bold">{rm(line.outstanding)}</td>
+                </tr>
+              ))}
+              {data.tenantBreakdown.length === 0 && <tr><td colSpan={4} className="px-3 py-6 text-center text-[var(--text-secondary)]">No tenant charges for this month.</td></tr>}
+            </tbody>
+            <tfoot className="border-t-2 border-[var(--navy)] bg-[var(--navy)] font-bold text-white">
+              <tr><td className="px-3 py-2">Total</td><td className="px-2 py-2 text-right">{rm(data.tenantDue)}</td><td className="px-2 py-2 text-right">{rm(data.tenantCollected)}</td><td className="px-3 py-2 text-right text-[var(--gold-light)]">{rm(data.tenantOutstanding)}</td></tr>
+            </tfoot>
+          </table>
+        </div>
+        <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
+          <div className="rounded-lg bg-[var(--page-bg)] p-3"><span className="text-[var(--text-secondary)]">Tenant expenses charged</span><strong className="block text-base">{rm(data.tenantExpenseCharges)}</strong></div>
+          <div className="rounded-lg bg-[var(--page-bg)] p-3"><span className="text-[var(--text-secondary)]">Direct costs recorded</span><strong className="block text-base">{rm(data.tenantExpenseDirectCosts)}</strong></div>
+          <div className="rounded-lg bg-[var(--page-bg)] p-3"><span className="text-[var(--text-secondary)]">Gross Margin</span><strong className="block text-base">{rm(data.tenantExpenseGrossMargin)}</strong></div>
+          <button type="button" className="rounded-lg bg-orange-50 p-3 text-left transition hover:bg-orange-100 focus:outline-none focus:ring-2 focus:ring-orange-500" onClick={() => setActionsOpen(true)}>
+            <span className="text-orange-800">Cost action required</span><strong className="block text-base text-orange-900">{actionCount} item{actionCount === 1 ? "" : "s"}</strong><small className="text-orange-800">{data.tenantExpenseCostPendingCount ?? 0} missing actual cost · Click to view</small>
+          </button>
+          <div className="rounded-lg bg-[var(--page-bg)] p-3"><span className="text-[var(--text-secondary)]">Owner costs to pay</span><strong className="block text-base">{rm(data.ownerExpenses)}</strong></div>
+          <div className="rounded-lg bg-[var(--page-bg)] p-3"><span className="text-[var(--text-secondary)]">Management fee before SST</span><strong className="block text-base">{rm(data.managementFeeNonSst)}</strong></div>
+          <div className="rounded-lg bg-[var(--page-bg)] p-3"><span className="text-[var(--text-secondary)]">Management fee SST</span><strong className="block text-base">{rm(data.managementFeeSst)}</strong></div>
+          <div className="rounded-lg bg-[var(--page-bg)] p-3"><span className="text-[var(--text-secondary)]">Management fee total</span><strong className="block text-base">{rm(data.managementFee)}</strong></div>
+          <div className="rounded-lg bg-[var(--page-bg)] p-3"><span className="text-[var(--text-secondary)]">Owner payout balance</span><strong className="block text-base">{rm(data.ownerPayout)}</strong></div>
+          <div className="rounded-lg bg-[var(--page-bg)] p-3"><span className="text-[var(--text-secondary)]">Already collected</span><strong className="block text-base">{rm(data.tenantCollected)}</strong></div>
+        </div>
+      </div>
+    </details>
+    <Dialog open={actionsOpen} onOpenChange={setActionsOpen}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader><DialogTitle>Cost action required</DialogTitle></DialogHeader>
+        <div className="max-h-[65vh] space-y-2 overflow-y-auto">
+          {actionItems.length === 0 ? (
+            <p className="py-8 text-center text-sm text-[var(--text-secondary)]">All expense costs are completed.</p>
+          ) : actionItems.map((item) => (
+            <div key={item.expenseId} className="grid gap-3 rounded-lg border border-[var(--border)] bg-[var(--page-bg)] p-3 sm:grid-cols-[1.4fr_2fr_1fr_auto] sm:items-center">
+              <div><strong className="block text-[var(--navy-text)]">{item.propertyName} {item.unitCode}</strong><span className="text-xs text-[var(--text-secondary)]">Tenant expense</span></div>
+              <div><strong className="block text-sm text-[var(--navy-text)]">{item.description}</strong><span className="text-xs text-[var(--text-secondary)]">Charge {rm(item.chargeAmount)}</span></div>
+              <div className="text-sm"><span className="block font-semibold text-orange-800">{item.actualCost == null ? "Actual cost missing" : `Cost ${rm(item.actualCost)}`}</span><span className="capitalize text-[var(--text-secondary)]">{item.costPaymentStatus}</span></div>
+              <Button type="button" onClick={() => { setActionsOpen(false); onFillExpense(item); }}>Fill now</Button>
+            </div>
+          ))}
+        </div>
+        <DialogFooter><Button type="button" variant="outline" onClick={() => setActionsOpen(false)}>Close</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  </>);
+}
 
 /** Collapses each owner|tenant column pair to the SINGLE saveEntry wire field
  * (spec §1 / brief MONEY-CRITICAL #2). `tnbOwner` has no tenant-side sibling
@@ -98,6 +224,7 @@ const OWNER_TENANT_WIRE_FIELD: Partial<Record<ColumnId, keyof SaveEntryInput>> =
 // packages/shared/src/schemas/bills-grid.ts).
 const DIRECT_WIRE_FIELD: Partial<Record<ColumnId, keyof SaveEntryInput>> = {
   tnbOwner: "tnbTotal",
+  tnbTenant: "tnbTotal",
   maintenanceFee: "maintenanceFee",
 };
 // Task 6: `amount` removed — it is read-only/server-derived
@@ -115,6 +242,7 @@ const METER_COLUMNS = new Set<string>(["previousKwh", "currentKwh"]);
  */
 const isBillSuccess = (r: BillRowResult) =>
   r.outcome === "billed" || r.outcome === "invoiced" || r.outcome === "reinvoiced";
+const isBillResolved = (r: BillRowResult) => isBillSuccess(r) || r.outcome === "already_billed";
 
 function sortPeriodsDesc(periods: string[]): string[] {
   return [...periods].sort().reverse();
@@ -206,14 +334,26 @@ export default function BillsGridPage() {
   }, [gridQuery.data, serverCurrentMonth]);
 
   const currentPeriod = selectedPeriods[0] ?? lastGood.period;
+  const statementMonth = currentPeriod.slice(0, 7);
+  const ownerStatementsQuery = useAllStatementsForMonth(statementMonth);
+  const fundsSummaryQuery = useQuery({
+    queryKey: ["bills-grid", "funds-summary", currentPeriod],
+    queryFn: () => fetchBillingFundsSummary(currentPeriod),
+    enabled: currentPeriod !== "",
+    retry: 1,
+  });
 
   // The anchor shown/navigated in the toolbar. Falls back to the server's current
   // month until the first selection lands.
   const anchorMonth = currentPeriod || serverCurrentMonth;
-  // Provisional Bill gate (pending the settled-month billing discussion): only the
-  // current billing month may be billed from this UI. Never a client-clock compare.
-  const isCurrentBillingMonth =
-    anchorMonth !== "" && serverCurrentMonth !== "" && anchorMonth === serverCurrentMonth;
+  // Advance billing: the current month and exactly the next month may be billed.
+  // The server-provided month remains the timezone authority; farther future months
+  // stay preparation-only, and the API independently enforces the same window.
+  const nextBillingMonth = serverCurrentMonth ? addMonthsIso(serverCurrentMonth, 1) : "";
+  const canBillSelectedPeriod =
+    anchorMonth !== "" && serverCurrentMonth !== ""
+    && (anchorMonth === serverCurrentMonth || anchorMonth === nextBillingMonth);
+  const isAdvanceBillingMonth = anchorMonth !== "" && anchorMonth === nextBillingMonth;
 
   function handlePeriodsChange(next: string[]) {
     setSelectedPeriods(next);
@@ -292,11 +432,35 @@ export default function BillsGridPage() {
       return !on;
     });
   }, []);
-  const orderedRows = useMemo(() => visibleUnits(displayRows, showVacant), [displayRows, showVacant]);
+  const statementsByApartment = useMemo(() => {
+    const map = new Map<string, { id: string; status: "draft" | "first_checked" | "approved" }>();
+    for (const statement of ownerStatementsQuery.data ?? []) {
+      if (!statement.apartmentId || statement.status === "void") continue;
+      const status = statement.status === "first_checked"
+        ? "first_checked"
+        : (["approved", "sent", "paid"].includes(statement.status) ? "approved" : "draft");
+      map.set(statement.apartmentId, { id: statement.id, status });
+    }
+    return map;
+  }, [ownerStatementsQuery.data]);
+  const occupancyRows = useMemo(() => visibleUnits(displayRows, showVacant).map((row) => {
+    const statement = statementsByApartment.get(row.apartmentId);
+    return { ...row, ownerPayoutStatus: statement?.status ?? "draft", ownerStatementId: statement?.id ?? null };
+  }), [displayRows, showVacant, statementsByApartment]);
 
-  // ── in-app full-screen (R31f / R32) — NEVER requestFullscreen. The
-  // table zoom-scale control was removed (R3, 2026-07-12). ─────────────────
-  const { maximized, toggleMaximized } = useFullscreenZoom();
+  const downloadOwnerReport = useCallback(async (row: GridRow) => {
+    if (!row.ownerPartyId) return;
+    const [year, month] = statementMonth.split("-").map(Number);
+    const monthName = new Intl.DateTimeFormat("en", { month: "long", timeZone: "UTC" })
+      .format(new Date(Date.UTC(year, month - 1, 1))).toUpperCase();
+    const rawName = `${row.propertyName} ${row.unitCode} ${monthName} ${String(year).slice(-2)} OWNER INCOME REPORT.pdf`.toUpperCase();
+    const filename = rawName.replace(/[\\/:*?"<>|]/g, "-");
+    try {
+      await downloadLiveStatementPdf({ ownerPartyId: row.ownerPartyId, billingMonth: statementMonth, apartmentId: row.apartmentId }, filename);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not download owner income report");
+    }
+  }, [statementMonth]);
 
   // ── staged edits (ui-9). Resyncs on [period] internally — a key-based
   // remount isn't required (either is safe per the brief). ──────────────────
@@ -318,10 +482,31 @@ export default function BillsGridPage() {
   // view-prefs consumer in this module (matches use-grid-selection.ts's own
   // internal NS for hiddenColumns).
   const [cellColours, setCellColours] = useState(() => loadCellColours(VIEW_PREFS_NS));
+  const [pendingRebillCells, setPendingRebillCells] = useState<Set<string>>(() => new Set());
+  const [colourFilters, setColourFilters] = useState<BillingColourFilter[]>([]);
+  const [ownerPayoutFilters, setOwnerPayoutFilters] = useState<OwnerPayoutFilter[]>([]);
+  const [gridDisplayMode, setGridDisplayMode] = useState<GridDisplayMode>(() => loadPref(VIEW_PREFS_NS, "displayMode", "fit-all"));
+  const changeGridDisplayMode = useCallback((next: GridDisplayMode) => {
+    setGridDisplayMode(next);
+    savePref(VIEW_PREFS_NS, "displayMode", next);
+  }, []);
+  const [colourUndo, setColourUndo] = useState<CellColourMap[]>([]);
+  const [colourRedo, setColourRedo] = useState<CellColourMap[]>([]);
   const visibleColumns = useMemo(
     () => CURRENT_COLUMNS.filter((c) => !sel.hiddenColumns.includes(c.id)),
     [sel.hiddenColumns],
   );
+  const orderedRows = useMemo(() => {
+    return occupancyRows.filter((row) => {
+      const billingMatches = colourFilters.length === 0 || colourFilters.some((filter) => rowHasBillingState(
+        row, filter, CURRENT_COLUMNS,
+        (cellKey, columnId) => pendingRebillCells.has(`${currentPeriod}:${cellKey}:${columnId}`),
+      ));
+      const payoutMatches = ownerPayoutFilters.length === 0
+        || ownerPayoutFilters.includes(row.ownerPayoutStatus ?? "draft");
+      return billingMatches && payoutMatches;
+    });
+  }, [colourFilters, ownerPayoutFilters, occupancyRows, pendingRebillCells, currentPeriod]);
 
   // ── P4: Excel-style keyboard nav (Task 2 hook + Task 3 render wiring). The
   // active cell is nav state only — NO money write, NO DOM (the hook is pure);
@@ -331,6 +516,23 @@ export default function BillsGridPage() {
   // → the registered <input>/<td> node so the focus effect can .focus() +
   // scrollIntoView the active cell. ─────────────────────────────────────────
   const nav = useGridNav({ rows: orderedRows, columns: visibleColumns, currentPeriod });
+  const selectedCellKeys = useMemo(() => new Set(sel.range.map((cell) => `${cell.cellKey}:${cell.columnId}`)), [sel.range]);
+  const selectionEdges = useCallback((cellKey: string, columnId: ColumnId): SelectionEdges | undefined => {
+    const ownKey = `${cellKey}:${columnId}`;
+    if (!selectedCellKeys.has(ownKey)) return undefined;
+    const rowIndex = nav.navRows.findIndex((row) => row.cells.some((cell) => cell.cellKey === cellKey && cell.columnId === columnId));
+    const columnIds = visibleColumns.filter((column) => column.band).map((column) => column.id);
+    const columnIndex = columnIds.indexOf(columnId);
+    const hasAt = (ri: number, ci: number) => {
+      const cell = nav.navRows[ri]?.cells.find((candidate) => candidate.columnId === columnIds[ci]);
+      return !!cell && selectedCellKeys.has(`${cell.cellKey}:${cell.columnId}`);
+    };
+    const top = !hasAt(rowIndex - 1, columnIndex);
+    const bottom = !hasAt(rowIndex + 1, columnIndex);
+    const left = !hasAt(rowIndex, columnIndex - 1);
+    const right = !hasAt(rowIndex, columnIndex + 1);
+    return { top, right, bottom, left, bottomRight: bottom && right };
+  }, [nav.navRows, selectedCellKeys, visibleColumns]);
   const cellNodes = useRef(new Map<string, HTMLElement>());
   const registerCell = useCallback((cellKey: string, columnId: string, node: HTMLElement | null) => {
     const k = `${cellKey}:${columnId}`;
@@ -605,8 +807,28 @@ export default function BillsGridPage() {
       clearInternalStagedRef.current?.(cellKey, columnId);
     }
   }, []);
-  const onUndo = useCallback(() => { applyEchoClear(undo()); }, [undo, applyEchoClear]);
-  const onRedo = useCallback(() => { applyEchoClear(redo()); }, [redo, applyEchoClear]);
+  const onUndo = useCallback(() => {
+    const previous = colourUndo.at(-1);
+    if (previous) {
+      setColourUndo((history) => history.slice(0, -1));
+      setColourRedo((history) => [...history, cellColours]);
+      setCellColours(previous);
+      saveCellColours(VIEW_PREFS_NS, previous);
+      return;
+    }
+    applyEchoClear(undo());
+  }, [colourUndo, cellColours, undo, applyEchoClear]);
+  const onRedo = useCallback(() => {
+    const next = colourRedo.at(-1);
+    if (next) {
+      setColourRedo((history) => history.slice(0, -1));
+      setColourUndo((history) => [...history, cellColours]);
+      setCellColours(next);
+      saveCellColours(VIEW_PREFS_NS, next);
+      return;
+    }
+    applyEchoClear(redo());
+  }, [colourRedo, cellColours, redo, applyEchoClear]);
 
   // P4 Task 7 (R9/R10, MONEY-CRITICAL): Delete/Backspace clear-by-grain. Targets
   // are the whole Shift-range when one exists, else the single active cell (else
@@ -707,13 +929,23 @@ export default function BillsGridPage() {
   // in sync from ONE definition. ──────────────────────────────────────────────
   const applyColourToSelection = useCallback(
     (colour: string) => {
+      if (sel.range.length === 0) return;
+      const previous = cellColours;
       const next = sel.setColour(
         sel.range.map((c) => ({ cellKey: c.cellKey, columnId: c.columnId, periodMonth: currentPeriod })),
         colour,
       );
+      if (JSON.stringify(next) === JSON.stringify(previous)) return;
+      setColourUndo((history) => [...history, previous]);
+      setColourRedo([]);
       setCellColours(next);
+      // Toolbar/context-menu clicks move focus away from the grid. Return it to
+      // the active cell so the very next Ctrl/Cmd+Z is still grid-owned.
+      if (nav.active) {
+        requestAnimationFrame(() => cellNodes.current.get(`${nav.active!.cellKey}:${nav.active!.columnId}`)?.focus());
+      }
     },
-    [sel, currentPeriod],
+    [sel, currentPeriod, cellColours, nav.active],
   );
 
   // ── Excel-Web V2 — Ctrl/Cmd+A: select every navigable cell ───────────────────
@@ -769,6 +1001,9 @@ export default function BillsGridPage() {
   // `data-copy-value` attr for read-only cells — "copy what you see", with no
   // re-derivation of the display logic here.
   const handleCopy = useCallback((): boolean => {
+    // Header/unit labels opt back into native text selection. If words are
+    // highlighted, browser copy wins over an older Excel-cell selection.
+    if (window.getSelection()?.toString()) return false;
     const dataColumns = visibleColumns.filter((c) => c.band);
     const plan = planRectangularCopy(nav.navRows, dataColumns, sel.range);
     if (plan.status === "empty") return false; // nothing selected → native copy
@@ -968,6 +1203,15 @@ export default function BillsGridPage() {
     });
 
     if (failedByApt.size === 0) {
+      setPendingRebillCells((previous) => {
+        const next = new Set(previous);
+        for (const key of Object.keys(staged)) {
+          const { cellKey } = splitStagedKey(key);
+          const owner = lastGood.rows.find((row) => row.apartmentId === cellKey || row.subRows.some((sub) => sub.listingId === cellKey));
+          if (owner && (owner.billed === true || owner.billedAt != null)) next.add(`${currentPeriod}:${key}`);
+        }
+        return next;
+      });
       clear(); // full success — also resets the undo history (R8)
       toast.success("Saved.");
       await queryClient.invalidateQueries({ queryKey: QUERY_KEY_ROOT });
@@ -1039,6 +1283,8 @@ export default function BillsGridPage() {
   // is about to DISCARD because that utility is "Tenant pays directly". Purely informational —
   // Confirm proceeds unchanged; the point is that the drop stops being invisible.
   const [unbillableConfirm, setUnbillableConfirm] = useState<UnbillableRow[] | null>(null);
+  const [billConfirm, setBillConfirm] = useState(false);
+  const [advanceBillConfirm, setAdvanceBillConfirm] = useState(false);
   // lastGood.rows (not orderedRows): mirrors handleSave exactly (P1 review Finding B) —
   // handleSave resolves owning apartments via lastGood.rows, so the preview must use the
   // same input or it shows a raw id for a unit filtered out of the visible orderedRows.
@@ -1085,9 +1331,9 @@ export default function BillsGridPage() {
   }
 
   // ── Bill selection (MONEY-CRITICAL #1) ──────────────────────────────────────
-  // `billableRows` is the SELECTABLE universe: every VISIBLE row with a saved entry that
-  // the server could still bill. A billed-but-UNPAID row stays billable (amend + re-Bill,
-  // spec R7).
+  // `billableRows` is the SELECTABLE universe: every VISIBLE row with either a saved grid
+  // entry OR an orange saved Rental draft that the server could still bill. A billed-but-
+  // UNPAID row stays billable (amend + re-Bill, spec R7).
   //
   // A SETTLED row depends on partial re-Bill, and the flag is the whole difference:
   //
@@ -1115,13 +1361,17 @@ export default function BillsGridPage() {
   // header); Bill acts on the checked subset ONLY — never the whole set — so a
   // stray click can't mass-bill.
   const billableRows = useMemo(
-    () => orderedRows.filter((r) => r.entry != null && (partialRebillOn || !isRowLocked(r))),
+    () => orderedRows.filter((r) => {
+      // A prorated/monthly rent draft is already represented by the orange Rental
+      // cell even when the unit has no manually-saved grid entry. Let the admin tick
+      // and Bill that unit here; the API approves the existing draft through the
+      // canonical Draft Approval rails. Rental remains read-only in the matrix.
+      const hasSavedRental = (r.subRows ?? []).some((subRow) => subRow.rentalBillingState === "saved");
+      return (r.entry != null || hasSavedRental) && (partialRebillOn || !isRowLocked(r));
+    }),
     [orderedRows, partialRebillOn],
   );
-  const billableApartmentIds = useMemo(
-    () => new Set(billableRows.map((r) => r.apartmentId)),
-    [billableRows],
-  );
+  const billableApartmentIds = useMemo(() => new Set(billableRows.map((row) => row.apartmentId)), [billableRows]);
 
   // Checked units. Raw ids persist across filter/refetch; every USE below
   // intersects with the current `billableRows`, so (a) a filtered-out or
@@ -1134,8 +1384,9 @@ export default function BillsGridPage() {
     () => billableRows.filter((r) => selectedForBill.has(r.apartmentId)),
     [billableRows, selectedForBill],
   );
-  const allBillableSelected = billableRows.length > 0 && selectedBillableRows.length === billableRows.length;
-  const someBillableSelected = selectedBillableRows.length > 0 && !allBillableSelected;
+  const selectedVisibleRows = useMemo(() => billableRows.filter((row) => selectedForBill.has(row.apartmentId)), [billableRows, selectedForBill]);
+  const allBillableSelected = billableRows.length > 0 && selectedVisibleRows.length === billableRows.length;
+  const someBillableSelected = selectedVisibleRows.length > 0 && !allBillableSelected;
 
   const toggleBillSelection = useCallback((apartmentId: string) => {
     setSelectedForBill((prev) => {
@@ -1187,8 +1438,19 @@ export default function BillsGridPage() {
    * documented to provide.
    */
   function deselectBilled(results: BillRowResult[]) {
-    const billed = results.filter(isBillSuccess).map((r) => r.apartmentId);
+    const billed = results.filter(isBillResolved).map((r) => r.apartmentId);
     if (billed.length === 0) return;
+    const billedSet = new Set(billed);
+    setPendingRebillCells((previous) => {
+      const next = new Set(previous);
+      for (const key of previous) {
+        const stagedKey = key.slice(key.indexOf(":") + 1);
+        const { cellKey } = splitStagedKey(stagedKey);
+        const owner = lastGood.rows.find((row) => row.apartmentId === cellKey || row.subRows.some((sub) => sub.listingId === cellKey));
+        if (owner && billedSet.has(owner.apartmentId)) next.delete(key);
+      }
+      return next;
+    });
     setSelectedForBill((prev) => {
       const next = new Set(prev);
       for (const id of billed) next.delete(id);
@@ -1198,10 +1460,15 @@ export default function BillsGridPage() {
 
   function reportBillResults(results: BillRowResult[], labelByApartment: ReadonlyMap<string, string>) {
     const succeeded = results.filter(isBillSuccess);
-    const failures = results.filter((r) => !isBillSuccess(r));
+    const unchanged = results.filter((r) => r.outcome === "already_billed");
+    const failures = results.filter((r) => !isBillResolved(r));
     if (results.length === 0) return;
+    if (unchanged.length === results.length) {
+      toast.info(`${unchanged.length === 1 ? "Unit is" : `${unchanged.length} units are`} already up to date — nothing new to Bill`);
+      return;
+    }
     if (failures.length === 0) {
-      toast.success(`Billed ${succeeded.length} of ${results.length}`);
+      toast.success(`Billed ${succeeded.length} of ${results.length}${unchanged.length ? ` · ${unchanged.length} already up to date` : ""}`);
       return;
     }
     const verb = failures.length === 1 ? "needs" : "need";
@@ -1220,6 +1487,20 @@ export default function BillsGridPage() {
     if (selectedBillableRows.length === 0 || !currentPeriod) return;
     const unbillable = findUnbillableAmounts(selectedBillableRows);
     if (unbillable.length > 0) { setUnbillableConfirm(unbillable); return; }
+    continueToBill();
+  }
+
+  function continueToBill() {
+    if (isAdvanceBillingMonth) {
+      setAdvanceBillConfirm(true);
+      return;
+    }
+    // A first issuance must never happen from one click. Existing billed rows
+    // retain their dedicated Re-Bill void/reissue confirmation from the server.
+    if (selectedBillableRows.some((row) => !row.billed)) {
+      setBillConfirm(true);
+      return;
+    }
     void runBill();
   }
 
@@ -1227,9 +1508,9 @@ export default function BillsGridPage() {
     // Bill the CHECKED subset only (selectedBillableRows already intersects the
     // checked ids with the visible billable set — never a filtered-out unit).
     if (selectedBillableRows.length === 0 || !currentPeriod) return;
-    const rows = selectedBillableRows.map((r) => ({ apartmentId: r.apartmentId, expectedUpdatedAt: r.entry!.updatedAt }));
+    const rows = selectedBillableRows.map((r) => ({ apartmentId: r.apartmentId, expectedUpdatedAt: r.entry?.updatedAt ?? "rental-draft" }));
     const labelByApartment = new Map(selectedBillableRows.map((r) => [r.apartmentId, r.unitCode]));
-    const tokenByApartment = new Map(selectedBillableRows.map((r) => [r.apartmentId, r.entry!.updatedAt]));
+    const tokenByApartment = new Map(selectedBillableRows.map((r) => [r.apartmentId, r.entry?.updatedAt ?? "rental-draft"]));
     try {
       // POST …/bill answers 200 with a per-row manifest EVEN WHEN rows fail — there is no
       // 422. Rows with existing live invoices come back `rebill_confirmation_required` (NO
@@ -1279,10 +1560,28 @@ export default function BillsGridPage() {
   // ── Export (R30) — fully-filtered (property + column/date) rows ONLY: a
   // user who filtered must never export the unfiltered set. ─────────────────
   const canExport = orderedRows.length > 0;
-  async function handleExport() {
+  async function handleExport(kind: GridExportKind) {
     if (!canExport) return;
+    const selected = selectedVisibleRows;
+    const useSelected = kind.startsWith("selected-");
+    const exportRows = useSelected ? selected : orderedRows;
+    if (useSelected && exportRows.length === 0) {
+      toast.error("Select at least one unit first.");
+      return;
+    }
+    const month = currentPeriod ?? anchorMonth.slice(0, 7);
+    const scope = useSelected ? "SELECTED" : "ENTIRE";
     try {
-      await exportGridToXlsx(orderedRows, CURRENT_COLUMNS, displayPeriods);
+      if (kind === "data-xlsx" || kind === "selected-data-xlsx") {
+        await exportGridToXlsx(exportRows, CURRENT_COLUMNS, displayPeriods, `${scope} BILLING DATA ${month}.xlsx`);
+      } else if (kind === "data-pdf" || kind === "selected-data-pdf") {
+        await exportGridPdf(exportRows, CURRENT_COLUMNS, displayPeriods, `${scope} BILLING DATA ${month}.pdf`);
+      } else if (kind === "payout-zip" || kind === "selected-payout-zip") {
+        await exportPayoutReportsZip(exportRows, month, `${scope} OWNER PAYOUT REPORTS ${month}.zip`);
+      } else {
+        await exportPayoutSummaryXlsx(exportRows, month, `${scope} OWNER PAYOUT SUMMARY ${month}.xlsx`);
+      }
+      toast.success(`Export ready · ${exportRows.length} unit${exportRows.length === 1 ? "" : "s"}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Export failed — nothing was downloaded.");
     }
@@ -1301,11 +1600,24 @@ export default function BillsGridPage() {
   // discriminator to the Setting drawer (which renders the per-room pax section only
   // for partition units). null until a settings trigger fires.
   const settingsRow = settingsApt ? (lastGood.rows.find((r) => r.apartmentId === settingsApt) ?? null) : null;
-  const [expensesTarget, setExpensesTarget] = useState<{ apartmentId: string; bearer: ExpenseBearer } | null>(null);
+  const [expensesTarget, setExpensesTarget] = useState<{ apartmentId: string; bearer: ExpenseBearer; withSST: boolean } | null>(null);
   // Bearer-scoped like expensesTarget above — the Owner and Tenant recurring cells open the SAME
   // dialog, so it has to know which one was clicked or it lists both bearers' lines.
   const [recurringTarget, setRecurringTarget] = useState<{ apartmentId: string; bearer: RecurringBearer } | null>(null);
   const [attachmentsApt, setAttachmentsApt] = useState<string | null>(null);
+  const [tenantSummaryRow, setTenantSummaryRow] = useState<GridRow | null>(null);
+  const [tenantDocumentsRow, setTenantDocumentsRow] = useState<GridRow | null>(null);
+  const [ownerReportRow, setOwnerReportRow] = useState<GridRow | null>(null);
+  const [activityRow, setActivityRow] = useState<GridRow | null>(null);
+  const [billingView, setBillingView] = useState<"overview" | "detailed" | "summary">("detailed");
+  const [rowDensity, setRowDensity] = useState<"comfortable" | "compact">(() =>
+    loadPref(VIEW_PREFS_NS, "rowDensity", "compact"),
+  );
+
+  const changeRowDensity = (next: "comfortable" | "compact") => {
+    setRowDensity(next);
+    savePref(VIEW_PREFS_NS, "rowDensity", next);
+  };
 
   /** Candidate tenants for the ExpensesDialog party picker (tenant bearer
    * only) — derived from the TARGET apartment's own occupied sub-rows, never
@@ -1317,13 +1629,54 @@ export default function BillsGridPage() {
       .map((sr) => ({ tenancyId: sr.tenancyId as string, partyName: sr.partyName ?? "—" }));
   }
 
-  // The toolbar renders in exactly ONE place at a time (mutually-exclusive
-  // branches below): normally ABOVE the grid, but INSIDE the fullscreen overlay
-  // when maximized. The overlay is `fixed inset-0 z-50` and would otherwise hide
-  // every filter (Categorize / Months / Unit-code Filter / Date range /
-  // Columns). Keeping a single mounted instance avoids duplicating the
-  // `id="bills-grid-*-filter"` controls. The toolbar's own Fullscreen button
-  // reads "Exit Fullscreen" while maximized, so it also carries the exit control.
+  const billingViewControls = (
+    <div className="flex flex-wrap items-end justify-center gap-2" aria-label="Billing and table views">
+      <div className="inline-flex gap-1" role="tablist" aria-label="Billing view">
+        {(["overview", "detailed", "summary"] as const).map((view) => (
+          <button
+            key={view}
+            type="button"
+            role="tab"
+            aria-selected={billingView === view}
+            onClick={() => setBillingView(view)}
+            className={cn(
+              "min-h-10 rounded-md border border-[var(--gold)] px-3 text-[15px] font-extrabold capitalize transition",
+              billingView === view ? "bg-[var(--navy)] text-[var(--gold-light)] shadow-sm" : "bg-white text-[var(--navy)] hover:bg-[var(--gold)]/10",
+            )}
+          >
+            {view}
+          </button>
+        ))}
+      </div>
+      {billingView === "detailed" && (
+        <div className="flex items-center gap-2 border-l border-[var(--border)] pl-3" aria-label="Table view controls">
+          <span className="whitespace-nowrap text-[13px] font-bold text-muted-foreground">Table view</span>
+          <div className="inline-flex items-center gap-0.5 rounded-md border border-[var(--border)] bg-white p-0.5" role="group" aria-label="Row density">
+            {(["compact", "comfortable"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => changeRowDensity(mode)}
+                aria-pressed={rowDensity === mode}
+                className={cn("min-h-8 rounded px-2 text-[13px] font-bold capitalize", rowDensity === mode ? "bg-[var(--navy)] text-[var(--gold-light)]" : "text-[var(--navy)] hover:bg-[var(--gold)]/10")}
+              >{mode}</button>
+            ))}
+            <span aria-hidden="true" className="mx-1 h-6 w-px bg-[var(--border)]" />
+            {(["easy-read", "fit-all"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => changeGridDisplayMode(mode)}
+                aria-pressed={gridDisplayMode === mode}
+                className={cn("min-h-8 rounded px-2 text-[13px] font-bold", gridDisplayMode === mode ? "bg-[var(--navy)] text-[var(--gold-light)]" : "text-[var(--navy)] hover:bg-[var(--gold)]/10")}
+              >{mode === "easy-read" ? "Easy Read" : "Fit All"}</button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   const toolbar = (
     <GridToolbar
       periods={periods}
@@ -1340,23 +1693,26 @@ export default function BillsGridPage() {
       onPropertyChange={setPropertyId}
       dirtyCount={dirtyCount}
       onSave={() => setConfirmingSave(true)}
-      canUndo={canUndo}
-      canRedo={canRedo}
-      undoDepth={undoDepth}
-      redoDepth={redoDepth}
+      canUndo={canUndo || colourUndo.length > 0}
+      canRedo={canRedo || colourRedo.length > 0}
+      undoDepth={undoDepth + colourUndo.length}
+      redoDepth={redoDepth + colourRedo.length}
       onUndo={onUndo}
       onRedo={onRedo}
       selectedRowCount={selectedBillableRows.length}
       onBill={() => handleBill()}
-      canBillPeriod={isCurrentBillingMonth}
+      canBillPeriod={canBillSelectedPeriod}
       canExport={canExport}
-      onExport={() => void handleExport()}
+      onExport={(kind) => void handleExport(kind)}
+      selectedExportCount={selectedVisibleRows.length}
       columnFilters={columnFilters}
       onColumnFilterChange={handleColumnFilterChange}
+      colourFilters={colourFilters}
+      onColourFiltersChange={setColourFilters}
+      ownerPayoutFilters={ownerPayoutFilters}
+      onOwnerPayoutFiltersChange={setOwnerPayoutFilters}
       dateRange={dateRange}
       onDateRangeChange={setDateRange}
-      maximized={maximized}
-      onToggleMaximized={toggleMaximized}
       hasSelection={sel.range.length > 0}
       onApplyColour={applyColourToSelection}
       columns={CURRENT_COLUMNS}
@@ -1364,7 +1720,34 @@ export default function BillsGridPage() {
       onToggleColumn={sel.hideColumn}
       showVacant={showVacant}
       onToggleShowVacant={toggleShowVacant}
+      viewControls={billingViewControls}
     />
+  );
+
+  const billingLegend = (
+    <div
+      data-testid="billing-colour-legend"
+      aria-label="Cell colour status guide"
+      className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm font-medium text-[var(--navy-text)]"
+    >
+      <span className="font-bold">Cell status:</span>
+      {[
+        { colour: "transparent", label: "No data" },
+        { colour: "#FF8C00", label: "Saved · not billed" },
+        { colour: "#FFFF00", label: "Billed · unpaid" },
+        { colour: "#00FF00", label: "Paid" },
+        { colour: "#FF0000", label: "Changed · re-bill" },
+      ].map((item) => (
+        <span key={item.label} className="inline-flex items-center gap-1.5 whitespace-nowrap">
+          <span
+            aria-hidden="true"
+            className="h-3.5 w-3.5 rounded-sm border border-[var(--border)]"
+            style={{ backgroundColor: item.colour }}
+          />
+          {item.label}
+        </span>
+      ))}
+    </div>
   );
 
   return (
@@ -1373,7 +1756,12 @@ export default function BillsGridPage() {
         title="Tenant & Owner Billing"
         description="Save owner and tenant charges for the period, then Bill once everything checks out."
         icon={Receipt}
+        actions={<FundsSummaryPanel data={fundsSummaryQuery.data} onFillExpense={(item) => setExpensesTarget({ apartmentId: item.apartmentId, bearer: "tenant", withSST: item.withSST })} />}
       />
+
+      <div className="-mt-3 rounded-lg border border-[var(--border)] bg-white px-3 py-2 shadow-sm dark:bg-card">
+        {billingLegend}
+      </div>
 
       {gridQuery.isError && (
         <Callout variant="danger">
@@ -1386,27 +1774,17 @@ export default function BillsGridPage() {
         </Callout>
       )}
 
-      {/* Normal (non-fullscreen) placement — above the grid. While maximized
-          the same toolbar renders INSIDE the overlay instead (below). */}
-      {!maximized && toolbar}
+      {toolbar}
 
+      {billingView === "overview" ? (
+        <BillingSummaryTable rows={orderedRows} staged={staged} />
+      ) : billingView === "summary" ? (
+        <BillingSummaryNotes rows={orderedRows} period={currentPeriod} />
+      ) : (
       <div
         ref={gridKeyboardRef}
         data-testid="grid-region"
-        className={cn(
-          // Task 11 (R4b): bounded height + internal vertical scroll so the
-          // table's sticky thead has something real to pin against. Maximized
-          // is a flex COLUMN whose toolbar header (below) stays FIXED while
-          // only the inner region scrolls — so the thead pins at the top of
-          // that scroll region, BELOW the toolbar, never behind it. Scrolling
-          // (both axes) lives on the non-maximized branch here and on the
-          // inner region when maximized; a max-height is likewise kept off the
-          // maximized branch — it would clamp the `fixed inset-0` overlay
-          // (already viewport-bounded via its inset) to a fraction of the screen.
-          maximized
-            ? "fixed inset-0 z-50 bg-[var(--page-bg)] flex flex-col p-4"
-            : "overflow-x-auto max-h-[70vh] overflow-y-auto",
-        )}
+        className={cn(rowDensity === "compact" ? "max-h-[78vh]" : "max-h-[70vh]", "overflow-x-auto overflow-y-auto")}
       >
         {/* (a) drag-select indicator — floating badge near the grid, not the
             toolbar (per brief). `sel.sum` is the hook's NUMERIC-ONLY sum. */}
@@ -1419,23 +1797,9 @@ export default function BillsGridPage() {
             <span>Sum {sel.sum.toFixed(2)}</span>
           </div>
         )}
-        {/* ui-10d fix: maximizing turns the toolbar's OWN placement (a
-            statically-positioned sibling above the grid) unreachable — it
-            paints BEHIND this z-50 overlay, and Escape is deliberately NOT
-            wired to exit (R32). Rendering the FULL toolbar here, as the flex
-            column's FIXED (non-scrolling) header, keeps every filter
-            (Categorize / Months / Filter / Date range / Columns) AND the Exit
-            control ("Fullscreen" reads "Exit Fullscreen" while maximized)
-            always visible in fullscreen — the grid scrolls below it, so the
-            table's own sticky thead pins UNDER the toolbar rather than behind it. */}
-        {maximized && <div className="mb-3 shrink-0">{toolbar}</div>}
-        {/* `display:contents` when NOT maximized so this wrapper vanishes from
-            layout and the table keeps pinning against grid-region itself
-            (behavior unchanged); when maximized it becomes the sole scroll
-            region (both axes) the sticky thead + pinned Unit column pin against. */}
         <div
           data-testid="grid-scroll"
-          className={maximized ? "min-h-0 flex-1 overflow-auto" : "contents"}
+          className="contents"
         >
           <GridErrorBoundary onReload={() => void gridQuery.refetch()}>
           <GridTable
@@ -1453,6 +1817,8 @@ export default function BillsGridPage() {
             key={currentPeriod}
             rows={orderedRows}
             columns={visibleColumns}
+            displayMode={gridDisplayMode}
+            density={rowDensity}
             // Mirrors the unit-level vacant filter down to the room grain so a
             // partitioned unit's vacant rooms hide/show with the same toggle.
             showVacant={showVacant}
@@ -1481,11 +1847,14 @@ export default function BillsGridPage() {
             isCellSelected={(cellKey, columnId) =>
               sel.range.some((c) => c.cellKey === cellKey && c.columnId === columnId)
             }
+            selectionEdges={selectionEdges}
             cellColour={(cellKey, columnId) => cellColours[`${cellKey}:${columnId}:${currentPeriod}`]}
             // P4 Task 3: active-cell nav wiring — render the active ring
             // (distinct from selection), activate on click, and register each
             // navigable cell's DOM node for the focus/scroll effect above.
             isCellActive={(cellKey, columnId) => nav.isActive(cellKey, columnId)}
+            isCellEditing={(cellKey, columnId) => editingCellKey === `${cellKey}:${columnId}`}
+            isCellPendingRebill={(cellKey, columnId) => pendingRebillCells.has(`${currentPeriod}:${cellKey}:${columnId}`)}
             // Task 4: a shift/ctrl click is OWNED by the pointer-down path
             // (multiSel.onCellPointerDown extends/toggles the selection there).
             // The plain onClick must therefore NOT also fire a bare set-active,
@@ -1536,9 +1905,9 @@ export default function BillsGridPage() {
             // stale-window click must not open either, or an expense/bill
             // gets filed under the NEW month attributed to the OLD month's
             // tenant/rows.
-            onViewExpenses={(apartmentId, bearer) => {
+            onViewExpenses={(apartmentId, bearer, withSST) => {
               if (showingStalePeriod) return;
-              setExpensesTarget({ apartmentId, bearer });
+              setExpensesTarget({ apartmentId, bearer, withSST });
             }}
             onViewRecurring={(apartmentId, bearer) => {
               if (showingStalePeriod) return;
@@ -1548,10 +1917,28 @@ export default function BillsGridPage() {
               if (showingStalePeriod) return;
               setAttachmentsApt(apartmentId);
             }}
+            onViewTenantSummary={(row) => {
+              if (showingStalePeriod) return;
+              setTenantSummaryRow(row);
+            }}
+            onViewTenantDocuments={(row) => {
+              if (showingStalePeriod) return;
+              setTenantDocumentsRow(row);
+            }}
+            onViewOwnerReport={(row) => {
+              if (showingStalePeriod) return;
+              setOwnerReportRow(row);
+            }}
+            onDownloadOwnerReport={(row) => { void downloadOwnerReport(row); }}
+            onViewActivity={(row) => {
+              if (showingStalePeriod) return;
+              setActivityRow(row);
+            }}
           />
           </GridErrorBoundary>
         </div>
       </div>
+      )}
 
       <SettingDrawer
         apartmentId={settingsApt ?? ""}
@@ -1560,6 +1947,11 @@ export default function BillsGridPage() {
         subRows={settingsRow?.subRows}
         isWholeUnit={settingsRow?.isWholeUnit}
       />
+
+      <TenantBillSummaryDialog row={tenantSummaryRow} onClose={() => setTenantSummaryRow(null)} />
+      <UnitDocumentsDialog row={tenantDocumentsRow} onClose={() => setTenantDocumentsRow(null)} />
+      <OwnerReportDialog row={ownerReportRow} month={statementMonth} onClose={() => setOwnerReportRow(null)} />
+      <ActivityLogDrawer row={activityRow} onClose={() => setActivityRow(null)} />
 
       {recurringTarget && (
         <RecurringDialog
@@ -1589,10 +1981,11 @@ export default function BillsGridPage() {
             {expensesTarget && (
               <ExpensesDialog
                 // remount per target so exactly one listExpenses query fires
-                key={`${expensesTarget.apartmentId}:${expensesTarget.bearer}`}
+                key={`${expensesTarget.apartmentId}:${expensesTarget.bearer}:${expensesTarget.withSST}`}
                 apartmentId={expensesTarget.apartmentId}
                 periodMonth={currentPeriod}
                 bearer={expensesTarget.bearer}
+                defaultWithSST={expensesTarget.withSST}
                 tenancyOptions={tenancyOptionsFor(expensesTarget.apartmentId)}
               />
             )}
@@ -1629,19 +2022,19 @@ export default function BillsGridPage() {
           (its own dirtyCount/currentPeriod/showingStalePeriod guards still
           apply — this dialog only DEFERS the call, never bypasses them). */}
       <Sheet open={confirmingSave} onOpenChange={(open) => { if (!open) setConfirmingSave(false); }}>
-        <SheetContent>
-          <SheetHeader><SheetTitle>Confirm save</SheetTitle></SheetHeader>
-          <SheetBody>
-            <p className="mb-3 text-sm text-muted-foreground">
+        <SheetContent size="lg">
+          <SheetHeader className="p-7"><SheetTitle className="text-2xl">Confirm save</SheetTitle></SheetHeader>
+          <SheetBody className="p-7 text-[18px]">
+            <p className="mb-5 text-[18px] leading-relaxed text-muted-foreground">
               {/* Count only what will actually be written. A stale (unresolved)
                   group is listed below so it can be cleared, but counting it
                   here would promise a save that handleSave never performs. */}
               About to save changes to {savableSummaryCount} unit
               {savableSummaryCount === 1 ? "" : "s"}:
             </p>
-            <ul className="mb-4 space-y-2 text-sm" data-testid="save-confirm-list">
+            <ul className="mb-6 space-y-4 text-[18px]" data-testid="save-confirm-list">
               {saveSummary.map((u) => (
-                <li key={u.apartmentId} className="rounded border px-2.5 py-2" data-testid={`save-confirm-unit-${u.unitCode}`}>
+                <li key={u.apartmentId} className="rounded-lg border border-[var(--border)] px-4 py-4" data-testid={`save-confirm-unit-${u.unitCode}`}>
                   <div className="flex items-center justify-between gap-2">
                     {u.unresolved ? (
                       // Stale sessionStorage key: this apartment is gone, so
@@ -1652,13 +2045,13 @@ export default function BillsGridPage() {
                         Unit no longer exists — won&apos;t be saved
                       </span>
                     ) : (
-                      <span className="font-mono font-medium">{u.unitCode}</span>
+                      <span className="font-mono text-[20px] font-bold text-[var(--navy-text)]">{u.unitCode}</span>
                     )}
                     <Button
                       type="button"
                       variant="ghost"
-                      size="sm"
-                      className="text-muted-foreground hover:text-destructive"
+                      size="default"
+                      className="text-[16px] text-muted-foreground hover:text-destructive"
                       data-testid={`save-confirm-clear-${u.unitCode}`}
                       title={
                         u.unresolved
@@ -1670,9 +2063,9 @@ export default function BillsGridPage() {
                       <X /> Clear
                     </Button>
                   </div>
-                  <ul className="mt-1.5 space-y-1">
+                  <ul className="mt-3 space-y-2">
                     {u.cells.map((c) => (
-                      <li key={`${c.cellKey}:${c.columnId}`} className="flex items-baseline justify-between gap-3">
+                      <li key={`${c.cellKey}:${c.columnId}`} className="flex items-baseline justify-between gap-5 leading-relaxed">
                         <span className="text-muted-foreground">
                           {c.label}
                           {/* Save will drop this cell. Saying so here is the whole point:
@@ -1693,7 +2086,7 @@ export default function BillsGridPage() {
                             </span>
                           )}
                         </span>
-                        <span className={cn("font-mono tabular-nums", c.skipped && "line-through text-muted-foreground")}>
+                        <span className={cn("font-mono text-[20px] font-semibold tabular-nums text-[var(--navy-text)]", c.skipped && "line-through text-muted-foreground")}>
                           {c.value === "" ? <em className="text-muted-foreground not-italic">cleared</em> : c.value}
                         </span>
                       </li>
@@ -1702,9 +2095,9 @@ export default function BillsGridPage() {
                 </li>
               ))}
             </ul>
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setConfirmingSave(false)}>Cancel</Button>
-              <Button type="button" variant="gold" data-testid="save-confirm-btn" onClick={() => void handleConfirmedSave()}>
+            <div className="flex justify-end gap-3">
+              <Button type="button" variant="outline" size="lg" className="h-12 px-5 text-[18px]" onClick={() => setConfirmingSave(false)}>Cancel</Button>
+              <Button type="button" variant="gold" size="lg" className="h-12 px-5 text-[18px]" data-testid="save-confirm-btn" onClick={() => void handleConfirmedSave()}>
                 Confirm save
               </Button>
             </div>
@@ -1786,9 +2179,82 @@ export default function BillsGridPage() {
                 type="button"
                 variant="gold"
                 data-testid="unbillable-confirm-btn"
-                onClick={() => { setUnbillableConfirm(null); void runBill(); }}
+                onClick={() => { setUnbillableConfirm(null); continueToBill(); }}
               >
                 Bill anyway
+              </Button>
+            </div>
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={billConfirm} onOpenChange={setBillConfirm}>
+        <SheetContent>
+          <SheetHeader><SheetTitle>Confirm Bill</SheetTitle></SheetHeader>
+          <SheetBody>
+            <Callout variant="warning" title="Issue bills to the selected units?">
+              Confirming will create the saved charges and make them visible in each tenant&apos;s outstanding balance.
+            </Callout>
+            <dl className="my-5 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-[18px]">
+              <dt className="font-semibold text-muted-foreground">Billing period</dt>
+              <dd className="font-bold text-[var(--navy-text)]">{anchorMonth.slice(0, 7)}</dd>
+              <dt className="font-semibold text-muted-foreground">Units</dt>
+              <dd className="font-bold text-[var(--navy-text)]">{selectedBillableRows.length}</dd>
+            </dl>
+            <ul className="mb-5 max-h-[45vh] space-y-2 overflow-y-auto" data-testid="bill-confirm-units">
+              {selectedBillableRows.map((row) => (
+                <li key={row.apartmentId} className="rounded-lg border border-[var(--border)] px-3 py-2 text-[18px] font-semibold text-[var(--navy-text)]">
+                  {row.propertyName} {row.unitCode}
+                </li>
+              ))}
+            </ul>
+            <p className="mb-4 text-sm text-muted-foreground">
+              Only saved values are included. Cancel leaves all data saved but unbilled.
+            </p>
+            <div className="flex justify-end gap-3">
+              <Button type="button" variant="outline" size="lg" onClick={() => setBillConfirm(false)}>Cancel</Button>
+              <Button
+                type="button"
+                variant="gold"
+                size="lg"
+                data-testid="bill-confirm-btn"
+                onClick={() => { setBillConfirm(false); void runBill(); }}
+              >
+                Confirm Bill
+              </Button>
+            </div>
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={advanceBillConfirm} onOpenChange={setAdvanceBillConfirm}>
+        <SheetContent>
+          <SheetHeader><SheetTitle>Confirm advance Bill</SheetTitle></SheetHeader>
+          <SheetBody>
+            <Callout variant="warning" title="You are billing next month in advance">
+              The bill will be issued now and will appear in the tenant&apos;s outstanding balance immediately.
+            </Callout>
+            <dl className="my-5 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-[18px]">
+              <dt className="font-semibold text-muted-foreground">Billing period</dt>
+              <dd className="font-bold text-[var(--navy-text)]">{anchorMonth.slice(0, 7)}</dd>
+              <dt className="font-semibold text-muted-foreground">Due date</dt>
+              <dd className="font-bold text-[var(--navy-text)]">{anchorMonth}</dd>
+              <dt className="font-semibold text-muted-foreground">Units</dt>
+              <dd className="font-bold text-[var(--navy-text)]">{selectedBillableRows.length}</dd>
+            </dl>
+            <p className="mb-4 text-sm text-muted-foreground">
+              Only saved values will be billed. Utilities without entered data will not be invented or estimated.
+            </p>
+            <div className="flex justify-end gap-3">
+              <Button type="button" variant="outline" size="lg" onClick={() => setAdvanceBillConfirm(false)}>Cancel</Button>
+              <Button
+                type="button"
+                variant="gold"
+                size="lg"
+                data-testid="advance-bill-confirm-btn"
+                onClick={() => { setAdvanceBillConfirm(false); void runBill(); }}
+              >
+                Confirm advance Bill
               </Button>
             </div>
           </SheetBody>

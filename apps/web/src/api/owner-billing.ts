@@ -308,6 +308,24 @@ export function useStatements(filters: StatementFilters = {}) {
   });
 }
 
+export function useAllStatementsForMonth(billingMonth: string) {
+  return useQuery({
+    queryKey: [...OWNER_STATEMENTS_KEY, "month-all", billingMonth],
+    enabled: !!billingMonth,
+    queryFn: async () => {
+      const items: OwnerStatementRow[] = [];
+      const limit = 100;
+      for (let offset = 0; ; offset += limit) {
+        const qs = new URLSearchParams({ billingMonth, limit: String(limit), offset: String(offset) });
+        const res = await apiFetch<{ data: StatementListEnvelope }>(`/owner-billing/statements?${qs}`);
+        items.push(...res.data.items);
+        if (res.data.items.length < limit) break;
+      }
+      return items;
+    },
+  });
+}
+
 /** Single statement detail (lines + receipts + pdfKey). Disabled until an id is set. */
 export function useStatement(id: string | null) {
   return useQuery({
@@ -415,7 +433,24 @@ export function useApproveStatement() {
       apiFetch<{ data: OwnerStatementRow }>(`/owner-billing/statements/${id}/approve`, {
         method: "POST",
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: OWNER_STATEMENTS_KEY }),
+    onSuccess: () => Promise.all([
+      qc.invalidateQueries({ queryKey: OWNER_STATEMENTS_KEY }),
+      qc.invalidateQueries({ queryKey: ["owner-monthly-summaries"] }),
+      qc.invalidateQueries({ queryKey: ["statement-sections"] }),
+    ]),
+  });
+}
+
+export function useFirstCheckStatement() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<{ data: OwnerStatementRow }>(`/owner-billing/statements/${id}/first-check`, { method: "POST" }),
+    onSuccess: () => Promise.all([
+      qc.invalidateQueries({ queryKey: OWNER_STATEMENTS_KEY }),
+      qc.invalidateQueries({ queryKey: ["owner-monthly-summaries"] }),
+      qc.invalidateQueries({ queryKey: ["statement-sections"] }),
+    ]),
   });
 }
 
@@ -778,7 +813,7 @@ export type LiveStatementPdfArgs = {
  * be a stale artifact left over from an earlier month. Same auth + blob pattern
  * as downloadMonthRangeZip above.
  */
-export async function downloadLiveStatementPdf(args: LiveStatementPdfArgs): Promise<void> {
+export async function downloadLiveStatementPdf(args: LiveStatementPdfArgs, filename?: string): Promise<void> {
   const token = getAdminToken();
   const qs = new URLSearchParams({
     ownerPartyId: args.ownerPartyId,
@@ -794,5 +829,5 @@ export async function downloadLiveStatementPdf(args: LiveStatementPdfArgs): Prom
     throw new ApiError(body?.error || `Download failed (${res.status})`, res.status, body?.code);
   }
   const seg = args.apartmentId ? args.apartmentId.slice(0, 8) : "combined";
-  triggerBlobDownload(await res.blob(), `owner-statement-${args.billingMonth}-${seg}.pdf`);
+  triggerBlobDownload(await res.blob(), filename ?? `owner-statement-${args.billingMonth}-${seg}.pdf`);
 }
