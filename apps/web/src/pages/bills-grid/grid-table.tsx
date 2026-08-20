@@ -87,6 +87,20 @@ function AuditIcon({ name, at, onClick, unitCode }: { name: string | null | unde
   );
 }
 
+type CellDocumentCounts = { invoice: number; receipt: number };
+
+/** Small, non-interactive filing marks. They are absolutely positioned so the
+ * amount remains mathematically centred and never gets pushed or wrapped. */
+function CellDocumentMarks({ counts }: { counts?: CellDocumentCounts }) {
+  if (!counts || (!counts.invoice && !counts.receipt)) return null;
+  return (
+    <span className="pointer-events-none absolute bottom-1 left-1 z-20 inline-flex items-center gap-1 rounded bg-white/85 px-1 py-0.5 text-[10px] font-bold leading-none text-[var(--navy)] shadow-sm" aria-label={`${counts.invoice} invoice, ${counts.receipt} receipt`}>
+      {counts.invoice > 0 && <span className="inline-flex items-center gap-0.5" title={`${counts.invoice} invoice`}><FileText className="h-3.5 w-3.5" />{counts.invoice > 1 ? counts.invoice : ""}</span>}
+      {counts.receipt > 0 && <span className="inline-flex items-center gap-0.5" title={`${counts.receipt} receipt`}><ReceiptText className="h-3.5 w-3.5" />{counts.receipt > 1 ? counts.receipt : ""}</span>}
+    </span>
+  );
+}
+
 function hasNativeTextSelection(): boolean {
   return typeof window !== "undefined" && Boolean(window.getSelection()?.toString());
 }
@@ -619,6 +633,7 @@ function EditableCell({
   onContextMenu,
   onDoubleClick,
   registerCell,
+  documentCounts,
 }: {
   columnId: ColumnId;
   value: string;
@@ -656,6 +671,7 @@ function EditableCell({
   onContextMenu?: (e: React.MouseEvent) => void;
   onDoubleClick?: () => void;
   registerCell?: (node: HTMLElement | null) => void;
+  documentCounts?: CellDocumentCounts;
 }) {
   // R31 (D11, "amount cells accept no formula"): a numeric cell rejects a
   // FORMULA (leading "=") right here, before it ever reaches the
@@ -721,7 +737,7 @@ function EditableCell({
   return (
     <td
       className={cn(
-        "overflow-hidden px-1.5 py-1.5 align-middle text-[18px] text-[var(--text-primary)]",
+        "relative overflow-hidden px-1.5 py-1.5 align-middle text-[18px] text-[var(--text-primary)]",
         categoryDividerClass(columnId),
         numeric && "whitespace-nowrap text-center tabular-nums",
         // Task 3 (mouse-selection V2): the in-range visual is a light --primary
@@ -816,6 +832,7 @@ function EditableCell({
       )}
       {settlement && <SettlementMarker state={settlement} />}
       {tenantBorne && <TenantBorneMark />}
+      <CellDocumentMarks counts={documentCounts} />
       <SelectionFillHandle edges={selectionEdges} />
     </td>
   );
@@ -837,6 +854,7 @@ function LockedCell({
   onActivate,
   onContextMenu,
   registerCell,
+  documentCounts,
 }: {
   columnId: ColumnId;
   display: string;
@@ -868,13 +886,14 @@ function LockedCell({
   onActivate?: (e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   registerCell?: (node: HTMLElement | null) => void;
+  documentCounts?: CellDocumentCounts;
 }) {
   const dashOnly = isDashDisplay(display);
   return (
     <td
       ref={registerCell}
       className={cn(
-        "px-2 py-1.5 align-middle text-[18px] text-muted-foreground",
+        "relative px-2 py-1.5 align-middle text-[18px] text-muted-foreground",
         categoryDividerClass(columnId),
         numeric && !dashOnly && "whitespace-nowrap text-center tabular-nums",
         dashOnly && "bg-transparent text-center align-middle",
@@ -918,6 +937,7 @@ function LockedCell({
       {display}
       {settlement && !dashOnly && <SettlementMarker state={settlement} />}
       {tenantBorne && <TenantBorneMark />}
+      <CellDocumentMarks counts={documentCounts} />
       <SelectionFillHandle edges={selectionEdges} />
     </td>
   );
@@ -947,6 +967,7 @@ function ReadOnlyCell({
   onActivate,
   onContextMenu,
   registerCell,
+  documentCounts,
 }: {
   columnId: ColumnId;
   display: string;
@@ -982,6 +1003,7 @@ function ReadOnlyCell({
   onActivate?: (e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   registerCell?: (node: HTMLElement | null) => void;
+  documentCounts?: CellDocumentCounts;
 }) {
   const dashOnly = isDashDisplay(display);
   return (
@@ -1084,6 +1106,7 @@ function ReadOnlyCell({
         display
       )}
       {settlement && !dashOnly && <SettlementMarker state={settlement} />}
+      <CellDocumentMarks counts={documentCounts} />
       <SelectionFillHandle edges={selectionEdges} />
     </td>
   );
@@ -1613,11 +1636,23 @@ function GridUnitRowGroup({
     return painted(row.settlement.rooms?.[cellKey]?.[bucket] ?? row.settlement.cells[bucket]);
   }
 
+  function cellDocumentCounts(cellKey: string, columnId: ColumnId): CellDocumentCounts | undefined {
+    let invoice = 0;
+    let receipt = 0;
+    for (const attachment of row.attachments) {
+      if (attachment.cellKey !== cellKey || attachment.columnId !== columnId) continue;
+      if (attachment.documentKind === "invoice") invoice += 1;
+      if (attachment.documentKind === "receipt") receipt += 1;
+    }
+    return invoice || receipt ? { invoice, receipt } : undefined;
+  }
+
   function editableCellProps(cellKey: string, columnId: ColumnId, rawValue: string) {
     const selCell: SelectionCell = { cellKey, columnId, value: cellNumericValue(rawValue) };
     return {
       settlement: cellSettlement(cellKey, columnId),
       billingState: cellBillingState(cellKey, columnId),
+      documentCounts: cellDocumentCounts(cellKey, columnId),
       // Excel-Web V2: resolve the raw pointerdown ONCE, platform-aware. Only a
       // primary-button "select" gesture starts cell selection — a right-click
       // (or macOS Ctrl-click) resolves to "context" and MUST NOT start a
@@ -1664,6 +1699,7 @@ function GridUnitRowGroup({
     return {
       settlement: cellSettlement(cellKey, columnId),
       billingState: cellBillingState(cellKey, columnId),
+      documentCounts: cellDocumentCounts(cellKey, columnId),
       // Same platform-aware gesture resolution as editableCellProps: only a
       // primary-button "select" starts a drag; right-click resolves to "context".
       onCellPointerDown: onCellPointerDown

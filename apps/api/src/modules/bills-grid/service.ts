@@ -3738,6 +3738,9 @@ export interface GridExpensesDto {
 export interface GridAttachmentBrief {
   id: string;
   filename: string;
+  cellKey: string | null;
+  columnId: string | null;
+  documentKind: string | null;
 }
 
 /** Structural input for {@link toEntryDto} — deliberately narrower than the Prisma payload (PURE mapper). */
@@ -4040,9 +4043,9 @@ export function toBearerConfigDto(
   };
 }
 
-/** PURE. Maps only `{id, filename}` — every other attachment column stays server-internal. */
-export function toAttachmentBriefs(attachments: Array<{ id: string; filename: string }>): GridAttachmentBrief[] {
-  return attachments.map((a) => ({ id: a.id, filename: a.filename }));
+/** PURE. Exposes only safe display/scope metadata; storage keys stay server-internal. */
+export function toAttachmentBriefs(attachments: Array<{ id: string; filename: string; cellKey: string | null; columnId: string | null; documentKind: string | null }>): GridAttachmentBrief[] {
+  return attachments.map((a) => ({ id: a.id, filename: a.filename, cellKey: a.cellKey, columnId: a.columnId, documentKind: a.documentKind }));
 }
 
 export interface GridRowDto {
@@ -5573,6 +5576,7 @@ async function deleteObjectFailClosed(storageKey: string): Promise<void> {
 
 export interface AttachmentListItem {
   id: string; filename: string; contentType: string; sizeBytes: number; storageKey: string; uploadedBy: string; createdAt: string;
+  cellKey: string | null; columnId: string | null; documentKind: string | null;
 }
 
 /**
@@ -5583,7 +5587,7 @@ export interface AttachmentListItem {
 export async function uploadAttachmentService(
   session: { orgId: string; userId: string; role: string },
   apartmentId: string,
-  file: { period: string; filename: string; contentType: string; sizeBytes: number; body: Buffer },
+  file: { period: string; cellKey?: string; columnId?: string; documentKind?: "invoice" | "receipt"; filename: string; contentType: string; sizeBytes: number; body: Buffer },
 ): Promise<Result<{ id: string; storageKey: string }>> {
   const periodMonth = toMonth(file.period);
   const apt = await prisma.apartment.findFirst({ where: { id: apartmentId, organizationId: session.orgId } });
@@ -5603,13 +5607,14 @@ export async function uploadAttachmentService(
       data: {
         organizationId: session.orgId, entryId: entry.id, apartmentId, periodMonth,
         storageKey, filename: file.filename, contentType: file.contentType, sizeBytes: file.sizeBytes,
+        cellKey: file.cellKey ?? null, columnId: file.columnId ?? null, documentKind: file.documentKind ?? null,
         uploadedBy: session.userId,
       },
     });
     await recordAudit(tx, {
       organizationId: session.orgId, actorUserId: session.userId, actorRole: session.role,
       action: "grid.attachment.upload", entityType: "GridAttachment", entityId: row.id,
-      meta: { filename: file.filename, sizeBytes: file.sizeBytes },
+      meta: { filename: file.filename, sizeBytes: file.sizeBytes, cellKey: file.cellKey, columnId: file.columnId, documentKind: file.documentKind },
     });
     await invalidateDocumentPdfsForAttachment(tx, {
       orgId: session.orgId, apartmentId, periodMonth, expenseId: null,
@@ -5623,15 +5628,21 @@ export async function listAttachmentsService(
   session: { orgId: string },
   apartmentId: string,
   period: string,
+  scope: { cellKey?: string; columnId?: string; documentKind?: "invoice" | "receipt" } = {},
 ): Promise<Result<{ items: AttachmentListItem[] }>> {
   const periodMonth = toMonth(period);
   const entry = await prisma.unitBillsGridEntry.findUnique({
     where: { organizationId_apartmentId_periodMonth: { organizationId: session.orgId, apartmentId, periodMonth } },
     include: { attachments: true },
   });
-  const items: AttachmentListItem[] = (entry?.attachments ?? []).map((a) => ({
+  const items: AttachmentListItem[] = (entry?.attachments ?? [])
+    .filter((a) => (!scope.cellKey || a.cellKey === scope.cellKey)
+      && (!scope.columnId || a.columnId === scope.columnId)
+      && (!scope.documentKind || a.documentKind === scope.documentKind))
+    .map((a) => ({
     id: a.id, filename: a.filename, contentType: a.contentType, sizeBytes: a.sizeBytes,
     storageKey: a.storageKey, uploadedBy: a.uploadedBy, createdAt: a.createdAt.toISOString(),
+    cellKey: a.cellKey, columnId: a.columnId, documentKind: a.documentKind,
   }));
   return ok({ items });
 }
@@ -5738,6 +5749,7 @@ export async function listLineAttachmentService(
   const items: AttachmentListItem[] = rows.map((a) => ({
     id: a.id, filename: a.filename, contentType: a.contentType, sizeBytes: a.sizeBytes,
     storageKey: a.storageKey, uploadedBy: a.uploadedBy, createdAt: a.createdAt.toISOString(),
+    cellKey: a.cellKey, columnId: a.columnId, documentKind: a.documentKind,
   }));
   return ok({ items });
 }

@@ -3851,6 +3851,12 @@ model GridAttachment {
 
   expenseId String? @db.Uuid // per-line link (nullable; entry-level rows stay null)
 
+  // Optional cell-level document scope. Existing unit/expense attachments keep
+  // these null, so this is fully additive and does not reclassify old files.
+  cellKey      String? // apartmentId for unit-grain cells; listingId for room-grain cells
+  columnId     String? // bills-grid ColumnId snapshot
+  documentKind String? // "invoice" | "receipt"
+
   storageKey  String
   filename    String
   contentType String
@@ -3864,6 +3870,7 @@ model GridAttachment {
   expense      GridExpense?       @relation(fields: [expenseId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, apartmentId, periodMonth])
+  @@index([organizationId, apartmentId, periodMonth, cellKey, columnId, documentKind])
   @@index([organizationId, expenseId])
   @@index([entryId])
 }

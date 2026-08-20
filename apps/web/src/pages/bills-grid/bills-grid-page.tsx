@@ -82,6 +82,7 @@ import { BillingSummaryTable } from "./billing-summary-table";
 import { BillingSummaryNotes } from "./billing-summary-notes";
 import { summarizeStagedByUnit, type SaveSkipReason, type UnitEditSummary } from "./staged-summary";
 import { GridContextMenu } from "./grid-context-menu";
+import { CellDocumentsDialog, type CellDocumentKind, type CellDocumentTarget } from "./cell-documents-dialog";
 import { isCellLocked, isRowLocked } from "./row-lock";
 import { isApplicable } from "./cell-applicability";
 import { planRectangularCopy, matrixToTsv, countCells } from "./grid-copy";
@@ -1027,7 +1028,36 @@ export default function BillsGridPage() {
   // ── Excel-Web V2 — custom right-click context menu ───────────────────────────
   // `ctxMenu` holds the pointer position + the right-clicked cell (null = closed).
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; cellKey: string; columnId: ColumnId } | null>(null);
+  const [cellDocumentsTarget, setCellDocumentsTarget] = useState<CellDocumentTarget | null>(null);
   const closeContextMenu = useCallback(() => setCtxMenu(null), []);
+
+  const contextCell = useMemo(() => {
+    if (!ctxMenu) return null;
+    const row = lastGood.rows.find((candidate) => candidate.apartmentId === ctxMenu.cellKey || candidate.subRows.some((sub) => sub.listingId === ctxMenu.cellKey));
+    if (!row) return null;
+    const column = CURRENT_COLUMNS.find((candidate) => candidate.id === ctxMenu.columnId);
+    const documents = row.attachments.filter((attachment) => attachment.cellKey === ctxMenu.cellKey && attachment.columnId === ctxMenu.columnId);
+    return {
+      row,
+      columnLabel: column ? [column.band, column.header].filter(Boolean).join(" · ") : ctxMenu.columnId,
+      invoiceCount: documents.filter((attachment) => attachment.documentKind === "invoice").length,
+      receiptCount: documents.filter((attachment) => attachment.documentKind === "receipt").length,
+      hasAmount: Math.abs(readCellNumericValue(ctxMenu.cellKey, ctxMenu.columnId) ?? 0) > 0.005,
+    };
+  }, [ctxMenu, lastGood.rows, readCellNumericValue]);
+
+  const openCellDocuments = useCallback((kind: CellDocumentKind) => {
+    if (!ctxMenu || !contextCell) return;
+    setCellDocumentsTarget({
+      apartmentId: contextCell.row.apartmentId,
+      cellKey: ctxMenu.cellKey,
+      columnId: ctxMenu.columnId,
+      periodMonth: currentPeriod,
+      unitLabel: `${contextCell.row.propertyName} ${contextCell.row.unitCode}`,
+      columnLabel: contextCell.columnLabel,
+      initialKind: kind,
+    });
+  }, [ctxMenu, contextCell, currentPeriod]);
   const handleCellContextMenu = useCallback(
     (cell: { cellKey: string; columnId: ColumnId }, e: React.MouseEvent) => {
       e.preventDefault(); // grid owns right-click — suppress the native menu
@@ -1952,6 +1982,16 @@ export default function BillsGridPage() {
       <UnitDocumentsDialog row={tenantDocumentsRow} onClose={() => setTenantDocumentsRow(null)} />
       <OwnerReportDialog row={ownerReportRow} month={statementMonth} onClose={() => setOwnerReportRow(null)} />
       <ActivityLogDrawer row={activityRow} onClose={() => setActivityRow(null)} />
+      <CellDocumentsDialog
+        key={cellDocumentsTarget ? `${cellDocumentsTarget.cellKey}:${cellDocumentsTarget.columnId}:${cellDocumentsTarget.initialKind}` : "closed"}
+        target={cellDocumentsTarget}
+        onClose={() => setCellDocumentsTarget(null)}
+        onRecordPayment={() => {
+          setCellDocumentsTarget(null);
+          toast.info("Receipt saved. Record and allocate the actual payment to update Paid or Partial Paid correctly.");
+          window.location.assign("/billing/payments");
+        }}
+      />
 
       {recurringTarget && (
         <RecurringDialog
@@ -2273,6 +2313,14 @@ export default function BillsGridPage() {
             const col = CURRENT_COLUMNS.find((c) => c.id === ctxMenu.columnId);
             return col ? [col.band, col.header].filter(Boolean).join(" · ") : "";
           })()}
+          hasAmount={contextCell?.hasAmount}
+          invoiceCount={contextCell?.invoiceCount}
+          receiptCount={contextCell?.receiptCount}
+          onUploadInvoice={() => openCellDocuments("invoice")}
+          onUploadReceipt={() => openCellDocuments("receipt")}
+          onViewInvoice={() => openCellDocuments("invoice")}
+          onViewReceipt={() => openCellDocuments("receipt")}
+          onMarkPaid={() => openCellDocuments("receipt")}
           onCopy={() => void handleCopy()}
           onClearContents={onDelete}
           onApplyColour={applyColourToSelection}

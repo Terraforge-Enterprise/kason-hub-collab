@@ -215,6 +215,9 @@ export interface GridManagementFeeDto {
 export interface GridAttachmentBrief {
   id: string;
   filename: string;
+  cellKey?: string | null;
+  columnId?: string | null;
+  documentKind?: "invoice" | "receipt" | null;
 }
 
 /** Read-time settlement state. The shape lives in @kason/shared so this client and the
@@ -626,6 +629,9 @@ export interface AttachmentListItem {
   storageKey: string;
   uploadedBy: string;
   createdAt: string;
+  cellKey?: string | null;
+  columnId?: string | null;
+  documentKind?: "invoice" | "receipt" | null;
 }
 
 /**
@@ -653,13 +659,14 @@ export async function uploadAttachments(
   apartmentId: string,
   period: string,
   files: File[],
+  scope?: { cellKey: string; columnId: string; documentKind: "invoice" | "receipt" },
 ): Promise<{ data: Array<{ id: string; storageKey: string }> }> {
   const form = new FormData();
   for (const f of files) form.append("files", f);
   const token = getAdminToken();
   const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
   const res = await fetch(
-    `${API_BASE}/bills-grid/apartments/${apartmentId}/attachments?period=${period}`,
+    `${API_BASE}/bills-grid/apartments/${apartmentId}/attachments?${new URLSearchParams({ period, ...(scope ?? {}) }).toString()}`,
     { method: "POST", headers, credentials: "include", body: form },
   );
   if (res.status === 404) {
@@ -678,8 +685,12 @@ export async function uploadAttachments(
 }
 
 /** List an apartment-month's attachments. Creates nothing; empty when unsaved. */
-export function listAttachments(apartmentId: string, period: string): Promise<{ items: AttachmentListItem[] }> {
-  return gridFetch(`/bills-grid/apartments/${apartmentId}/attachments?${new URLSearchParams({ period }).toString()}`);
+export function listAttachments(
+  apartmentId: string,
+  period: string,
+  scope?: { cellKey?: string; columnId?: string; documentKind?: "invoice" | "receipt" },
+): Promise<{ items: AttachmentListItem[] }> {
+  return gridFetch(`/bills-grid/apartments/${apartmentId}/attachments?${new URLSearchParams({ period, ...(scope ?? {}) }).toString()}`);
 }
 
 /**
