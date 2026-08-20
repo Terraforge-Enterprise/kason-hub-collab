@@ -197,13 +197,21 @@ export const bearerConfigSchema = lineSettingsSchema.extend({
 // ever wire-clear nature back to NULL; sending "expense" achieves the identical default
 // routing.
 const gridExpenseNature = z.enum(["expense", "profit"]);
+const expenseCostFields = {
+  actualCost: money.nullable().optional(),
+  costVendor: z.string().max(200).nullable().optional(),
+  costPaymentStatus: z.enum(["unpaid", "partial", "paid"]).optional(),
+  costPaymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  costPaymentAccount: z.string().max(200).nullable().optional(),
+  costNotes: z.string().max(2000).nullable().optional(),
+};
 
 export const createExpensesSchema = z.object({
   apartmentId: uuid,
   billingMonth: periodMonth,
   bearer: z.enum(["tenant", "owner"]),
   tenancyId: uuid.optional(),
-  items: z.array(z.object({ description: z.string().min(1), amount: money, withSST: z.boolean(), chargeCategoryId: uuid.nullable().optional(), nature: gridExpenseNature.optional() })).min(1),
+  items: z.array(z.object({ description: z.string().min(1), amount: money, withSST: z.boolean(), chargeCategoryId: uuid.nullable().optional(), nature: gridExpenseNature.optional(), ...expenseCostFields })).min(1),
 });
 
 export const updateExpenseSchema = z.object({
@@ -212,6 +220,7 @@ export const updateExpenseSchema = z.object({
   withSST: z.boolean().optional(),
   chargeCategoryId: uuid.nullable().optional(),
   nature: gridExpenseNature.optional(),
+  ...expenseCostFields,
   expectedUpdatedAt: z.string().optional(),
 });
 // `bearer` is deliberately absent: filing to the wrong side is fixed by

@@ -86,6 +86,10 @@ export const editInvoiceDatesSchema = z.object({
   expectedUpdatedAt: z.string(),
 }).refine((v) => v.invoiceDate !== undefined || v.dueDate !== undefined, { message: "Nothing to update" });
 export const attachChargeSchema = z.object({ chargeId: uuid });
+export const editDraftChargeAmountSchema = z.object({
+  amount: z.coerce.number().finite().min(0).max(99_999_999.99),
+  expectedUpdatedAt: z.string(),
+});
 export const voidInvoiceSchema = z.object({ reason: z.string().max(500).optional(), expectedUpdatedAt: z.string() });
 export const approveBulkSchema = z.object({ ids: z.array(uuid).min(1).max(200) });
 export const approveOneSchema = z.object({ expectedUpdatedAt: z.string() });

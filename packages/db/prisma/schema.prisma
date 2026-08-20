@@ -3598,6 +3598,23 @@ model UnitBillsGridEntry {
   @@index([organizationId, apartmentId])
 }
 
+/// Non-financial monthly admin note shown in Tenant & Owner Billing's Excel-style
+/// Summary tab. Kept separate from UnitBillsGridEntry so typing a note can never
+/// create a billable entry or affect Save/Bill/owner-payout state.
+model BillsGridSummaryNote {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  apartmentId    String   @db.Uuid
+  periodMonth    DateTime @db.Date
+  note           String   @default("")
+  updatedById    String?  @db.Uuid
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, apartmentId, periodMonth])
+  @@index([organizationId, periodMonth])
+}
+
 model GridExpense {
   id             String   @id @default(uuid()) @db.Uuid
   organizationId String   @db.Uuid
@@ -3612,6 +3629,16 @@ model GridExpense {
   description String
   amount      Decimal @db.Decimal(12, 2)
   withSST     Boolean @default(false) // SST is COLUMN SEMANTICS, never an sstAmount number
+
+  // Direct cost paid (or payable) by KAEN for fulfilling this charge. `amount`
+  // remains the customer/owner-facing charge; these fields are internal cost
+  // tracking and never change the amount billed.
+  actualCost        Decimal?  @db.Decimal(12, 2)
+  costVendor        String?
+  costPaymentStatus String    @default("unpaid") // "unpaid" | "partial" | "paid"
+  costPaymentDate   DateTime? @db.Date
+  costPaymentAccount String?
+  costNotes         String?
 
   partyId String? @db.Uuid // party snapshot for tenant-record reachability + name/phone search
 

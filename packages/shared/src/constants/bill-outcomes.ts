@@ -46,8 +46,8 @@ export const BILL_OUTCOMES = [
   "recurring_unresolved",
   "nature_unresolved",
 
-  // The period has not started yet. Rule 1 refuses a PAST re-Bill; this closes the other end
-  // for BOTH first issuance and re-Bill.
+  // The period is beyond the one-month advance-billing window. Rule 1 refuses a PAST
+  // re-Bill; this closes the far-future end for BOTH first issuance and re-Bill.
   "blocked_future_period",
 ] as const;
 
