@@ -129,8 +129,6 @@ const SalesUnitDetailPage = lazy(() => import("@/pages/sales/unit-detail-page"))
 // unified queue per the unified-property-sourcing spec.
 const SourceQueuePage = lazy(() => import("@/pages/sales/source-queue-page"));
 const RenovationClaimsPage = lazy(() => import("@/pages/renovation/claims-page"));
-// Phase-2 Tasks board (M7) — flag-gated dark until ENABLE_PHASE2_TASKS is on.
-const TasksBoardPage = lazy(() => import("@/pages/tasks/tasks-board-page"));
 const RenovationClaimDetailPage = lazy(() => import("@/pages/renovation/claim-detail-page"));
 const SalesClaimsPage = lazy(() => import("@/pages/sales/claims-page"));
 const SalesClaimDetailPage = lazy(() => import("@/pages/sales/claim-detail-page"));
@@ -350,10 +348,6 @@ export const router = createBrowserRouter([
       // nav minRole + the API's analyticsGate). Mirrors the Owner Statements dark gate.
       ...(isPhase2FlagEnabled("ENABLE_PHASE2_UNIT_ANALYTICS")
         ? [{ path: "/tenancy/unit-analytics", element: <SuspenseWrapper><UnitAnalyticsPage /></SuspenseWrapper> }]
-        : []),
-      // Phase-2 Tasks board (M7) — only registered when the flag is on.
-      ...(isPhase2FlagEnabled("ENABLE_PHASE2_TASKS")
-        ? [{ path: "/tasks", element: <SuspenseWrapper><TasksBoardPage /></SuspenseWrapper> }]
         : []),
       { path: "/billing/charges", element: <SuspenseWrapper><ChargesPage /></SuspenseWrapper> },
       { path: "/billing/payments", element: <SuspenseWrapper><PaymentsPage /></SuspenseWrapper> },

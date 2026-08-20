@@ -148,7 +148,7 @@ export function DepositFields(props: DepositFieldsProps) {
           />
         </label>
         <label className="block">
-          <span className="text-xs text-muted-foreground">MYR / piece</span>
+          <span className="text-xs text-muted-foreground">RM / piece</span>
           <Input
             type="number"
             min={0}

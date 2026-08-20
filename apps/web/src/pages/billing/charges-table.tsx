@@ -37,7 +37,10 @@ function formatEventPayload(payload: unknown): string | null {
   if (obj.reason) parts.push(String(obj.reason));
   if (obj.note) parts.push(String(obj.note));
   if (obj.status) parts.push(String(obj.status));
-  if (obj.amount) parts.push(`${obj.currency ?? "MYR"} ${Number(obj.amount).toLocaleString()}`);
+  if (obj.amount) {
+    const currencyLabel = (obj.currency ?? "MYR") === "MYR" ? "RM" : obj.currency;
+    parts.push(`${currencyLabel} ${Number(obj.amount).toLocaleString()}`);
+  }
 
   // Fallback: show remaining keys not already covered
   if (parts.length === 0) {

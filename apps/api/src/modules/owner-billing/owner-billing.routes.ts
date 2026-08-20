@@ -23,6 +23,7 @@ import {
   addAdjustmentLineService,
   addStatementLineService,
   approveStatementService,
+  firstCheckStatementService,
   createFeeConfigService,
   generateStatementService,
   getBillingReadinessService,
@@ -428,6 +429,12 @@ ownerBillingRoutes.post("/statements/:id/adjust", requireRole("admin"), async (c
 
 ownerBillingRoutes.post("/statements/:id/approve", requireRole("admin"), async (c) => {
   const result = await approveStatementService(actor(c), c.req.param("id"));
+  if (!result.ok) return c.json({ error: result.error }, result.status as 404 | 409);
+  return c.json({ data: result.data });
+});
+
+ownerBillingRoutes.post("/statements/:id/first-check", requireRole("admin"), async (c) => {
+  const result = await firstCheckStatementService(actor(c), c.req.param("id"));
   if (!result.ok) return c.json({ error: result.error }, result.status as 404 | 409);
   return c.json({ data: result.data });
 });

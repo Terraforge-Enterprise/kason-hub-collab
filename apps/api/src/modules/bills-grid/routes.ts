@@ -41,6 +41,7 @@ import {
   createExpensesService,
   deleteAttachmentService,
 } from "./service";
+import { getBillingFundsSummary } from "../billing-funds-summary/service";
 import {
   applyRecurringService,
   archiveRecurringService,
@@ -56,8 +57,10 @@ import {
   listAttachmentsService,
   listExpensesService,
   listLineAttachmentService,
+  listSummaryNotesService,
   saveEntryService,
   saveReadingsService,
+  saveSummaryNoteService,
   setBearerConfigService,
   updateExpenseService,
   updateLinesService,
@@ -79,7 +82,12 @@ const expenseListQuerySchema = z.object({
   bearer: bearer.optional(),
   q: z.string().optional(),
 });
-const attachmentQuerySchema = z.object({ period: periodMonth });
+const attachmentQuerySchema = z.object({
+  period: periodMonth,
+  cellKey: z.string().trim().min(1).max(120).optional(),
+  columnId: z.string().trim().min(1).max(80).optional(),
+  documentKind: z.enum(["invoice", "receipt"]).optional(),
+});
 
 // Nature routing (ENABLE_CHARGE_NATURE_ROUTING, spec R5): the recurring APPLY body
 // may carry an explicit Expense/Profit nature. Route-local extension of the shared
@@ -113,6 +121,32 @@ billsGridRoutes.get("/", requireRole("editor"), async (c) => {
   if (!parsed.success) return zodBadRequest(c, parsed.error);
   const r = await getGridService(c.get("session"), parsed.data);
   return c.json(r.ok ? r.data : { error: r.error }, r.status as 200);
+});
+
+// Reporting is a separate request by design. A reporting failure must never
+// blank the operational grid or hide its saved apartment rows.
+billsGridRoutes.get("/funds-summary", requireRole("editor"), async (c) => {
+  const parsed = z.object({ period: periodMonth }).safeParse(c.req.query());
+  if (!parsed.success) return zodBadRequest(c, parsed.error);
+  const month = new Date(`${parsed.data.period.slice(0, 7)}-01T00:00:00.000Z`);
+  return c.json(await getBillingFundsSummary(c.get("session").orgId, month), 200);
+});
+
+const summaryNoteSchema = z.object({ period: periodMonth, note: z.string().max(500) });
+
+billsGridRoutes.get("/summary-notes", requireRole("editor"), async (c) => {
+  const parsed = z.object({ period: periodMonth }).safeParse(c.req.query());
+  if (!parsed.success) return zodBadRequest(c, parsed.error);
+  return c.json({ data: await listSummaryNotesService(c.get("session"), parsed.data.period) }, 200);
+});
+
+billsGridRoutes.put("/apartments/:apartmentId/summary-note", requireRole("editor"), async (c) => {
+  if (!idParam.safeParse(c.req.param("apartmentId")).success) return badId(c);
+  const parsed = summaryNoteSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return zodBadRequest(c, parsed.error);
+  const result = await saveSummaryNoteService(c.get("session"), c.req.param("apartmentId"), parsed.data);
+  if (!result.ok) return c.json({ error: result.error }, result.status as 404);
+  return c.json({ data: result.data }, 200);
 });
 
 // ── 2. Save draft (§2) — editor. amounts-only; no pattern/bearer ─────────────
@@ -306,6 +340,9 @@ billsGridRoutes.post("/apartments/:apartmentId/attachments", requireRole("editor
   for (const file of uploads) {
     const r = await uploadAttachmentService(c.get("session"), c.req.param("apartmentId"), {
       period: parsedQuery.data.period,
+      cellKey: parsedQuery.data.cellKey,
+      columnId: parsedQuery.data.columnId,
+      documentKind: parsedQuery.data.documentKind,
       filename: file.name,
       contentType: file.type,
       sizeBytes: file.size,
@@ -320,7 +357,11 @@ billsGridRoutes.get("/apartments/:apartmentId/attachments", requireRole("editor"
   if (!idParam.safeParse(c.req.param("apartmentId")).success) return badId(c);
   const parsedQuery = attachmentQuerySchema.safeParse(c.req.query());
   if (!parsedQuery.success) return zodBadRequest(c, parsedQuery.error);
-  const r = await listAttachmentsService(c.get("session"), c.req.param("apartmentId"), parsedQuery.data.period);
+  const r = await listAttachmentsService(c.get("session"), c.req.param("apartmentId"), parsedQuery.data.period, {
+    cellKey: parsedQuery.data.cellKey,
+    columnId: parsedQuery.data.columnId,
+    documentKind: parsedQuery.data.documentKind,
+  });
   return c.json(r.ok ? r.data : { error: r.error }, r.status as 200);
 });
 // Delete: object first (fail-closed), then the row; a genuine storage failure is

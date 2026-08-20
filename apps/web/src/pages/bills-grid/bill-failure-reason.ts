@@ -40,7 +40,7 @@ export function billFailureReason(r: BillRowResult): string {
       return `can't re-Bill — ${parts.join(" · ")}. A paid invoice can't be re-Billed — issue a Credit/Debit Note on it instead`;
     }
     case "rebill_confirmation_required": return "already invoiced — confirm to void and reissue";
-    case "blocked_future_period": return "this month hasn't started yet — you can only bill the current month";
+    case "blocked_future_period": return "this period is too far ahead — only the current or next month can be billed";
     case "paid_locked": return "locked — an invoice for it is already paid";
     case "occupancy_changed": return "the tenant/owner changed since invoicing — handle the handover first";
     case "pax_blocked": return "set the number of tenants (pax) on the room first";

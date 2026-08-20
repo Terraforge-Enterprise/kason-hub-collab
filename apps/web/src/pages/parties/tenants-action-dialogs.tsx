@@ -76,7 +76,20 @@ function extractFieldErrors(err: unknown): Record<string, string> {
 
 // ── Create ────────────────────────────────────────────────────────────────
 
-export function CreateTenantDialog({ trigger }: { trigger: ReactNode }) {
+type CreatedTenant = {
+  id: string;
+  displayName: string;
+  primaryPhone?: string | null;
+  idType?: string | null;
+};
+
+export function CreateTenantDialog({
+  trigger,
+  onCreated,
+}: {
+  trigger: ReactNode;
+  onCreated?: (tenant: CreatedTenant) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [phone, setPhone] = useState<string | null>(null);
   const [phoneError, setPhoneError] = useState<string | null>(null);
@@ -134,11 +147,11 @@ export function CreateTenantDialog({ trigger }: { trigger: ReactNode }) {
 
   const mutation = useMutation({
     mutationFn: (body: Record<string, string>) =>
-      apiFetch("/parties/tenants", {
+      apiFetch<CreatedTenant>("/parties/tenants", {
         method: "POST",
         body: JSON.stringify(body),
       }),
-    onSuccess: () => {
+    onSuccess: (tenant) => {
       queryClient.invalidateQueries({ queryKey: ["tenants"] });
       if (reservationGatedTenancyEnabled) {
         queryClient.invalidateQueries({ queryKey: ["reservations", "pickable"] });
@@ -149,6 +162,7 @@ export function CreateTenantDialog({ trigger }: { trigger: ReactNode }) {
       resetReservationPicker();
       setFieldErrors({});
       setOpen(false);
+      onCreated?.(tenant);
     },
     onError: (err: Error) => {
       toast.error(err.message || "Failed to create tenant.");

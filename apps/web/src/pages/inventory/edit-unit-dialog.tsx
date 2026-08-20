@@ -275,6 +275,7 @@ export function EditUnitForm({
   unitId,
   propertyName,
   apartment = null,
+  initialIntent,
   onClose,
   onSaved,
   trailingSlot = null,
@@ -288,6 +289,9 @@ export function EditUnitForm({
   // editable when it is present. Optional so pre-existing per-unit tests that
   // render this form directly keep their old (per-unit-only) behaviour.
   apartment?: ApartmentSummary | null;
+  /** Shortcut intent. Add Tenant starts the unsaved form in Occupied mode so
+   *  the tenancy fields are immediately visible; Cancel still changes nothing. */
+  initialIntent?: "addTenant";
   onClose: () => void;
   // Optional post-save hook. When the multi-room EditApartmentShell mounts this
   // form per room-tab, it passes onSaved so a successful save does NOT close the
@@ -316,7 +320,10 @@ export function EditUnitForm({
   trailingSlot?: ReactNode;
 }) {
   const [form, setForm] = useState<UnitFormState>(() => {
-    const base = detailToFormState(detail);
+    const detailBase = detailToFormState(detail);
+    const base = initialIntent === "addTenant"
+      ? { ...detailBase, occupancyStatus: "occupied" }
+      : detailBase;
     if (!apartment) return base;
     // Owner + billing model are authoritative on the APARTMENT row, not the
     // listing. Seed them from it so the controls show the apartment's current

@@ -167,14 +167,14 @@ describe("UnitWorkspacePage + real ChargeForm — tenancy-switch party linkage (
     const categorySelectA = (await screen.findByLabelText("Category")) as HTMLSelectElement;
     await waitFor(() => expect(categorySelectA.querySelectorAll("option[value]").length).toBeGreaterThan(1));
     fireEvent.change(categorySelectA, { target: { value: "cat-rental" } });
-    fireEvent.change(screen.getByLabelText("Amount (MYR)"), { target: { value: "500" } });
-    expect((screen.getByLabelText("Amount (MYR)") as HTMLInputElement).value).toBe("500");
+    fireEvent.change(screen.getByLabelText("Amount (RM)"), { target: { value: "500" } });
+    expect((screen.getByLabelText("Amount (RM)") as HTMLInputElement).value).toBe("500");
 
     // Switch to tenancy B (Farid) — the fix keys ChargeForm on chargeTenancyId,
     // so this must remount the form fresh: amount clears back to "".
     fireEvent.change(tenancySelect, { target: { value: "ten-2" } });
     await waitFor(() => {
-      expect((screen.getByLabelText("Amount (MYR)") as HTMLInputElement).value).toBe("");
+      expect((screen.getByLabelText("Amount (RM)") as HTMLInputElement).value).toBe("");
     });
     // Category also resets on the fresh instance (no defaultCategoryCode).
     const categorySelectB = screen.getByLabelText("Category") as HTMLSelectElement;
@@ -182,7 +182,7 @@ describe("UnitWorkspacePage + real ChargeForm — tenancy-switch party linkage (
 
     // Fill the fresh (tenancy-B) instance and submit.
     fireEvent.change(categorySelectB, { target: { value: "cat-rental" } });
-    fireEvent.change(screen.getByLabelText("Amount (MYR)"), { target: { value: "700" } });
+    fireEvent.change(screen.getByLabelText("Amount (RM)"), { target: { value: "700" } });
     fireEvent.click(screen.getByRole("button", { name: "Create draft charge" }));
 
     await waitFor(() => {

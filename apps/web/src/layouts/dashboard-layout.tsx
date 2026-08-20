@@ -1,4 +1,4 @@
-import { Outlet, useNavigate } from "react-router-dom";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Bell, Search } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { apiFetch } from "@/lib/api-client";
@@ -13,6 +13,8 @@ import { SearchCommand } from "@/components/search-command";
 export function DashboardLayout() {
   const { user, clearAuth } = useAuth();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const isBillingMatrix = pathname === "/billing/tenant-owner-billing";
 
   const handleLogout = async () => {
     try { await apiFetch("/auth/logout", { method: "POST" }); } catch { /* ignore */ }
@@ -53,7 +55,11 @@ export function DashboardLayout() {
         <Breadcrumbs />
 
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-[1400px] space-y-5 px-4 py-5 lg:px-6 lg:py-6">
+          <div
+            className={isBillingMatrix
+              ? "w-full max-w-none space-y-4 overflow-x-hidden px-1 py-3 sm:px-2 lg:px-3 lg:py-4"
+              : "mx-auto w-full max-w-[1400px] space-y-5 overflow-x-hidden px-4 py-5 lg:px-6 lg:py-6"}
+          >
             <Outlet />
           </div>
         </main>

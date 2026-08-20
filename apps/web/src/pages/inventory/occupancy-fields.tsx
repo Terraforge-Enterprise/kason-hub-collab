@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Plus } from "lucide-react";
 import type { FirstMonthPreview, CommissionPreview } from "@kason/shared";
 import { TextInput } from "@/components/form-ui";
 import { apiFetch } from "@/lib/api-client";
@@ -6,6 +7,8 @@ import { TenantSelect, type SlimTenant } from "./unit-form-fields";
 import { TenantConfirmCard } from "./tenant-confirm-card";
 import { FirstMonthPreviewCard } from "../tenancy/first-month-preview";
 import { isPhase2FlagEnabled } from "@/lib/feature-flags";
+import { Button } from "@/components/ui/button";
+import { CreateTenantDialog } from "@/pages/parties/tenants-action-dialogs";
 
 export function FieldError({ text }: { text?: string }) {
   if (!text) return null;
@@ -226,9 +229,31 @@ export function OccupancyFields(props: {
 
   return (
     <div className="rounded-md border border-amber-200 bg-amber-50/40 p-3 space-y-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-amber-800">
-        Tenancy details
-      </p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-medium uppercase tracking-wide text-amber-800">
+          Tenancy details
+        </p>
+        {!props.tenantPartyId && (
+          <CreateTenantDialog
+            onCreated={(tenant) =>
+              props.onSelectTenant({
+                id: tenant.id,
+                displayName: tenant.displayName,
+                primaryPhone: tenant.primaryPhone ?? null,
+                formattedPhone: null,
+                idType: tenant.idType ?? null,
+                idNumberMasked: null,
+              })
+            }
+            trigger={
+              <Button type="button" variant="outline" size="sm">
+                <Plus className="h-4 w-4" />
+                Create Tenant
+              </Button>
+            }
+          />
+        )}
+      </div>
 
       <div className="block">
         <span className="block text-sm font-medium text-slate-700">Tenant</span>

@@ -434,10 +434,10 @@ describe("Draft Approvals — issuing", () => {
     await waitFor(() => screen.getByText("TR-1"));
     fireEvent.click(screen.getByRole("button", { name: /Issue all 3 draft\(s\)/i }));
 
-    // 1200 + 1100 + 0, through the app's formatMoney ("2,300 MYR"). Scoped to the
+    // 1200 + 1100 + 0, through the app's formatMoney ("RM 2,300"). Scoped to the
     // dialog: the issue bar behind it states the same total, which is the point.
     await waitFor(() => screen.getByRole("dialog"));
-    expect(within(screen.getByRole("dialog")).getByText(/2,300 MYR/)).toBeInTheDocument();
+    expect(within(screen.getByRole("dialog")).getByText(/RM 2,300/)).toBeInTheDocument();
   });
 
   it("warns when the view is truncated, so 'issue all' cannot read as 'issued the month'", async () => {

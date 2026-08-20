@@ -89,7 +89,7 @@ export default function PortalPaymentsPage() {
                   <td className="px-4 py-3 text-[var(--text-primary)]">{p.paymentNumber}</td>
                   <td className="px-4 py-3 text-[var(--text-secondary)]">{p.paymentMethod}</td>
                   <td className="px-4 py-3 text-[var(--text-secondary)]">{p.receivedAt.slice(0, 10)}</td>
-                  <td className="px-4 py-3 text-right text-[var(--text-primary)]">MYR {p.amount.toFixed(2)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-[var(--text-primary)]">RM {p.amount.toFixed(2)}</td>
                   <td className="px-4 py-3"><span className="rounded-full bg-[var(--card-bg)] border border-[var(--card-border)] px-2 py-0.5 text-xs">{p.status}</span></td>
                 </tr>
               ))}

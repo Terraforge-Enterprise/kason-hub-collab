@@ -9,14 +9,15 @@
 // this at the pointer position. Closes on Escape (via the grid's
 // closeTransientPopover), on an outside pointerdown, and on scroll.
 import { useEffect, useRef } from "react";
-import { Copy, Eraser, PaintBucket, EyeOff } from "lucide-react";
+import { Copy, Eraser, PaintBucket, EyeOff, FileText, ReceiptText, BadgeCheck } from "lucide-react";
 
 // Same swatches as the toolbar (grid-toolbar.tsx) — cosmetic localStorage only.
 const COLOUR_SWATCHES: Array<{ colour: string; label: string }> = [
-  { colour: "#FDE68A", label: "Amber" },
-  { colour: "#BBF7D0", label: "Green" },
-  { colour: "#BFDBFE", label: "Blue" },
-  { colour: "#FBCFE8", label: "Pink" },
+  { colour: "#7C3AED", label: "Violet" },
+  { colour: "#4338CA", label: "Indigo" },
+  { colour: "#C026D3", label: "Fuchsia" },
+  { colour: "#92400E", label: "Brown" },
+  { colour: "#374151", label: "Charcoal" },
 ];
 
 export interface GridContextMenuProps {
@@ -25,6 +26,14 @@ export interface GridContextMenuProps {
   // Whether the current selection has cells (gates Copy/Colour/Clear).
   hasSelection: boolean;
   columnLabel: string; // human label of the right-clicked column, for "Hide {col}"
+  hasAmount?: boolean;
+  invoiceCount?: number;
+  receiptCount?: number;
+  onUploadInvoice?: () => void;
+  onUploadReceipt?: () => void;
+  onViewInvoice?: () => void;
+  onViewReceipt?: () => void;
+  onMarkPaid?: () => void;
   onCopy: () => void;
   onClearContents: () => void;
   onApplyColour: (colour: string) => void;
@@ -37,6 +46,14 @@ export function GridContextMenu({
   y,
   hasSelection,
   columnLabel,
+  hasAmount = false,
+  invoiceCount = 0,
+  receiptCount = 0,
+  onUploadInvoice,
+  onUploadReceipt,
+  onViewInvoice,
+  onViewReceipt,
+  onMarkPaid,
   onCopy,
   onClearContents,
   onApplyColour,
@@ -83,6 +100,26 @@ export function GridContextMenu({
       style={style}
       className="w-56 rounded-lg border border-border/60 bg-background/95 p-1 text-sm shadow-xl backdrop-blur-xl"
     >
+      {hasAmount && onUploadInvoice && onUploadReceipt && (
+        <>
+          <button type="button" role="menuitem" onClick={() => run(onUploadInvoice)} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-muted/60">
+            <FileText className="h-4 w-4 text-[var(--gold)]" /> Upload Invoice
+          </button>
+          <button type="button" role="menuitem" onClick={() => run(onUploadReceipt)} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-muted/60">
+            <ReceiptText className="h-4 w-4 text-[var(--gold)]" /> Upload Receipt
+          </button>
+          <button type="button" role="menuitem" disabled={!invoiceCount} onClick={() => onViewInvoice && run(onViewInvoice)} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-muted/60 disabled:opacity-40">
+            <FileText className="h-4 w-4" /> View Invoice {invoiceCount > 0 ? `(${invoiceCount})` : ""}
+          </button>
+          <button type="button" role="menuitem" disabled={!receiptCount} onClick={() => onViewReceipt && run(onViewReceipt)} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-muted/60 disabled:opacity-40">
+            <ReceiptText className="h-4 w-4" /> View Receipt {receiptCount > 0 ? `(${receiptCount})` : ""}
+          </button>
+          <button type="button" role="menuitem" disabled={!receiptCount || !onMarkPaid} onClick={() => onMarkPaid && run(onMarkPaid)} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-emerald-50 disabled:opacity-40">
+            <BadgeCheck className="h-4 w-4 text-emerald-700" /> Mark as Paid
+          </button>
+          <div className="my-1 h-px bg-border/60" />
+        </>
+      )}
       <button
         type="button"
         role="menuitem"
@@ -123,7 +160,7 @@ export function GridContextMenu({
               disabled={!hasSelection}
               onClick={() => run(() => onApplyColour(s.colour))}
               style={{ backgroundColor: s.colour }}
-              className="h-5 w-5 rounded-full border border-[var(--border)] transition disabled:cursor-not-allowed disabled:opacity-40"
+              className="h-6 w-6 rounded-full border-2 border-white shadow-sm ring-1 ring-[var(--navy)] transition hover:scale-110 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--gold)] disabled:cursor-not-allowed disabled:opacity-65"
             />
           ))}
           <button

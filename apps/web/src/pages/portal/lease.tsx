@@ -25,7 +25,7 @@ export default function PortalLeasePage() {
           <Row label="Unit" value={lease.unitCode} />
           <Row label="Start Date" value={lease.startDate.slice(0, 10)} />
           <Row label="End Date" value={lease.endDate?.slice(0, 10) ?? "Open-ended"} />
-          <Row label="Monthly Rent" value={`MYR ${lease.monthlyRentAmount.toFixed(2)}`} />
+          <Row label="Monthly Rent" value={`RM ${lease.monthlyRentAmount.toFixed(2)}`} />
           <Row label="Status" value={lease.status} />
         </div>
       )}

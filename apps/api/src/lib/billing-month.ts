@@ -25,3 +25,13 @@ export function currentBillingMonthUTC(orgTimezone: string): Date {
   const month = parts.find((p) => p.type === "month")?.value ?? "01";
   return new Date(`${year}-${month}-01T00:00:00.000Z`);
 }
+
+/** Current and next month are billable; past handling is decided separately. */
+export function isBeyondAdvanceBillingWindow(periodMonth: Date, currentMonth: Date): boolean {
+  const firstBlockedMonth = new Date(Date.UTC(
+    currentMonth.getUTCFullYear(),
+    currentMonth.getUTCMonth() + 2,
+    1,
+  ));
+  return periodMonth.getTime() >= firstBlockedMonth.getTime();
+}

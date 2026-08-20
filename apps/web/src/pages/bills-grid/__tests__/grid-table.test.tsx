@@ -6,9 +6,11 @@
 import { describe, expect, it } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import type { GridRow, GridEntryDto, GridBearerConfigDto, GridSubRow } from "@/api/bills-grid";
-import { GridTable } from "../grid-table";
+import { GridTable, rowHasBillingState } from "../grid-table";
 import { CURRENT_COLUMNS } from "../columns";
+import { emptySettlementCells } from "@kason/shared";
 
 function makeEntry(partial: Partial<GridEntryDto> = {}): GridEntryDto {
   return {
@@ -86,11 +88,9 @@ function makeRow(partial: Partial<GridRow> = {}): GridRow {
 }
 
 describe("GridTable", () => {
-  it("rule 2: renders the `Billed` tag when row.billed (provenance-based, even with billedAt null)", () => {
-    // Legacy-orphan shape: invoices exist (billed:true) but the entry link was reset
-    // (billedAt null). The Billed tag MUST still show — it is NOT gated on billedAt.
+  it("does not render the redundant Billed lifecycle tag", () => {
     render(<GridTable rows={[makeRow({ billed: true, billedAt: null })]} columns={CURRENT_COLUMNS} />);
-    expect(screen.getByTestId("billed-badge")).toBeInTheDocument();
+    expect(screen.queryByTestId("billed-badge")).not.toBeInTheDocument();
   });
 
   it("rule 2: no `Billed` tag on an unbilled row (billed falsy)", () => {
@@ -149,7 +149,7 @@ describe("GridTable", () => {
     expect(screen.getAllByTestId("tenant-sub-row").map((r) => r.getAttribute("data-listing-id"))).toEqual(["OCC", "VACANT", "ORPHAN"]);
   });
 
-  it('"billing contacts": owner NAME only (no owner phone) + tenant phone on its sub-row', () => {
+  it('"billing contacts": owner and tenant names show without phone numbers', () => {
     const row = makeRow({
       ownerName: "Tan Ah Kow",
       subRows: [makeSubRow({ listingId: "L1", tenancyId: "T1", partyName: "Ali bin Ahmad", partyPhone: "011-2223333" })],
@@ -160,20 +160,21 @@ describe("GridTable", () => {
     expect(ownerLine).toHaveTextContent("Tan Ah Kow");
     // Owner phone is intentionally NOT surfaced on this page.
     expect(ownerLine).not.toHaveTextContent("012");
-    expect(screen.getByTestId("subrow-phone")).toHaveTextContent("011-2223333");
+    expect(screen.getByTestId("tenant-sub-row")).toHaveTextContent("Ali bin Ahmad");
+    expect(screen.queryByText(/011-2223333/)).toBeNull();
   });
 
-  it('"whole-unit tenant phone": a whole unit surfaces its inline tenant phone (no nested sub-row carries it)', () => {
+  it('"whole-unit contacts": shows Owner and Tenant on separate lines without tenant phone', () => {
     const row = makeRow({
       isWholeUnit: true,
       ownerName: "Lim Bee",
       subRows: [makeSubRow({ listingId: "L1", tenancyId: "T1", partyName: "Siti", partyPhone: "017-5554444" })],
     });
     render(<GridTable rows={[row]} columns={CURRENT_COLUMNS} />);
-    // whole unit → no nested sub-rows, so the per-room phone span is absent…
     expect(screen.queryByTestId("subrow-phone")).toBeNull();
-    // …the whole-unit tenant phone line carries it instead.
-    expect(screen.getByTestId("whole-unit-tenant-phone")).toHaveTextContent("017-5554444");
+    expect(screen.getByTestId("unit-occupancy-tag")).toHaveTextContent("Whole unit: Lim Bee");
+    expect(screen.getByTestId("whole-unit-tenant")).toHaveTextContent("Tenant: Siti");
+    expect(screen.queryByText(/017-5554444/)).toBeNull();
   });
 
   it('"billing contacts absent": no owner line and no phone span when the row carries neither', () => {
@@ -268,12 +269,7 @@ describe("GridTable", () => {
     expect(within(subRow).getByTestId("cell-amount")).toHaveTextContent("60.00");
   });
 
-  // Final-review Finding 1, second call site: the INLINE (whole-unit) Amount
-  // cell must show the same stored-snapshot-unless-staged behaviour as the
-  // nested sub-row cell above — this exercises the OTHER render branch
-  // (~grid-table.tsx:627-636) which resolves its own cellKey
-  // (`inlineSubRow?.listingId ?? row.apartmentId`) independently.
-  it('"amount stored snapshot (inline)": unedited saved whole-unit reading shows the stored amount, not a re-price at the current rate', () => {
+  it('"whole-unit meter not applicable": previous/current/amount are centred dashes and cannot be edited', () => {
     const row = makeRow({
       isWholeUnit: true,
       entry: makeEntry({}),
@@ -283,7 +279,13 @@ describe("GridTable", () => {
     });
     render(<GridTable rows={[row]} columns={CURRENT_COLUMNS} />);
     const unitRow = screen.getByRole("row", { name: /PV9 A-13-13/ });
-    expect(within(unitRow).getByTestId("cell-amount")).toHaveTextContent("60.00");
+    for (const columnId of ["previousKwh", "currentKwh", "amount"]) {
+      const cell = within(unitRow).getByTestId(`cell-${columnId}`);
+      expect(cell).toHaveTextContent("—");
+      expect(cell).toHaveClass("text-center", "align-middle");
+      expect(cell).toHaveAttribute("aria-readonly", "true");
+      expect(cell.querySelector("input")).toBeNull();
+    }
   });
 
   // Regression (audit finding #6, symmetric case): the existing live-preview
@@ -370,7 +372,10 @@ describe("GridTable", () => {
     });
     render(<GridTable rows={[row]} columns={CURRENT_COLUMNS} />);
     const unitRow = screen.getByRole("row", { name: /PV9 A-13-13/ });
-    expect(within(unitRow).getByTestId("cell-rental")).toHaveTextContent("—");
+    const cell = within(unitRow).getByTestId("cell-rental");
+    expect(cell).toHaveTextContent("—");
+    expect(cell).toHaveClass("text-center", "align-middle", "bg-transparent");
+    expect(cell).not.toHaveClass("text-right");
   });
 
   it('"grain": a unit row WITH sub-rows locks its inline cell-previousKwh', () => {
@@ -387,12 +392,12 @@ describe("GridTable", () => {
     expect(cell.getAttribute("aria-readonly")).toBe("true");
   });
 
-  it('"band order": band headers === the frozen 8-item order; AIR never reads Aircond', () => {
+  it('"band order": headers include Water and the management-fee tax split', () => {
     render(<GridTable rows={[]} columns={CURRENT_COLUMNS} />);
     const bands = screen.getAllByTestId("band-header").map((el) => el.textContent);
     expect(bands).toEqual([
-      "Rental", "Cleaning", "TNB", "AIR", "WiFi",
-      "Maintenance Fee", "Recurring", "Tenant Expenses", "Owner Expenses",
+      "Monthly Rental & Deposit", "Cleaning", "TNB", "Water", "WiFi",
+      "Maintenance Fee", "Recurring", "Tenant Expenses", "Owner Expenses", "Management Fee", "Owner Payout",
     ]);
     expect(screen.queryByText(/aircond/i)).toBeNull();
   });
@@ -447,6 +452,29 @@ describe("GridTable", () => {
     expect(within(unitRow).getByTestId("cell-ownerExpNonSst")).toHaveTextContent("15.50");
   });
 
+  it("replaces Add Cost with non-clickable Profit/Loss labels after each expense cell's costs are completed", () => {
+    const row = makeRow({
+      entry: makeEntry({}),
+      expenses: {
+        tenant: {
+          total: "220.00", withSstTotal: "100.00", count: 2,
+          nonSstCount: 1, withSstCount: 1,
+          nonSstActionRequiredCount: 0, withSstActionRequiredCount: 0,
+          nonSstGrossMargin: "20.00", withSstGrossMargin: "-30.00",
+        },
+        owner: { total: "0.00", withSstTotal: "0.00", count: 0 },
+      },
+    });
+    render(<GridTable rows={[row]} columns={CURRENT_COLUMNS} onViewExpenses={() => {}} />);
+    const unitRow = screen.getByRole("row", { name: /PV9 A-13-13/ });
+    const [profit, loss] = within(unitRow).getAllByTestId("view-expenses-tenant-margin");
+    expect(profit).toHaveTextContent("Profit RM20.00");
+    expect(loss).toHaveTextContent("Loss RM30.00");
+    expect(profit.tagName).toBe("SPAN");
+    expect(loss.tagName).toBe("SPAN");
+    expect(within(unitRow).queryByRole("button", { name: "Add Cost" })).toBeNull();
+  });
+
   it('"wifi read-only" (recurring-charges R9): a saved wifiBearer "tenant" row shows the value read-only on the tenant column, "—" on owner — no textbox on either', () => {
     const row = makeRow({
       entry: makeEntry({ wifi: "88.00", wifiBearer: "tenant" }),
@@ -493,9 +521,10 @@ describe("GridTable", () => {
   // Task 7 (R2): a single occupancy tag on the unit row — "Whole unit ·
   // {tenant}" for a whole-unit tenancy, "{N} rooms" for a partitioned
   // apartment. Display-only; existing sub-row rendering is unchanged.
-  it('"whole unit tag": whole-unit row shows "Whole unit · {tenant name}" occupancy tag once', () => {
+  it('"whole unit tag": whole-unit row shows owner then tenant on separate lines', () => {
     const row = makeRow({
       isWholeUnit: true,
+      ownerName: "Owner Lee",
       entry: makeEntry({}),
       subRows: [makeSubRow({ listingId: "L1", tenancyId: "T1", partyName: "Ali", rental: "3000.00" })],
     });
@@ -504,7 +533,11 @@ describe("GridTable", () => {
     // getByTestId (singular) throws on 0 OR 2+ matches — this also proves
     // the tag renders exactly once, not the whole-unit case's zero nested
     // sub-rows re-emitting it.
+    expect(within(unitRow).getByTestId("unit-occupancy-tag")).toHaveTextContent("Whole unit: Owner Lee");
+    expect(within(unitRow).getByTestId("whole-unit-tenant")).toHaveTextContent("Tenant: Ali");
+    /* Retired format assertion kept in history:
     expect(within(unitRow).getByTestId("unit-occupancy-tag")).toHaveTextContent("Whole unit · Ali");
+    */
   });
 
   it('"partitioned rooms tag": partitioned row (3 rooms) shows "3 rooms" occupancy tag and keeps its tenant-sub-rows', () => {
@@ -524,7 +557,7 @@ describe("GridTable", () => {
     expect(screen.getAllByTestId("tenant-sub-row")).toHaveLength(3);
   });
 
-  it('"whole unit vacant": whole unit with no tenant shows "Whole unit" tag, no name, no error', () => {
+  it('"whole unit vacant": whole unit with no owner or tenant shows an empty owner value', () => {
     const row = makeRow({
       isWholeUnit: true,
       entry: makeEntry({}),
@@ -534,7 +567,8 @@ describe("GridTable", () => {
     const unitRow = screen.getByRole("row", { name: /PV9 A-13-13/ });
     const tag = within(unitRow).getByTestId("unit-occupancy-tag");
     expect(tag).toHaveTextContent("Whole unit");
-    expect(tag.textContent).toBe("Whole unit");
+    expect(tag.textContent).toBe("Whole unit: —");
+    expect(screen.queryByTestId("whole-unit-tenant")).toBeNull();
   });
 
   // Task 8 (R4) — the ~17-column matrix scrolls horizontally inside
@@ -554,10 +588,10 @@ describe("GridTable", () => {
 
   // Task 11 (R4b) — full sticky header: on vertical scroll the WHOLE header
   // (both thead rows), not just the Unit corner, must stay visible. Row 1
-  // (band groups) pins at top-0; row 2 (per-column headers) pins at top-9
-  // (2.25rem = row 1's own h-9 height) so it sits directly below row 1
+  // (band groups) pins at top-0; row 2 (per-column headers) pins at top-14
+  // (3.5rem = row 1's own h-14 height) so it sits directly below row 1
   // instead of overlapping it.
-  it('"sticky full header (R4b)": a band-header cell (row 1) carries sticky + top-0 + opaque bg; a column-header cell (row 2) carries sticky + top-9 + opaque bg', () => {
+  it('"sticky full header (R4b)": a band-header cell (row 1) carries sticky + top-0 + opaque bg; a column-header cell (row 2) carries sticky + top-14 + opaque bg', () => {
     render(<GridTable rows={[]} columns={CURRENT_COLUMNS} />);
 
     const bandHeaderCell = screen.getAllByTestId("band-header")[0];
@@ -567,7 +601,7 @@ describe("GridTable", () => {
 
     const columnHeaderCell = screen.getByTestId("col-header-rental");
     expect(columnHeaderCell.className).toContain("sticky");
-    expect(columnHeaderCell.className).toContain("top-9");
+    expect(columnHeaderCell.className).toContain("top-14");
     expect(columnHeaderCell.className).toContain("bg-[var(--page-bg)]");
   });
 
@@ -721,5 +755,211 @@ describe("GridTable", () => {
     // Lives inside the pinned Unit td, alongside the unit code (same cell).
     const unitCell = within(unitRow).getByText("Sunway GEO Residences").closest("td");
     expect(within(unitCell!).getByText("PV9 A-13-13")).toBeInTheDocument();
+  });
+
+  it("draws strong category boundaries while keeping inner sub-columns unaccented", () => {
+    render(<GridTable rows={[makeRow({ entry: makeEntry({ tnbTotal: "100.00" }) })]} columns={CURRENT_COLUMNS} />);
+    expect(screen.getByTestId("col-header-tnbOwner")).toHaveClass("border-l-2");
+    expect(screen.getByTestId("col-header-amount")).toHaveClass("border-r-2");
+    expect(screen.getByTestId("col-header-currentKwh")).not.toHaveClass("border-l-2", "border-r-2");
+    expect(screen.getByTestId("cell-tnbOwner")).toHaveClass("border-l-2");
+    expect(screen.getByTestId("cell-amount")).toHaveClass("border-r-2");
+  });
+
+  it("centres matrix values and numeric inputs while leaving unit details separate", () => {
+    render(<GridTable rows={[makeRow({
+      isWholeUnit: true,
+      entry: makeEntry({ tnbTotal: "100.00" }),
+      subRows: [makeSubRow({ rental: "1200.00" })],
+    })]} columns={CURRENT_COLUMNS} />);
+    expect(screen.getByTestId("cell-rental")).toHaveClass("text-center", "align-middle");
+    expect(screen.getByTestId("cell-tnbTenant")).toHaveClass("text-center", "align-middle");
+    expect(within(screen.getByTestId("cell-tnbTenant")).getByRole("textbox")).toHaveClass("text-center");
+  });
+
+  it("shows 0.00 for every empty monetary total and a dash only for meter readings", () => {
+    render(<GridTable rows={[makeRow({
+      isWholeUnit: true,
+      entry: makeEntry({}),
+      subRows: [makeSubRow({ previousKwh: null, currentKwh: null, amount: null })],
+    })]} columns={CURRENT_COLUMNS} />);
+
+    for (const columnId of ["tnbOwner", "tnbTenant", "amount", "airOwner", "airTenant", "wifiOwner", "wifiTenant"]) {
+      expect(screen.getByTestId(`total-${columnId}`)).toHaveTextContent("0.00");
+    }
+    expect(screen.getByTestId("total-previousKwh")).toHaveTextContent("—");
+    expect(screen.getByTestId("total-currentKwh")).toHaveTextContent("—");
+  });
+
+  it("shows each unit's projected Owner Payout, monthly total, and owner-report trigger", async () => {
+    let opened: GridRow | null = null;
+    const row = makeRow({
+      ownerPartyId: "OWNER-1",
+      isWholeUnit: true,
+      entry: makeEntry({
+        cleaning: "100.00", tnbTotal: "200.00", airSelangor: "50.00",
+        wifi: "80.00", maintenanceFee: "70.00", tnbPattern: "absorbed", airPattern: "absorbed",
+      }),
+      bearerConfig: makeBearerConfig({ tnbPattern: "absorbed", airPattern: "absorbed" }),
+      subRows: [makeSubRow({ rental: "3000.00", deposit: "1000.00" })],
+      recurring: { owner: { total: "30.00", count: 1 }, tenant: { total: "0.00", count: 0 } },
+      expenses: {
+        tenant: { total: "0.00", withSstTotal: "0.00", count: 0 },
+        owner: { total: "35.00", withSstTotal: "0.00", count: 1 },
+      },
+      managementFee: { nonSst: "250.00", sst: "20.00", total: "270.00" },
+    });
+    render(<MemoryRouter><GridTable rows={[row]} columns={CURRENT_COLUMNS} onViewOwnerReport={(selected) => { opened = selected; }} /></MemoryRouter>);
+    expect(screen.getByTestId("cell-ownerPayout")).toHaveTextContent("3165.00");
+    expect(screen.getByTestId("cell-ownerPayout").querySelector("input")).toBeNull();
+    expect(screen.getByTestId("total-ownerPayout")).toHaveTextContent("3165.00");
+    await userEvent.click(screen.getByRole("button", { name: "View owner monthly report for PV9 A-13-13" }));
+    expect(opened).toBe(row);
+  });
+
+  it("automates saved/billed/paid/re-bill cell colours while empty cells stay unpainted", () => {
+    const saved = makeRow({
+      entryId: "E1",
+      billed: false,
+      entry: makeEntry({ cleaning: "25.00", wifi: "10.00" }),
+    });
+    const { rerender } = render(<GridTable rows={[saved]} columns={CURRENT_COLUMNS} />);
+    let cell = screen.getByTestId("cell-cleaningOwner");
+    expect(cell).toHaveAttribute("data-billing-state", "saved");
+    expect(cell).toHaveStyle({ backgroundColor: "rgb(255, 140, 0)" });
+    expect(screen.getByTestId("cell-airOwner")).not.toHaveAttribute("data-billing-state");
+
+    const unpaidSettlement = { status: "unpaid" as const, cells: { ...emptySettlementCells(), cleaningOwner: "unpaid" as const, wifiOwner: "unpaid" as const }, rooms: {}, expenseLines: {} };
+    rerender(<GridTable rows={[{ ...saved, billed: true, billedAt: "2026-08-01T00:00:00.000Z", settlement: unpaidSettlement }]} columns={CURRENT_COLUMNS} />);
+    cell = screen.getByTestId("cell-cleaningOwner");
+    expect(cell).toHaveAttribute("data-billing-state", "billed-unpaid");
+    expect(cell).toHaveStyle({ backgroundColor: "rgb(255, 255, 0)" });
+
+    const paidSettlement = { status: "paid" as const, cells: { ...emptySettlementCells(), cleaningOwner: "paid" as const }, rooms: {}, expenseLines: {} };
+    rerender(<GridTable rows={[{ ...saved, billed: true, billedAt: "2026-08-01T00:00:00.000Z", paymentStatus: "paid", settlement: paidSettlement }]} columns={CURRENT_COLUMNS} />);
+    cell = screen.getByTestId("cell-cleaningOwner");
+    expect(cell).toHaveAttribute("data-billing-state", "paid");
+    expect(cell).toHaveStyle({ backgroundColor: "rgb(0, 255, 0)" });
+
+    rerender(<GridTable rows={[{ ...saved, billed: true, billedAt: "2026-08-01T00:00:00.000Z", hasUnbilledChanges: true, settlement: unpaidSettlement }]} columns={CURRENT_COLUMNS} isCellPendingRebill={(cellKey, columnId) => cellKey === "APT1" && columnId === "cleaningOwner"} />);
+    cell = screen.getByTestId("cell-cleaningOwner");
+    expect(cell).toHaveAttribute("data-billing-state", "changed");
+    expect(cell).toHaveStyle({ backgroundColor: "rgb(255, 0, 0)" });
+    expect(screen.getByTestId("cell-wifiOwner")).toHaveAttribute("data-billing-state", "billed-unpaid");
+    expect(screen.getByTestId("cell-wifiOwner")).toHaveStyle({ backgroundColor: "rgb(255, 255, 0)" });
+  });
+
+  it("paints single-column utilities from their actual bearer-side bill", () => {
+    const live = (cells: Partial<ReturnType<typeof emptySettlementCells>>) => ({
+      status: "unpaid" as const,
+      cells: { ...emptySettlementCells(), ...cells },
+      rooms: {},
+      expenseLines: {},
+    });
+    const base = makeRow({
+      entryId: "E1",
+      billed: true,
+      billedAt: "2026-08-01T00:00:00.000Z",
+      entry: makeEntry({
+        tnbTotal: "580.00",
+        tnbPattern: "recharged",
+        maintenanceFee: "50.00",
+        maintenanceFeeBearer: "tenant",
+      }),
+      settlement: live({ tnbTenant: "unpaid", maintenanceTenant: "unpaid" }),
+    });
+    const { rerender } = render(<GridTable rows={[base]} columns={CURRENT_COLUMNS} />);
+
+    expect(within(screen.getByTestId("cell-tnbTenant")).getByRole("textbox")).toHaveValue("580.00");
+    expect(screen.getByTestId("cell-tnbOwner")).toHaveTextContent("—");
+    expect(screen.getByTestId("cell-tnbTenant")).toHaveAttribute("data-billing-state", "billed-unpaid");
+    expect(screen.getByTestId("cell-tnbOwner")).not.toHaveAttribute("data-billing-state");
+    expect(screen.getByTestId("cell-maintenanceFee")).toHaveAttribute("data-billing-state", "billed-unpaid");
+
+    rerender(<GridTable rows={[{
+      ...base,
+      entry: makeEntry({ tnbTotal: "580.00", tnbPattern: "absorbed" }),
+      settlement: live({ tnbOwner: "unpaid" }),
+    }]} columns={CURRENT_COLUMNS} />);
+    expect(within(screen.getByTestId("cell-tnbOwner")).getByRole("textbox")).toHaveValue("580.00");
+    expect(screen.getByTestId("cell-tnbTenant")).toHaveTextContent("—");
+    expect(screen.getByTestId("cell-tnbOwner")).toHaveAttribute("data-billing-state", "billed-unpaid");
+  });
+
+  it("rental uses only billed-unpaid yellow and paid fluorescent green", () => {
+    const rentalRow = makeRow({
+      isWholeUnit: true,
+      entryId: "E1",
+      entry: makeEntry({}),
+      subRows: [makeSubRow({ rental: "1200.00" })],
+      billed: false,
+    });
+    const { rerender } = render(<GridTable rows={[rentalRow]} columns={CURRENT_COLUMNS} />);
+    let rental = screen.getByTestId("cell-rental");
+    expect(rental).not.toHaveAttribute("data-billing-state");
+
+    rerender(<GridTable rows={[{ ...rentalRow, billed: true, billedAt: "2026-08-01T00:00:00.000Z" }]} columns={CURRENT_COLUMNS} />);
+    rental = screen.getByTestId("cell-rental");
+    expect(rental).toHaveAttribute("data-billing-state", "billed-unpaid");
+    expect(rental).toHaveStyle({ backgroundColor: "rgb(255, 255, 0)" });
+
+    rerender(<GridTable rows={[{ ...rentalRow, billed: true, billedAt: "2026-08-01T00:00:00.000Z", settlement: { status: "partial", cells: emptySettlementCells(), rooms: {}, expenseLines: {} } }]} columns={CURRENT_COLUMNS} />);
+    rental = screen.getByTestId("cell-rental");
+    expect(rental).toHaveAttribute("data-billing-state", "billed-unpaid");
+    expect(rental).toHaveStyle({ backgroundColor: "rgb(255, 255, 0)" });
+
+    rerender(<GridTable rows={[{ ...rentalRow, billed: true, billedAt: "2026-08-01T00:00:00.000Z", paymentStatus: "paid" }]} columns={CURRENT_COLUMNS} />);
+    rental = screen.getByTestId("cell-rental");
+    expect(rental).toHaveAttribute("data-billing-state", "paid");
+    expect(rental).toHaveStyle({ backgroundColor: "rgb(0, 255, 0)" });
+  });
+
+  it("paints tenant-visible rental outstanding yellow even when the grid row itself was never billed", () => {
+    const rentalRow = makeRow({
+      isWholeUnit: true,
+      billed: false,
+      billedAt: null,
+      subRows: [makeSubRow({ rental: "1064.52", rentalBillingState: "billed-unpaid" })],
+    });
+    render(<GridTable rows={[rentalRow]} columns={CURRENT_COLUMNS} />);
+    const rental = screen.getByTestId("cell-rental");
+    expect(rental).toHaveTextContent("1064.52");
+    expect(rental).toHaveAttribute("data-billing-state", "billed-unpaid");
+    expect(rental).toHaveStyle({ backgroundColor: "rgb(255, 255, 0)" });
+  });
+
+  it("shows the selected month's deposit beside rental with its own document/payment colour", () => {
+    const depositRow = makeRow({
+      isWholeUnit: true,
+      subRows: [makeSubRow({ deposit: "7500.00", depositBillingState: "saved" })],
+    });
+    const { rerender } = render(<GridTable rows={[depositRow]} columns={CURRENT_COLUMNS} />);
+    let deposit = screen.getByTestId("cell-deposit");
+    expect(deposit).toHaveTextContent("7500.00");
+    expect(deposit).toHaveAttribute("data-billing-state", "saved");
+    expect(deposit).toHaveStyle({ backgroundColor: "rgb(255, 140, 0)" });
+
+    rerender(<GridTable rows={[{
+      ...depositRow,
+      subRows: [makeSubRow({ deposit: "7500.00", depositBillingState: "billed-unpaid" })],
+    }]} columns={CURRENT_COLUMNS} />);
+    deposit = screen.getByTestId("cell-deposit");
+    expect(deposit).toHaveStyle({ backgroundColor: "rgb(255, 255, 0)" });
+
+    rerender(<GridTable rows={[{
+      ...depositRow,
+      subRows: [makeSubRow({ deposit: "7500.00", depositBillingState: "paid" })],
+    }]} columns={CURRENT_COLUMNS} />);
+    deposit = screen.getByTestId("cell-deposit");
+    expect(deposit).toHaveStyle({ backgroundColor: "rgb(0, 255, 0)" });
+  });
+
+  it("colour filtering matches a unit when even one cell carries the selected automatic colour", () => {
+    const row = makeRow({
+      isWholeUnit: true,
+      subRows: [makeSubRow({ deposit: "7500.00", depositBillingState: "billed-unpaid" })],
+    });
+    expect(rowHasBillingState(row, "billed-unpaid", CURRENT_COLUMNS)).toBe(true);
+    expect(rowHasBillingState(row, "paid", CURRENT_COLUMNS)).toBe(false);
   });
 });

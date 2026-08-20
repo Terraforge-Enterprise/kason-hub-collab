@@ -25,7 +25,7 @@ export interface NavCell {
 export interface NavRow { key: string; apartmentId: string; rowType: NavRowType; cells: NavCell[]; }
 
 const EXPENSE_TOTALS = new Set<ColumnId>([
-  "tenantExpWithSst", "tenantExpNonSst", "ownerExpWithSst", "ownerExpNonSst",
+  "tenantExpWithSst", "tenantExpNonSst", "ownerExpWithSst", "ownerExpNonSst", "managementFeeNonSst", "managementFeeSst",
 ]);
 // Recurring-charges (R9): value-bearing read-only unit cells that are ALWAYS navigable (like
 // rental + the expense totals) — the recurring summary totals.
@@ -73,7 +73,7 @@ export function buildNavRows(rows: GridRow[], columns: GridColumn[]): NavRow[] {
       if (!col.editable) {
         // Value-bearing read-only cells that are ALWAYS navigable: rental + the four expense
         // totals + the two recurring totals.
-        if (col.id === "rental" || EXPENSE_TOTALS.has(col.id) || RECURRING_TOTALS.has(col.id)) {
+        if (col.id === "rental" || col.id === "deposit" || EXPENSE_TOTALS.has(col.id) || RECURRING_TOTALS.has(col.id)) {
           unitCells.push({ cellKey: row.apartmentId, columnId: col.id, apartmentId: row.apartmentId, rowType: "unit", rowIndex, editable: false });
         } else if (GOVERNABLE_SCALARS.has(col.id) && isApplicable(row, col.id)) {
           // Governable scalars (R6 refined): the active bearer side is a navigable landing cell;
@@ -98,7 +98,7 @@ export function buildNavRows(rows: GridRow[], columns: GridColumn[]): NavRow[] {
         const cells: NavCell[] = [];
         for (const col of dataColumns) {
           if (col.grain !== "subRow") {
-            if (col.id === "rental") {
+            if (col.id === "rental" || col.id === "deposit") {
               // off-grain but value-bearing (SubRow.rental) → navigable read-only
               cells.push({ cellKey: sub.listingId, columnId: col.id, apartmentId: row.apartmentId, rowType: "sub", rowIndex, editable: false });
             }

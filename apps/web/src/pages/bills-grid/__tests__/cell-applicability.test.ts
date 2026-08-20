@@ -160,20 +160,22 @@ describe("AIR — the drawer's Owner/Tenant toggle drives its two existing colum
   });
 });
 
-describe("TNB — one Owner column, so applicability is unchanged", () => {
-  // TNB has no tenant-side column by design (the tenant charge is per-room meter +
-  // pax, never this master-bill figure). The bearer is surfaced by the corner marker
-  // on the Owner cell instead — see grid-table.test.tsx.
-  it("stays editable whether the cost is owner- or tenant-borne", () => {
-    for (const tnbPattern of ["absorbed", "recharged", "manager_advanced"]) {
+describe("TNB — bearer selects exactly one Owner/Tenant column", () => {
+  it("shows Owner for absorbed and Tenant for recharged/manager advanced", () => {
+    for (const [tnbPattern, expected] of [
+      ["absorbed", [true, false]],
+      ["recharged", [false, true]],
+      ["manager_advanced", [false, true]],
+    ] as const) {
       const row = makeRow({ bearerConfig: makeBearerConfig({ tnbPattern }) });
-      expect(isApplicable(row, "tnbOwner"), `tnbPattern=${tnbPattern}`).toBe(true);
+      expect([isApplicable(row, "tnbOwner"), isApplicable(row, "tnbTenant")], `tnbPattern=${tnbPattern}`).toEqual(expected);
     }
   });
 
   it('"tenant_direct" still greys the cell — the Bill discards anything typed there', () => {
     const row = makeRow({ bearerConfig: makeBearerConfig({ tnbPattern: "tenant_direct" }) });
     expect(isApplicable(row, "tnbOwner")).toBe(false);
+    expect(isApplicable(row, "tnbTenant")).toBe(false);
   });
 });
 

@@ -14,7 +14,6 @@ function makeProps(overrides: Partial<React.ComponentProps<typeof GridToolbar>> 
     canExport: false, onExport: vi.fn(),
     columnFilters: {}, onColumnFilterChange: vi.fn(),
     dateRange: { from: null, to: null }, onDateRangeChange: vi.fn(),
-    maximized: false, onToggleMaximized: vi.fn(),
     hasSelection: false, onApplyColour: vi.fn(),
     columns: CURRENT_COLUMNS, hiddenColumns: [], onToggleColumn: vi.fn(),
     showVacant: false, onToggleShowVacant: vi.fn(),
@@ -25,6 +24,22 @@ function makeProps(overrides: Partial<React.ComponentProps<typeof GridToolbar>> 
 function renderToolbar(overrides: Partial<React.ComponentProps<typeof GridToolbar>> = {}) {
   return render(<GridToolbar {...makeProps(overrides)} />);
 }
+
+describe("GridToolbar colour filter", () => {
+  it("allows multiple automatic billing colours to be selected together", () => {
+    function Harness() {
+      const [filters, setFilters] = React.useState<Array<"saved" | "billed-unpaid" | "paid" | "changed">>([]);
+      return <GridToolbar {...makeProps({ colourFilters: filters, onColourFiltersChange: setFilters })} />;
+    }
+    render(<Harness />);
+    expect(screen.getByRole("checkbox", { name: "All colours" })).toBeChecked();
+    fireEvent.click(screen.getByRole("checkbox", { name: /Filter colour Yellow/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Filter colour Red/ }));
+    expect(screen.getByRole("checkbox", { name: /Filter colour Yellow/ })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /Filter colour Red/ })).toBeChecked();
+    expect(screen.getByText("2 colours selected")).toBeInTheDocument();
+  });
+});
 
 // Regression (punch-list Item 3): in fullscreen the toolbar renders INSIDE the
 // grid-region div, which owns a NATIVE keydown listener (useGridKeyboard) that
@@ -50,7 +65,7 @@ describe("GridToolbar filter inputs — fullscreen keydown isolation", () => {
       }, []);
       return (
         <div ref={ref} data-testid="grid-region">
-          <GridToolbar {...makeProps({ maximized: true })} />
+          <GridToolbar {...makeProps()} />
         </div>
       );
     }
@@ -91,22 +106,10 @@ describe("GridToolbar filter inputs — fullscreen keydown isolation", () => {
   });
 });
 
-describe("GridToolbar fullscreen placement", () => {
-  it("renders exactly one Fullscreen button, in the top-right corner", () => {
+describe("GridToolbar fullscreen removal", () => {
+  it("does not render Fullscreen controls", () => {
     renderToolbar();
-    // Exactly one — guards against the merge that briefly left two Fullscreen
-    // buttons (my top-left + master's top-right).
-    expect(screen.getAllByRole("button", { name: "Fullscreen" })).toHaveLength(1);
-    const fs = screen.getByRole("button", { name: "Fullscreen" });
-    // Its wrapper is absolutely positioned top-right (master's chosen placement).
-    const wrapper = fs.closest("div");
-    expect(wrapper?.className).toMatch(/right-4/);
-    expect(wrapper?.className).toMatch(/top-4/);
-  });
-
-  it("reads 'Exit Fullscreen' when maximized", () => {
-    renderToolbar({ maximized: true });
-    expect(screen.getByRole("button", { name: "Exit Fullscreen" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /fullscreen/i })).not.toBeInTheDocument();
   });
 });
 

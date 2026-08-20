@@ -301,7 +301,7 @@ export default function DashboardPage() {
               <div className="rounded-lg border border-border/50 bg-background/40 p-4">
                 <p className="text-xs text-muted-foreground">Coming Due</p>
                 <p className="mt-1 text-2xl font-bold text-foreground">
-                  <span className="text-sm font-normal text-muted-foreground">MYR</span>{" "}
+                  <span className="text-sm font-normal text-muted-foreground">RM</span>{" "}
                   {comingDueAmt.toLocaleString("en-MY", {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
@@ -311,7 +311,7 @@ export default function DashboardPage() {
               <div className="rounded-lg border border-border/50 bg-background/40 p-4">
                 <p className="text-xs text-muted-foreground">Overdue</p>
                 <p className="mt-1 text-2xl font-bold text-rose-600">
-                  <span className="text-sm font-normal text-muted-foreground">MYR</span>{" "}
+                  <span className="text-sm font-normal text-muted-foreground">RM</span>{" "}
                   {overdueAmt.toLocaleString("en-MY", {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,

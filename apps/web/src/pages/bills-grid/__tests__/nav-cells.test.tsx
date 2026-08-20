@@ -111,8 +111,8 @@ describe("buildNavRows", () => {
     const nav = buildNavRows(rows, CURRENT_COLUMNS);
     const flat = nav.flatMap((r) => r.cells);
     // editable unit cell present + editable (cleaning/WiFi are read-only now, so
-    // the canonical editable unit-grain target is tnbOwner)
-    expect(flat.find((c) => c.columnId === "tnbOwner")?.editable).toBe(true);
+    // the fixture is recharged, so the editable TNB value lives under Tenant.
+    expect(flat.find((c) => c.columnId === "tnbTenant")?.editable).toBe(true);
     // amount present, NOT editable
     expect(flat.find((c) => c.columnId === "amount")?.editable).toBe(false);
     // rental present, NOT editable
@@ -146,7 +146,7 @@ describe("buildNavRows", () => {
       );
       const flat = nav.flatMap((r) => r.cells);
       expect(flat.length).toBeGreaterThan(0);
-      expect(flat.find((c) => c.columnId === "tnbOwner")?.editable).toBe(true);
+      expect(flat.find((c) => c.columnId === "tnbTenant")?.editable).toBe(true);
     }
   });
 

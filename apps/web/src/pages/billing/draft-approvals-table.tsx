@@ -1,19 +1,20 @@
 import type { LucideIcon } from "lucide-react";
-import { Home, Building2, Snowflake, FileText, Wallet } from "lucide-react";
+import { Home, Building2, Snowflake, FileText, Wallet, Eye } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   TableWrap,
   DataTable,
   TableHead,
   HeadCell,
   BodyCell,
-  Row,
   EmptyRow,
   StatusPill,
 } from "@/components/ui";
 import { formatDate, formatMoney, formatPeriodMonth } from "@/components/format";
 import { PHASE2_STATUS_TONES } from "@kason/shared";
+import { cn } from "@/lib/utils";
 
 // Mirrors the API's DraftInvoiceRow (apps/api/.../auto-draft.types.ts). The
 // list/detail JSON does NOT include a `currency` field — amounts are MYR
@@ -100,13 +101,21 @@ export function DraftApprovalsTable({
       <DataTable>
         <TableHead>
           <tr>
-            <HeadCell className="w-10">
-              <Checkbox
-                checked={allSelected}
-                indeterminate={someSelected}
-                onCheckedChange={toggleAll}
-                aria-label="Select all visible invoices"
-              />
+            <HeadCell className="w-28">
+              <div
+                className="flex cursor-pointer items-center gap-2"
+                onClick={toggleAll}
+              >
+                <Checkbox
+                  checked={allSelected}
+                  indeterminate={someSelected}
+                  onCheckedChange={toggleAll}
+                  aria-label="Select all visible invoices"
+                  className="inline-flex size-6 border-2 border-[var(--navy)] bg-white shadow-sm"
+                  onClick={(event) => event.stopPropagation()}
+                />
+                <span>Select</span>
+              </div>
             </HeadCell>
             <HeadCell>Document</HeadCell>
             <HeadCell>Billed to</HeadCell>
@@ -114,11 +123,12 @@ export function DraftApprovalsTable({
             <HeadCell className="text-right">Total</HeadCell>
             <HeadCell>Status</HeadCell>
             <HeadCell className="hidden lg:table-cell">Updated</HeadCell>
+            <HeadCell className="w-36 text-right">Action</HeadCell>
           </tr>
         </TableHead>
         <tbody>
           {invoices.length === 0 ? (
-            <EmptyRow colSpan={7} label="No draft invoices match the current filters." />
+            <EmptyRow colSpan={8} label="No draft invoices match the current filters." />
           ) : (
             invoices.map((inv) => {
               const tone =
@@ -127,22 +137,38 @@ export function DraftApprovalsTable({
                 ] ?? "slate";
               const m = invoiceTypeMeta(inv.invoiceType);
               return (
-                <Row key={inv.id}>
-                  <BodyCell>
-                    <Checkbox
-                      checked={selectedIds.includes(inv.id)}
-                      onCheckedChange={() => toggleRow(inv.id)}
-                      aria-label={`Select ${m.label} ${inv.invoiceNumber}`}
-                      onClick={(e) => e.stopPropagation()}
-                    />
+                <tr
+                  key={inv.id}
+                  onClick={() => onRowClick(inv.id)}
+                  className={cn(
+                    "group cursor-pointer border-b border-[var(--border)] transition-colors hover:bg-[var(--table-head)] focus-within:bg-[var(--table-head)]",
+                    selectedIds.includes(inv.id) && "bg-[#E7F0F8] shadow-[inset_4px_0_0_var(--navy)]",
+                  )}
+                  title={`Open ${m.label} ${inv.invoiceNumber}`}
+                >
+                  <BodyCell className="w-28">
+                    <div
+                      className="flex cursor-pointer items-center gap-2"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        toggleRow(inv.id);
+                      }}
+                    >
+                      <Checkbox
+                        checked={selectedIds.includes(inv.id)}
+                        onCheckedChange={() => toggleRow(inv.id)}
+                        aria-label={`Select ${m.label} ${inv.invoiceNumber}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex size-6 border-2 border-[var(--navy)] bg-white shadow-sm"
+                      />
+                      <span className="text-xs font-semibold text-[var(--navy)]">
+                        {selectedIds.includes(inv.id) ? "Selected" : "Select"}
+                      </span>
+                    </div>
                   </BodyCell>
                   {/* Document — states WHAT it is (invoice vs statement) + its code. */}
                   <BodyCell>
-                    <button
-                      type="button"
-                      className="flex flex-col items-start gap-1 text-left"
-                      onClick={() => onRowClick(inv.id)}
-                    >
+                    <div className="flex flex-col items-start gap-1 text-left">
                       <Badge variant={m.variant} className="inline-flex items-center gap-1">
                         <m.Icon className="h-3 w-3" />
                         {m.label}
@@ -150,18 +176,14 @@ export function DraftApprovalsTable({
                       <span className="font-mono text-xs text-[var(--text-muted)] transition group-hover:text-[var(--text-primary)]">
                         {inv.invoiceNumber}
                       </span>
-                    </button>
+                    </div>
                   </BodyCell>
                   {/* Billed to — the TENANT and the UNIT. The name alone cannot identify
                       a row: two tenancies can share a display name, and one tenant can
                       hold several units, so "Demo Tenant" twice was unresolvable. */}
                   <BodyCell>
-                    <button
-                      type="button"
-                      className="flex flex-col items-start text-left"
-                      onClick={() => onRowClick(inv.id)}
-                    >
-                      <span className="font-medium text-[var(--text-primary)] hover:underline">
+                    <div className="flex flex-col items-start text-left">
+                      <span className="font-medium text-[var(--text-primary)] group-hover:underline">
                         {inv.partyName}
                       </span>
                       {inv.unitCode ? (
@@ -170,7 +192,7 @@ export function DraftApprovalsTable({
                           {inv.propertyName ? ` · ${inv.propertyName}` : ""}
                         </span>
                       ) : null}
-                    </button>
+                    </div>
                   </BodyCell>
                   <BodyCell className="hidden xl:table-cell tabular-nums text-[var(--text-secondary)]">
                     {formatPeriodMonth(inv.periodMonth)}
@@ -184,7 +206,23 @@ export function DraftApprovalsTable({
                   <BodyCell className="hidden lg:table-cell whitespace-nowrap text-[var(--text-secondary)]">
                     {formatDate(inv.updatedAt)}
                   </BodyCell>
-                </Row>
+                  <BodyCell className="text-right">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      aria-label={`View details for ${m.label} ${inv.invoiceNumber}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onRowClick(inv.id);
+                      }}
+                      className="border-[var(--navy)] bg-white font-semibold text-[var(--navy)] shadow-sm transition group-hover:bg-[var(--navy)] group-hover:text-white"
+                    >
+                      <Eye className="h-4 w-4" />
+                      View details
+                    </Button>
+                  </BodyCell>
+                </tr>
               );
             })
           )}

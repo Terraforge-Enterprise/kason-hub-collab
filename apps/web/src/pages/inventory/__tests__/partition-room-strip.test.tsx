@@ -150,7 +150,7 @@ describe("PartitionRoomStrip", () => {
       options,
     });
     fireEvent.change(
-      screen.getByRole("spinbutton", { name: "MYR / piece" }),
+      screen.getByRole("spinbutton", { name: "RM / piece" }),
       { target: { value: "50" } },
     );
     // routed to the active room only

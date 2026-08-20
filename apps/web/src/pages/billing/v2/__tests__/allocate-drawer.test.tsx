@@ -77,7 +77,7 @@ describe("AllocateDrawer", () => {
     expect(screen.getByLabelText(/amount for AC-202607/i)).toHaveProperty("value", "20.00");
 
     const totalRow = screen.getByText(/selected total/i).parentElement!;
-    expect(within(totalRow).getByText(/100 MYR/)).toBeTruthy();
+    expect(within(totalRow).getByText(/RM 100/)).toBeTruthy();
   });
 
   it("existing allocations: cap is remaining headroom, not the full payment.amount", async () => {
@@ -89,7 +89,7 @@ describe("AllocateDrawer", () => {
     expect(screen.getByLabelText(/amount for RENT-202607/i)).toHaveProperty("value", "40.00");
 
     const totalRow = screen.getByText(/selected total/i).parentElement!;
-    expect(within(totalRow).getByText(/40 MYR/)).toBeTruthy();
+    expect(within(totalRow).getByText(/RM 40/)).toBeTruthy();
   });
 
   it("headroom cap on edit: editing c1 above outstanding clamps to outstanding (the binding cap)", async () => {

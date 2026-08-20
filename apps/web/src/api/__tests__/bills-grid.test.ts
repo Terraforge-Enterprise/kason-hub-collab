@@ -2,6 +2,7 @@
 import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
 import {
   fetchGrid,
+  fetchBillingFundsSummary,
   uploadAttachments,
   uploadLineAttachments,
   listLineAttachments,
@@ -13,6 +14,17 @@ beforeEach(() => localStorage.clear());
 afterEach(() => vi.unstubAllGlobals());
 
 describe("bills-grid api client", () => {
+  it("sends the funds-summary period as a full first-of-month date", async () => {
+    const spy = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      tenantDue: "0.00", tenantOutstanding: "0.00", tenantCollected: "0.00",
+      depositsHeld: "0.00", ownerExpenses: "0.00", managementFee: "0.00",
+      ownerPayout: "0.00", ownerPaid: "0.00", status: "safe",
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", spy);
+    await fetchBillingFundsSummary("2026-08-01");
+    expect(String(spy.mock.calls[0][0])).toContain("period=2026-08-01");
+  });
+
   it("parses a 200 grid payload", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
       period: "2026-07-01", periods: ["2026-07-01"],

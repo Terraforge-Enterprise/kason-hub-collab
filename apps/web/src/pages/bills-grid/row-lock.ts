@@ -100,7 +100,7 @@ export function isRowLocked(row: RowLockInput): boolean {
 
 import type { SettlementBucket } from "@kason/shared";
 import { isPhase2FlagEnabled } from "@/lib/feature-flags";
-import { SETTLEMENT_BUCKET_OF_COLUMN, type ColumnId } from "./columns";
+import { SETTLEMENT_BUCKET_OF_COLUMN, settlementBucketForColumn, type ColumnId } from "./columns";
 
 /**
  * Which settlement bucket a column's LOCK reads.
@@ -136,10 +136,11 @@ const CELL_BUCKET: Record<ColumnId, SettlementBucket | SettlementBucket[] | null
   // Keying it on `tnbOwner` alone left it editable over paid tenant electricity: that bucket
   // reads "none" unless the pattern is "absorbed", which is the ordinary case.
   tnbOwner: ["tnbOwner", "tnbTenant"],
+  tnbTenant: ["tnbOwner", "tnbTenant"],
 };
 
 /** The fields the cell lock reads — a superset of the row lock's. */
-export type CellLockInput = RowLockInput;
+export type CellLockInput = RowLockInput & Partial<Pick<GridRow, "entry" | "bearerConfig">>;
 
 /**
  * TRUE when THIS cell must render read-only.
@@ -160,7 +161,11 @@ export function isCellLocked(row: CellLockInput, columnId: ColumnId): boolean {
   //
   // So flag off ⇒ behave as isRowLocked, which returned `true` to reach this line.
   if (!isPhase2FlagEnabled("ENABLE_PROFORMA_INVOICES")) return true;
-  const bucket = CELL_BUCKET[columnId];
+  // Maintenance is a single bearer-driven column; lock the same live invoice
+  // side that paints it. TNB deliberately retains its two-bucket master-total lock.
+  const bucket = columnId === "maintenanceFee"
+    ? settlementBucketForColumn(row, columnId)
+    : CELL_BUCKET[columnId];
   // No bucket of its own ⇒ inherit the row's verdict, which is `true` here.
   if (bucket === null) return true;
   // A cell that writes a field feeding SEVERAL buckets locks when ANY of them is settled —

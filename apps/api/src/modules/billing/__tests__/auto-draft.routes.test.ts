@@ -15,6 +15,7 @@ vi.mock("../auto-draft.service", () => ({
   editInvoiceDatesService: vi.fn(),
   attachChargeService: vi.fn(),
   detachChargeService: vi.fn(),
+  editDraftChargeAmountService: vi.fn(),
   approveInvoiceService: vi.fn(),
   approveBulkService: vi.fn(),
   voidInvoiceService: vi.fn(),

@@ -7,7 +7,12 @@ import { StatusPill } from "@/components/ui";
 import { getStatusTone } from "@/components/format";
 import { EditPropertyDialog, type PropertyRowData } from "./edit-property-dialog";
 import { type UnitListItem } from "./units-table";
-import { ApartmentCard, EditApartmentButton } from "./apartment-card";
+import {
+  AddOwnerButton,
+  AddTenantButton,
+  ApartmentCard,
+  EditApartmentButton,
+} from "./apartment-card";
 import { EditApartmentShell } from "./edit-apartment-shell";
 import {
   getApartmentsByProperty,
@@ -100,10 +105,12 @@ export function PropertyRow({
           }`}
         />
         <div className="font-medium text-[var(--text-primary)]">{property.name}</div>
-        <div className="font-mono text-xs text-[var(--text-secondary)]">
+        <div className="font-mono text-sm font-medium text-[var(--text-primary)]">
           {property.propertyCode}
         </div>
-        <div className="text-sm text-[var(--text-secondary)]">{property.propertyType}</div>
+        <div className="text-sm font-medium text-[var(--text-primary)]">
+          {property.propertyType}
+        </div>
         <div>
           <StatusPill tone={getStatusTone(property.status)}>{property.status}</StatusPill>
         </div>
@@ -182,10 +189,41 @@ export function PropertyRow({
             // built by grouping Unit rows, so rooms is never empty in practice —
             // fall back to no Edit trigger rather than fetching /units/undefined.
             const anchorRoom = apt.rooms[0];
+            // A partitioned apartment can have a mix of occupied and vacant
+            // rooms. Target the first room without a tenant so the shortcut
+            // never opens the form on an already occupied sibling.
+            const vacantRoom = apt.rooms.find((room) => !room.tenantName);
             return (
               <ApartmentCard
                 key={apt.unitCode}
                 apartment={apt}
+                addTenantTrigger={
+                  vacantRoom ? (
+                    <EditApartmentShell
+                      initialSection="tenant"
+                      initialIntent="addTenant"
+                      unit={{
+                        id: vacantRoom.id,
+                        propertyName: property.name,
+                        unitCode: apt.unitCode,
+                      }}
+                      trigger={<AddTenantButton apartmentCode={apt.unitCode} />}
+                    />
+                  ) : null
+                }
+                addOwnerTrigger={
+                  !apt.ownerPartyId && anchorRoom ? (
+                    <EditApartmentShell
+                      initialSection="owner"
+                      unit={{
+                        id: anchorRoom.id,
+                        propertyName: property.name,
+                        unitCode: apt.unitCode,
+                      }}
+                      trigger={<AddOwnerButton apartmentCode={apt.unitCode} />}
+                    />
+                  ) : null
+                }
                 editApartmentTrigger={
                   anchorRoom ? (
                     <EditApartmentShell

@@ -809,6 +809,65 @@ export async function editInvoiceDatesService(
   return { ok: true, status: 200, data: { id } };
 }
 
+/** Manual exception for an invoice charge line. Draft-only, manager-only at the
+ * route, optimistic-concurrency guarded, and atomic with total + audit updates. */
+export async function editDraftChargeAmountService(
+  ctx: AutoDraftActorCtx,
+  invoiceId: string,
+  chargeId: string,
+  patch: { amount: number; expectedUpdatedAt: string },
+): Promise<ServiceResult<{ id: string; chargeId: string; totalAmount: number }>> {
+  const amount = patch.amount.toFixed(2);
+  const out = await getDb().$transaction(async (tx) => {
+    const invoice = await tx.invoice.findFirst({
+      where: { id: invoiceId, organizationId: ctx.orgId },
+      select: { id: true, status: true, updatedAt: true },
+    });
+    if (!invoice) return { kind: "missing" as const };
+    if (invoice.status !== "draft") return { kind: "not_draft" as const };
+    if (invoice.updatedAt.getTime() !== new Date(patch.expectedUpdatedAt).getTime()) {
+      return { kind: "stale" as const };
+    }
+    const charge = await tx.charge.findFirst({
+      where: { id: chargeId, organizationId: ctx.orgId },
+      select: { id: true, invoiceId: true, status: true, amount: true },
+    });
+    if (!charge) return { kind: "charge_missing" as const };
+    if (charge.invoiceId !== invoiceId) return { kind: "not_attached" as const };
+    if (charge.status !== "draft") return { kind: "charge_live" as const };
+    const before = charge.amount.toString();
+    await tx.charge.update({
+      where: { id: chargeId, organizationId: ctx.orgId },
+      data: { amount, outstandingAmount: amount },
+    });
+    const totalAmount = await recomputeInvoiceTotalTx(tx, ctx.orgId, invoiceId);
+    await tx.chargeEvent.create({
+      data: {
+        organizationId: ctx.orgId, chargeId, eventType: "draft.amount_manually_edited",
+        eventAt: new Date(), actorUserId: ctx.actorUserId,
+        payloadJson: { invoiceId, before, after: amount, source: "invoice-drawer" },
+      },
+    });
+    await recordAudit(tx, {
+      organizationId: ctx.orgId, actorUserId: ctx.actorUserId, actorRole: ctx.actorRole,
+      action: "billing.invoice.charge_amount_edited", entityType: "Invoice", entityId: invoiceId,
+      diff: { before: { chargeId, amount: before }, after: { chargeId, amount } },
+      meta: { chargeId, before, after: amount }, ip: ctx.ip, userAgent: ctx.userAgent,
+    });
+    return { kind: "ok" as const, totalAmount };
+  });
+
+  switch (out.kind) {
+    case "missing": return { ok: false, status: 404, error: "Invoice not found" };
+    case "charge_missing": return { ok: false, status: 404, error: "Charge not found" };
+    case "not_draft": return { ok: false, status: 409, error: "Invoice is not a draft" };
+    case "stale": return { ok: false, status: 409, error: "Invoice changed since loaded. Refresh and try again." };
+    case "not_attached": return { ok: false, status: 409, error: "Charge is not attached to this invoice" };
+    case "charge_live": return { ok: false, status: 409, error: "Only draft charges can be edited" };
+    default: return { ok: true, status: 200, data: { id: invoiceId, chargeId, totalAmount: out.totalAmount } };
+  }
+}
+
 /** Attach an unlinked org-scoped charge to a DRAFT invoice, then recompute the total. */
 export async function attachChargeService(
   ctx: AutoDraftActorCtx,

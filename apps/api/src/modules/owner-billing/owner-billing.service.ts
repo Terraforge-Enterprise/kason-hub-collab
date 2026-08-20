@@ -1540,7 +1540,9 @@ function invoiceChargePrefix(inv: DbInvoice): string {
 // with the EXACT "Record changed — reloaded" body (the whole tx unwinds).
 
 const STATEMENT_NOT_APPROVABLE =
-  "Statement can no longer be approved — only a draft statement may be approved";
+  "Statement can no longer be approved — a unit statement must be First Checked first";
+const STATEMENT_NOT_FIRST_CHECKABLE =
+  "Statement can no longer be First Checked — only a draft statement may be checked";
 const STATEMENT_NOT_VOIDABLE =
   "Statement can no longer be voided — a paid or already-voided statement cannot be voided";
 const STATEMENT_NOT_SENDABLE =
@@ -1555,13 +1557,47 @@ const STATEMENT_NO_PDF =
  * guarded transition (updatedAt-in-WHERE) + audit land in ONE tx; a stale token →
  * 409 with the EXACT stale message. Audit: owner-billing.statement.approve.
  */
-export async function approveStatementService(
+export async function firstCheckStatementService(
   ctx: OwnerBillingActorCtx,
   id: string,
 ): Promise<OwnerBillingServiceResult<OwnerStatementRow>> {
   const inv = await findStatementById(ctx.orgId, id);
   if (!inv) return { ok: false as const, status: 404, error: STATEMENT_NOT_FOUND };
   if (inv.status !== "draft") {
+    return { ok: false as const, status: 409, error: STATEMENT_NOT_FIRST_CHECKABLE };
+  }
+  try {
+    const checked = await withTransaction(async (tx) => {
+      const row = await transitionStatementStatusGuarded(
+        tx, ctx.orgId, id, inv.updatedAt.toISOString(), "first_checked",
+      );
+      await recordAudit(tx, {
+        organizationId: ctx.orgId,
+        actorUserId: ctx.actorUserId,
+        actorRole: ctx.actorRole,
+        action: "owner-billing.statement.first-check",
+        entityType: "Invoice",
+        entityId: id,
+        meta: { previousStatus: inv.status, status: "first_checked" },
+        ip: ctx.ip,
+        userAgent: ctx.userAgent,
+      });
+      return row;
+    });
+    return { ok: true as const, status: 200, data: mapStatement(checked) };
+  } catch (err) {
+    if (err instanceof StaleUpdateError) return { ok: false as const, status: 409, error: STALE };
+    throw err;
+  }
+}
+
+export async function approveStatementService(
+  ctx: OwnerBillingActorCtx,
+  id: string,
+): Promise<OwnerBillingServiceResult<OwnerStatementRow>> {
+  const inv = await findStatementById(ctx.orgId, id);
+  if (!inv) return { ok: false as const, status: 404, error: STATEMENT_NOT_FOUND };
+  if (inv.status !== (inv.apartmentId ? "first_checked" : "draft")) {
     return { ok: false as const, status: 409, error: STATEMENT_NOT_APPROVABLE };
   }
 

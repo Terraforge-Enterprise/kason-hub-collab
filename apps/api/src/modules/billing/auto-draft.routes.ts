@@ -18,6 +18,7 @@ import {
   approveBulkSchema,
   approveOneSchema,
   billingGapsQuerySchema,
+  editDraftChargeAmountSchema,
 } from "./auto-draft.validation";
 import {
   getDraftConfigService,
@@ -35,6 +36,7 @@ import {
   approveBulkService,
   voidInvoiceService,
   findBillingGapsService,
+  editDraftChargeAmountService,
 } from "./auto-draft.service";
 import type { AutoDraftActorCtx } from "./auto-draft.types";
 
@@ -140,6 +142,14 @@ autoDraftRoutes.post("/invoices/:id/charges", requireRole("editor"), async (c) =
 autoDraftRoutes.delete("/invoices/:id/charges/:chargeId", requireRole("editor"), async (c) =>
   out(c, await detachChargeService(ctxOf(c), c.req.param("id"), c.req.param("chargeId"))),
 );
+
+autoDraftRoutes.patch("/invoices/:id/charges/:chargeId/amount", requireRole("manager"), async (c) => {
+  const p = editDraftChargeAmountSchema.safeParse(await c.req.json().catch(() => null));
+  if (!p.success) return zerr(c, p.error);
+  return out(c, await editDraftChargeAmountService(
+    ctxOf(c), c.req.param("id"), c.req.param("chargeId"), p.data,
+  ));
+});
 
 // IMPORTANT: register /invoices/approve-bulk BEFORE /invoices/:id/approve
 // so "approve-bulk" is not captured as the :id param.

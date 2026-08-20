@@ -63,8 +63,8 @@ const STATUS_PILLS: { value: StatusFilter; label: string }[] = [
 // Search filters across displayName, primaryEmail, formattedPhone/primaryPhone,
 // nationality, and each unit's propertyName + unitCode (see the haystack below).
 
-export function OwnerTable({ owners }: { owners: OwnerListItem[] }) {
-  const [searchQ, setSearchQ] = useState("");
+export function OwnerTable({ owners, focusedPartyId = null }: { owners: OwnerListItem[]; focusedPartyId?: string | null }) {
+  const [searchQ, setSearchQ] = useState(() => owners.find((owner) => owner.id === focusedPartyId)?.displayName ?? "");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
   const filtered = useMemo(() => {
@@ -164,7 +164,7 @@ export function OwnerTable({ owners }: { owners: OwnerListItem[] }) {
                 </td>
               </tr>
             ) : (
-              filtered.map((o) => <OwnerRow key={o.id} owner={o} />)
+              filtered.map((o) => <OwnerRow key={o.id} owner={o} initiallyExpanded={o.id === focusedPartyId} />)
             )}
           </tbody>
         </table>
@@ -173,10 +173,10 @@ export function OwnerTable({ owners }: { owners: OwnerListItem[] }) {
   );
 }
 
-function OwnerRow({ owner }: { owner: OwnerListItem }) {
+function OwnerRow({ owner, initiallyExpanded = false }: { owner: OwnerListItem; initiallyExpanded?: boolean }) {
   const [editOpen, setEditOpen] = useState(false);
   const [blacklistOpen, setBlacklistOpen] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initiallyExpanded);
   const [resolveOpen, setResolveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);

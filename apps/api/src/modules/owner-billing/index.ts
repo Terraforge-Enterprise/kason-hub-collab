@@ -3,6 +3,7 @@ export {
   addAdjustmentLineService,
   addStatementLineService,
   approveStatementService,
+  firstCheckStatementService,
   createFeeConfigService,
   generateStatementService,
   getFeeConfigService,

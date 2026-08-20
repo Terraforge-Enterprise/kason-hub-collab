@@ -321,7 +321,7 @@ export function EditAfterSignedDialog({
 
           <div className="border-t border-border/40 pt-4">
             <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-              Charges (MYR)
+              Charges (RM)
             </p>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
               <div>

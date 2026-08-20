@@ -38,7 +38,7 @@
 // room, each saves via the real per-unit PUT with every existing guard, and the
 // admin can edit several rooms in one sitting because a save no longer closes
 // the apartment dialog.
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
@@ -242,11 +242,16 @@ function ArchivedRoomsSection({
 export function EditApartmentShell({
   trigger,
   unit,
+  initialSection,
+  initialIntent,
 }: {
   trigger: ReactNode;
   unit: UnitRowData;
+  initialSection?: "tenant" | "owner";
+  initialIntent?: "addTenant";
 }) {
   const [open, setOpen] = useState(false);
+  const didScrollToInitialSection = useRef(false);
   // null = "follow the clicked unit" (also the reset value on close, so a
   // reopen from a DIFFERENT unit's row doesn't reuse the previous session's
   // tab selection).
@@ -326,6 +331,15 @@ export function EditApartmentShell({
 
   const hasError = clickedDetailQuery.isError || activeDetailQuery.isError;
 
+  useEffect(() => {
+    if (!open || loading || !initialSection || didScrollToInitialSection.current) return;
+    didScrollToInitialSection.current = true;
+    const sectionId = initialSection === "owner" ? "unitsec-owner" : "unitsec-listing";
+    requestAnimationFrame(() => {
+      document.getElementById(sectionId)?.scrollIntoView({ block: "start" });
+    });
+  }, [initialSection, loading, open]);
+
   // Only a PARTITIONED apartment takes more rooms. Adding a room to a WHOLE
   // apartment would make it MIXED — that is the Listing-mode flip's job, and
   // the flip control already lives inside each room's form.
@@ -342,6 +356,7 @@ export function EditApartmentShell({
     if (!next) {
       setSelectedRoomId(null);
       setAdding(false);
+      didScrollToInitialSection.current = false;
     }
   }
 
@@ -463,6 +478,7 @@ export function EditApartmentShell({
                   unitId={activeRoomId}
                   propertyName={propertyName}
                   apartment={apartment}
+                  initialIntent={initialIntent}
                   onClose={() => setOpen(false)}
                   onSaved={() => {
                     // A room saved: KEEP the apartment dialog open (do NOT close)

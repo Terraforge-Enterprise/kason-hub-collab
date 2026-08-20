@@ -39,6 +39,7 @@ export function cellValue(row: GridRow, columnId: string): string | number | nul
     case "cleaningTenant":
       return row.entry?.cleaning ?? null;
     case "tnbOwner":
+    case "tnbTenant":
       return row.entry?.tnbTotal ?? null;
     case "airOwner":
     case "airTenant":
