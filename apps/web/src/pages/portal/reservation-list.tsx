@@ -620,7 +620,7 @@ function ResubmitDialog({
           {/* Charges */}
           <section>
             <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
-              Charges (MYR)
+              Charges (RM)
             </p>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
               <div>

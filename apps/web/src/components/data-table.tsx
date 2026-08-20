@@ -79,14 +79,14 @@ export function EnhancedDataTable<T extends { id: string }>({
           />
         </div>
       )}
-      <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
+      <div className="max-w-full overflow-x-auto rounded-lg border border-[var(--card-border)] bg-white dark:bg-card">
         <table className="min-w-full border-collapse text-left text-sm">
-          <thead className="border-b border-[var(--border)] bg-[var(--page-bg)] text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
+          <thead className="border-b border-[var(--card-border)] bg-[var(--table-head)] text-[10px] uppercase tracking-widest text-[var(--navy-text)]">
             <tr>
               {columns.map((col) => (
                 <th
                   key={col.key}
-                  className={cn("px-4 py-3 font-semibold", col.sortable && "cursor-pointer select-none", col.className)}
+                  className={cn("px-4 py-3 font-bold text-[var(--navy-text)]", col.sortable && "cursor-pointer select-none", col.className)}
                   onClick={col.sortable ? () => handleSort(col.key) : undefined}
                 >
                   <span className="flex items-center gap-1">
@@ -118,7 +118,7 @@ export function EnhancedDataTable<T extends { id: string }>({
                   )}
                 >
                   {columns.map((col) => (
-                    <td key={col.key} className={cn("px-4 py-3.5 text-sm text-[var(--text-primary)]", col.className)}>
+                    <td key={col.key} className={cn("max-w-[24rem] px-4 py-3.5 text-sm text-[var(--text-primary)] [overflow-wrap:anywhere]", col.className)}>
                       {col.render(row)}
                     </td>
                   ))}

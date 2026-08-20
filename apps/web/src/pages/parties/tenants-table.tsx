@@ -71,8 +71,8 @@ const STATUS_PILLS: { value: StatusFilter; label: string }[] = [
 // Search filters across displayName, primaryEmail, formattedPhone/primaryPhone,
 // occupation, and each unit's propertyName + unitCode (see the haystack below).
 
-export function TenantTable({ tenants }: { tenants: TenantListItem[] }) {
-  const [searchQ, setSearchQ] = useState("");
+export function TenantTable({ tenants, focusedPartyId = null }: { tenants: TenantListItem[]; focusedPartyId?: string | null }) {
+  const [searchQ, setSearchQ] = useState(() => tenants.find((tenant) => tenant.id === focusedPartyId)?.displayName ?? "");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
   const filtered = useMemo(() => {
@@ -172,7 +172,7 @@ export function TenantTable({ tenants }: { tenants: TenantListItem[] }) {
                 </td>
               </tr>
             ) : (
-              filtered.map((t) => <TenantRow key={t.id} tenant={t} />)
+              filtered.map((t) => <TenantRow key={t.id} tenant={t} initiallyExpanded={t.id === focusedPartyId} />)
             )}
           </tbody>
         </table>
@@ -181,10 +181,10 @@ export function TenantTable({ tenants }: { tenants: TenantListItem[] }) {
   );
 }
 
-function TenantRow({ tenant }: { tenant: TenantListItem }) {
+function TenantRow({ tenant, initiallyExpanded = false }: { tenant: TenantListItem; initiallyExpanded?: boolean }) {
   const [editOpen, setEditOpen] = useState(false);
   const [blacklistOpen, setBlacklistOpen] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initiallyExpanded);
   const [resolveOpen, setResolveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);

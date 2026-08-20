@@ -59,8 +59,8 @@ export default function PortalChargeDetailPage() {
         <Row label="Type" value={charge.chargeType} />
         <Row label="Description" value={charge.description ?? "—"} />
         <Row label="Due Date" value={charge.dueDate.slice(0, 10)} />
-        <Row label="Amount" value={`MYR ${charge.amount.toFixed(2)}`} />
-        <Row label="Outstanding" value={`MYR ${charge.outstandingAmount.toFixed(2)}`} />
+        <Row label="Amount" value={`RM ${charge.amount.toFixed(2)}`} />
+        <Row label="Outstanding" value={`RM ${charge.outstandingAmount.toFixed(2)}`} />
         <Row label="Status" value={charge.status} />
       </div>
 
@@ -86,7 +86,7 @@ export default function PortalChargeDetailPage() {
         <div className="rounded-lg bg-[var(--card-bg)] border border-[var(--card-border)] p-6 space-y-3">
           <h2 className="text-sm font-semibold text-[var(--text-primary)]">Credit applied</h2>
           {charge.creditApplications!.map((a, i) => (
-            <Row key={i} label={`Credit applied — ${a.creditNoteNumber}`} value={`MYR ${a.amount.toFixed(2)}`} />
+            <Row key={i} label={`Credit applied — ${a.creditNoteNumber}`} value={`RM ${a.amount.toFixed(2)}`} />
           ))}
         </div>
       )}
@@ -114,7 +114,7 @@ export default function PortalChargeDetailPage() {
                 not permitted on this surface (mirrors the Pay Charges basket
                 lock). No input: the tenant cannot edit this value. */}
             <div className="flex items-center gap-1 text-sm text-[var(--text-primary)]">
-              <span className="text-xs text-[var(--text-secondary)]">MYR</span>
+              <span className="text-xs text-[var(--text-secondary)]">RM</span>
               <span className="font-medium tabular-nums">{charge.outstandingAmount.toFixed(2)}</span>
             </div>
           </div>

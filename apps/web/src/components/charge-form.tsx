@@ -256,7 +256,7 @@ export function ChargeForm({
         </Field>
       )}
       <div className="grid gap-4 md:grid-cols-2">
-        <Field label="Amount (MYR)">
+        <Field label="Amount (RM)">
           <TextInput
             type="number"
             min={0}

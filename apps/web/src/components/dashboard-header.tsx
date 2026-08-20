@@ -18,8 +18,8 @@ export function DashboardHeader({ leftSlot, children }: DashboardHeaderProps) {
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--card-bg)] px-4 lg:px-6">
       <div className="flex items-center gap-3">
         {leftSlot}
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[#B8963E] via-[#D4AF37] to-[#E8CF6D] lg:hidden">
-          <span className="text-xs font-bold text-white">K</span>
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--navy)] ring-1 ring-[var(--gold)] lg:hidden">
+          <span className="text-xs font-bold text-[var(--gold-light)]">K</span>
         </div>
         <div className="hidden sm:block">
           <p className="text-sm font-semibold text-[var(--text-primary)]">{orgName}</p>

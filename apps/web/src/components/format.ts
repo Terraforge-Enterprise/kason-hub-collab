@@ -66,11 +66,12 @@ export function formatRM0(value: number | null | undefined) {
 }
 
 export function formatMoney(value: number | null | undefined, currency = "MYR") {
-  if (value == null) return `0 ${currency}`;
-  return `${value.toLocaleString("en-MY", {
+  const label = currency === "MYR" ? "RM" : currency;
+  if (value == null) return `${label} 0`;
+  return `${label} ${value.toLocaleString("en-MY", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
-  })} ${currency}`;
+  })}`;
 }
 
 // Onblur normalizer for "person name" inputs. Splits on any whitespace and

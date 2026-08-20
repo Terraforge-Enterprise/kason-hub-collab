@@ -56,12 +56,12 @@ function NavLinkItem({
         "group relative flex items-center rounded-lg py-2 text-sm font-medium transition-all duration-200",
         collapsed ? "justify-center px-2" : "gap-3 px-3",
         active
-          ? "bg-white/[0.08] text-[#D4AF37]"
-          : "text-gray-200 hover:bg-white/[0.10] hover:text-white",
+          ? "bg-[var(--sidebar-active-bg)] text-[var(--gold-light)] shadow-[inset_0_0_0_1px_var(--sidebar-active-border)]"
+          : "text-[var(--sidebar-ink)] hover:bg-[var(--sidebar-hover)] hover:text-white",
       )}
     >
       {active && (
-        <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-[#D4AF37]" />
+        <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-[var(--gold)]" />
       )}
       <item.icon className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
       {!collapsed && <span className="truncate">{item.title}</span>}
@@ -95,7 +95,7 @@ function CollapsibleSection({
         type="button"
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={isOpen}
-        className="mb-1 flex items-center justify-between rounded-md px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400 transition-colors hover:text-white"
+        className="mb-1 flex items-center justify-between rounded-md px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--sidebar-muted)] transition-colors hover:text-[var(--gold-light)]"
       >
         <span>{label}</span>
         <ChevronDown
@@ -143,7 +143,7 @@ export function SidebarNav({ collapsed = false }: { collapsed?: boolean }) {
         return (
           <div key={section.label} className="flex flex-col gap-0.5">
             {!collapsed && (
-              <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">
+              <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--sidebar-muted)]">
                 {section.label}
               </p>
             )}
@@ -180,7 +180,7 @@ export function MobileNav() {
               className={cn(
                 "flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition",
                 active
-                  ? "border-amber-300/40 bg-amber-50 text-[var(--gold-dark)] dark:border-amber-700/30 dark:bg-amber-900/20"
+                  ? "border-[var(--gold)] bg-[#FFF9EC] text-[var(--navy-text)] dark:bg-muted"
                   : "border-[var(--border)] bg-[var(--card-bg)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
               )}
             >

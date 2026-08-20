@@ -82,11 +82,7 @@ const STATUS_META: Record<
 function formatMoney(value: string): string {
   const n = Number(value);
   if (!Number.isFinite(n)) return value;
-  return new Intl.NumberFormat("en-MY", {
-    style: "currency",
-    currency: "MYR",
-    minimumFractionDigits: 2,
-  }).format(n);
+  return `RM ${n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatDateTime(iso: string): string {

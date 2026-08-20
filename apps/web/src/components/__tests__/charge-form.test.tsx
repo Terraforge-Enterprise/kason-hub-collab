@@ -74,7 +74,7 @@ describe("ChargeForm (flag ON)", () => {
     const select = (await screen.findByLabelText("Category")) as HTMLSelectElement;
     await waitFor(() => expect(select.querySelectorAll("optgroup")).toHaveLength(2));
     fireEvent.change(select, { target: { value: "cat-rental" } });
-    fireEvent.change(screen.getByLabelText("Amount (MYR)"), { target: { value: "1500" } });
+    fireEvent.change(screen.getByLabelText("Amount (RM)"), { target: { value: "1500" } });
     // Field wraps its hint text inside the same <label>, so the label's
     // accessible text for "Month" is "Month" + the hint, not an exact match —
     // per the brief's escape hatch, target the control via the label wrapper.
@@ -130,7 +130,7 @@ describe("ChargeForm duplicate-charge feedback (Spec2 R10a)", () => {
   async function fillAndSubmit() {
     await screen.findByLabelText("Charge type");
     fireEvent.change(screen.getByLabelText("Charge type"), { target: { value: "access_card" } });
-    fireEvent.change(screen.getByLabelText("Amount (MYR)"), { target: { value: "100" } });
+    fireEvent.change(screen.getByLabelText("Amount (RM)"), { target: { value: "100" } });
     fireEvent.click(screen.getByRole("button", { name: "Create draft charge" }));
   }
 
@@ -194,7 +194,7 @@ describe("ChargeForm duplicate-charge feedback (Spec2 R10a)", () => {
       if (path === "/billing/charges") return Promise.resolve({ id: "charge-2" });
       return Promise.resolve({ data: [] });
     });
-    fireEvent.change(screen.getByLabelText("Amount (MYR)"), { target: { value: "200" } });
+    fireEvent.change(screen.getByLabelText("Amount (RM)"), { target: { value: "200" } });
     fireEvent.click(screen.getByRole("button", { name: "Create draft charge" }));
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ id: "charge-2" })));

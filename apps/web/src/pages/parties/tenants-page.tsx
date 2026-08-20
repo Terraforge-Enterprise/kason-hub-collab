@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { Plus, Users, UserCheck, ShieldAlert, Briefcase } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,8 @@ import { PartiesAreaTabs } from "./parties-area-tabs";
 import type { TenantListItem } from "./tenants-table";
 
 export default function TenantsPage() {
+  const [searchParams] = useSearchParams();
+  const focusedPartyId = searchParams.get("partyId");
   const tenants = useQuery({
     queryKey: ["tenants"],
     queryFn: () => apiFetch<{ data: TenantListItem[] }>("/parties/tenants"),
@@ -134,7 +137,7 @@ export default function TenantsPage() {
 
       {/* Glass table card */}
       <Card className="bg-background/60 backdrop-blur-xl border-border/50 shadow-xl overflow-hidden py-0">
-        <TenantTable tenants={tenantList} />
+        <TenantTable tenants={tenantList} focusedPartyId={focusedPartyId} />
       </Card>
     </div>
   );

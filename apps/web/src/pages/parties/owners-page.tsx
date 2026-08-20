@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { Plus } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { PageHeader, Surface } from "@/components/ui";
@@ -9,6 +10,8 @@ import { PartiesAreaTabs } from "./parties-area-tabs";
 import type { OwnerListItem } from "./owners-table";
 
 export default function OwnersPage() {
+  const [searchParams] = useSearchParams();
+  const focusedPartyId = searchParams.get("partyId");
   const owners = useQuery({
     queryKey: ["owners"],
     queryFn: () => apiFetch<{ data: OwnerListItem[] }>("/parties/owners"),
@@ -72,7 +75,7 @@ export default function OwnersPage() {
           />
         }
       >
-        <OwnerTable owners={ownerList} />
+        <OwnerTable owners={ownerList} focusedPartyId={focusedPartyId} />
       </Surface>
     </div>
   );

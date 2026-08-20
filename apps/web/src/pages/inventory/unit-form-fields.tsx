@@ -15,6 +15,7 @@ import {
   Wallet,
   FileText,
   Percent,
+  Plus,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { SelectInput, TextAreaInput, TextInput } from "@/components/form-ui";
@@ -30,6 +31,8 @@ import { TagInput } from "@/components/tag-input";
 import { useActiveAmenities } from "@/hooks/use-amenities";
 import { cn } from "@/lib/utils";
 import { isPhase2FlagEnabled } from "@/lib/feature-flags";
+import { Button } from "@/components/ui/button";
+import { CreateOwnerDialog } from "@/pages/parties/owners-action-dialogs";
 
 /** Occupancy errors plus the two apartment-scoped fields the create modal owns.
  *  Structurally a superset of OccupancyFieldErrors, so it still passes straight
@@ -292,16 +295,21 @@ export function FormField({
   hint,
   children,
   className,
+  action,
 }: {
   label: string;
   hint?: string;
   children: ReactNode;
   className?: string;
+  action?: ReactNode;
 }) {
   const labelId = useId();
   return (
     <div role="group" aria-labelledby={labelId} className={cn("grid gap-1.5", className)}>
-      <span id={labelId} className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</span>
+      <div className="flex items-center justify-between gap-3">
+        <span id={labelId} className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</span>
+        {action}
+      </div>
       {children}
       {hint && <span className="text-xs text-muted-foreground/80">{hint}</span>}
     </div>
@@ -1160,8 +1168,8 @@ export function UnitFormBody({
             label="Monthly rental (asking rate)"
             hint={
               state.listingStatus !== "draft"
-                ? "MYR per month · the listing's asking rate, not the tenant's negotiated rent · required to publish — leave blank to save as Draft."
-                : "MYR per month · the listing's asking rate, not the tenant's negotiated rent"
+                ? "RM per month · the listing's asking rate, not the tenant's negotiated rent · required to publish — leave blank to save as Draft."
+                : "RM per month · the listing's asking rate, not the tenant's negotiated rent"
             }
           >
             <TextInput
@@ -1414,6 +1422,25 @@ export function UnitFormBody({
         {showOwner && (
           <FormField
             label="Owner"
+            action={
+              ownerEditable && !state.ownerPartyId ? (
+                <CreateOwnerDialog
+                  onCreated={(owner) =>
+                    set({
+                      ownerPartyId: owner.id,
+                      ownerName: owner.displayName,
+                      ownerPhone: owner.primaryPhone ?? null,
+                    })
+                  }
+                  trigger={
+                    <Button type="button" variant="outline" size="sm">
+                      <Plus className="h-4 w-4" />
+                      Create Owner
+                    </Button>
+                  }
+                />
+              ) : null
+            }
             hint={
               ownerEditable
                 ? "Owner of the whole apartment — applies to every room. Required before a room may be marked Occupied. Drives management fee and owner statements."
@@ -1531,7 +1558,7 @@ export function UnitFormBody({
           </span>
         </label>
         {state.hasPaxDeduction && (
-          <FormField label="Deduction per pax" hint="MYR subtracted from monthly rental, per occupant.">
+          <FormField label="Deduction per pax" hint="RM subtracted from monthly rental, per occupant.">
             <TextInput
               type="number"
               min={0}

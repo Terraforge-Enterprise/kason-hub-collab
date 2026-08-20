@@ -1,4 +1,4 @@
-import type { ComponentType, ReactNode } from "react";
+import type { ComponentType, CSSProperties, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { GlowCard } from "@/components/ui/glow-card";
@@ -49,8 +49,8 @@ export function PageHeader({
     <section className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h1 className="font-display flex items-center gap-3 text-3xl font-bold text-foreground md:text-4xl">
-            {HeaderIcon ? <HeaderIcon className="h-8 w-8 shrink-0 text-primary" /> : null}
+          <h1 className="font-display flex items-center gap-3 text-3xl font-bold text-[var(--navy-text)] dark:text-foreground md:text-4xl">
+            {HeaderIcon ? <HeaderIcon className="h-8 w-8 shrink-0 text-[var(--gold-dark)] dark:text-[var(--gold-light)]" /> : null}
             <span className="min-w-0">{title}</span>
           </h1>
           {description ? <p className="mt-1 text-muted-foreground">{description}</p> : null}
@@ -66,7 +66,7 @@ export function PageHeader({
               <GlowCard
                 key={m.label}
                 glowColor={color}
-                className="border border-border/50 bg-background/40 p-6 backdrop-blur-xl"
+                className="border border-[var(--card-border)] bg-card p-6 shadow-[var(--card-shadow)]"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 space-y-2">
@@ -105,14 +105,14 @@ export function Surface({
   return (
     <section
       className={cn(
-        "overflow-hidden rounded-xl border border-border/50 bg-background/60 shadow-xl backdrop-blur-xl",
+        "overflow-hidden rounded-xl border border-[var(--card-border)] bg-card shadow-[var(--card-shadow)]",
         className,
       )}
     >
       {title ? (
-        <div className="flex items-center justify-between border-b border-border/40 px-4 py-3 lg:px-5">
+        <div className="flex items-center justify-between border-b border-[var(--card-border)] bg-[#F8FAFC] px-4 py-3 dark:bg-muted lg:px-5">
           <div>
-            <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+            <h2 className="text-sm font-bold text-[var(--navy-text)] dark:text-foreground">{title}</h2>
             {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
           </div>
           {actions ? <div>{actions}</div> : null}
@@ -125,30 +125,30 @@ export function Surface({
 
 export function TableWrap({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
+    <div className="max-w-full overflow-x-auto rounded-lg border border-[var(--card-border)] bg-white dark:bg-card">
       {children}
     </div>
   );
 }
 
-export function DataTable({ children }: { children: ReactNode }) {
-  return <table className="min-w-full border-collapse text-left text-sm">{children}</table>;
+export function DataTable({ children, className, style }: { children: ReactNode; className?: string; style?: CSSProperties }) {
+  return <table className={cn("min-w-full border-collapse text-left text-sm", className)} style={style}>{children}</table>;
 }
 
 export function TableHead({ children }: { children: ReactNode }) {
   return (
-    <thead className="border-b border-[var(--border)] bg-[var(--page-bg)] text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
+    <thead className="border-b border-[var(--card-border)] bg-[var(--table-head)] text-[10px] uppercase tracking-widest text-[var(--navy-text)]">
       {children}
     </thead>
   );
 }
 
 export function HeadCell({ children, className }: { children: ReactNode; className?: string }) {
-  return <th className={cn("px-4 py-3 font-semibold", className)}>{children}</th>;
+  return <th className={cn("px-4 py-3 font-bold text-[var(--navy-text)]", className)}>{children}</th>;
 }
 
 export function BodyCell({ children, className }: { children: ReactNode; className?: string }) {
-  return <td className={cn("px-4 py-3.5 text-sm text-[var(--text-primary)]", className)}>{children}</td>;
+  return <td className={cn("max-w-[24rem] px-4 py-3.5 text-sm text-[var(--text-primary)] [overflow-wrap:anywhere]", className)}>{children}</td>;
 }
 
 export function Row({ children }: { children: ReactNode }) {

@@ -60,7 +60,19 @@ function extractFieldErrors(err: unknown): Record<string, string> {
 
 // ── Create ────────────────────────────────────────────────────────────────
 
-export function CreateOwnerDialog({ trigger }: { trigger: ReactNode }) {
+type CreatedOwner = {
+  id: string;
+  displayName: string;
+  primaryPhone?: string | null;
+};
+
+export function CreateOwnerDialog({
+  trigger,
+  onCreated,
+}: {
+  trigger: ReactNode;
+  onCreated?: (owner: CreatedOwner) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [phone, setPhone] = useState<string | null>(null);
   const [phoneError, setPhoneError] = useState<string | null>(null);
@@ -75,17 +87,18 @@ export function CreateOwnerDialog({ trigger }: { trigger: ReactNode }) {
 
   const mutation = useMutation({
     mutationFn: (body: Record<string, string>) =>
-      apiFetch("/parties/owners", {
+      apiFetch<CreatedOwner>("/parties/owners", {
         method: "POST",
         body: JSON.stringify(body),
       }),
-    onSuccess: () => {
+    onSuccess: (owner) => {
       queryClient.invalidateQueries({ queryKey: ["owners"] });
       toast.success("Owner created.");
       setPhone(null);
       resetPhoneState();
       setFieldErrors({});
       setOpen(false);
+      onCreated?.(owner);
     },
     onError: (err: Error) => {
       toast.error(err.message || "Failed to create owner.");

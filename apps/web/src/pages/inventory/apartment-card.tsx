@@ -15,6 +15,8 @@ import {
   ChevronRight,
   Maximize2,
   Pencil,
+  UserPlus,
+  UsersRound,
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -28,23 +30,28 @@ import type { ApartmentSummary } from "@/api/inventory-units-batch";
 
 function formatRental(amount: number | null, currency = "MYR"): string {
   if (amount == null) return "—";
-  return new Intl.NumberFormat("en-MY", {
-    style: "currency",
-    currency,
+  const label = currency === "MYR" ? "RM" : currency;
+  return `${label} ${amount.toLocaleString("en-MY", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
-  }).format(amount);
+  })}`;
 }
 
 export function ApartmentCard({
   apartment,
   editApartmentTrigger,
+  addTenantTrigger,
+  addOwnerTrigger,
   initiallyExpanded = false,
 }: {
   apartment: ApartmentSummary;
   // Trigger is injected by the parent so the parent owns the dialog
   // mounting + state. It is rendered as the action button's child.
   editApartmentTrigger: ReactNode;
+  /** Opens the existing unit edit flow on a room that has no tenant. */
+  addTenantTrigger?: ReactNode;
+  /** Opens the existing apartment edit flow so an owner can be assigned. */
+  addOwnerTrigger?: ReactNode;
   initiallyExpanded?: boolean;
 }) {
   const [expanded, setExpanded] = useState(initiallyExpanded);
@@ -129,6 +136,8 @@ export function ApartmentCard({
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {addTenantTrigger}
+            {addOwnerTrigger}
             {editApartmentTrigger}
           </div>
         </div>
@@ -251,6 +260,46 @@ export function ApartmentCard({
         </CardContent>
       )}
     </Card>
+  );
+}
+
+export function AddTenantButton({
+  apartmentCode,
+  ...rest
+}: {
+  apartmentCode: string;
+} & React.ComponentProps<typeof Button>) {
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      aria-label={`Add tenant to ${apartmentCode}`}
+      title={`Add tenant (${apartmentCode})`}
+      {...rest}
+    >
+      <UserPlus className="h-4 w-4" />
+      Add Tenant
+    </Button>
+  );
+}
+
+export function AddOwnerButton({
+  apartmentCode,
+  ...rest
+}: {
+  apartmentCode: string;
+} & React.ComponentProps<typeof Button>) {
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      aria-label={`Add owner to ${apartmentCode}`}
+      title={`Add owner (${apartmentCode})`}
+      {...rest}
+    >
+      <UsersRound className="h-4 w-4" />
+      Add Owner
+    </Button>
   );
 }
 

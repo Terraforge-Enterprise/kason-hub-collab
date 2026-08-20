@@ -31,7 +31,7 @@ export function SidebarShell() {
     <button
       type="button"
       onClick={() => setCollapsed((c) => !c)}
-      className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:text-white hover:bg-white/[0.08] transition-colors"
+      className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--sidebar-muted)] transition-colors hover:bg-[var(--sidebar-hover)] hover:text-[var(--gold-light)]"
       title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
     >
       {collapsed ? (
@@ -75,7 +75,7 @@ export function SidebarShell() {
             />
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-white">KAEN Properties</p>
-              <p className="truncate text-[11px] text-slate-400/80">Property Management</p>
+              <p className="truncate text-[11px] text-[var(--sidebar-muted)]">Property Management</p>
             </div>
           </div>
           {toggleBtn}
@@ -95,7 +95,7 @@ export function SidebarShell() {
           <button
             type="button"
             onClick={handleLogout}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/5 hover:text-red-400"
+            className="flex h-10 w-10 items-center justify-center rounded-lg text-[var(--sidebar-muted)] transition hover:bg-[var(--sidebar-hover)] hover:text-red-400"
             title="Logout"
           >
             <LogOut className="h-4 w-4" />
@@ -112,7 +112,7 @@ export function SidebarShell() {
           <button
             type="button"
             onClick={handleLogout}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/5 hover:text-red-400"
+            className="flex h-10 w-10 items-center justify-center rounded-lg text-[var(--sidebar-muted)] transition hover:bg-[var(--sidebar-hover)] hover:text-red-400"
             title="Logout"
           >
             <LogOut className="h-4 w-4" />

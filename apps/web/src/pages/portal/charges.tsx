@@ -75,8 +75,8 @@ export default function PortalChargesPage() {
                 </td>
                 <td className="px-4 py-3 text-[var(--text-primary)]">{c.chargeType}</td>
                 <td className="px-4 py-3 text-[var(--text-secondary)]">{c.dueDate.slice(0, 10)}</td>
-                <td className="px-4 py-3 text-right text-[var(--text-primary)]">MYR {c.amount.toFixed(2)}</td>
-                <td className="px-4 py-3 text-right text-[var(--text-primary)]">MYR {c.outstandingAmount.toFixed(2)}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-[var(--text-primary)]">RM {c.amount.toFixed(2)}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-[var(--text-primary)]">RM {c.outstandingAmount.toFixed(2)}</td>
                 <td className="px-4 py-3"><StatusBadge status={c.status} /></td>
               </tr>
             ))}
