@@ -918,7 +918,7 @@ function SalesEntryRow({
             <span className="text-xs text-muted-foreground block">
               Purchase {formatRM(unit.purchasePrice)}
               {unit.expectedRental != null
-                ? ` · Expected rental ${formatRM(unit.expectedRental)}/mo`
+                ? ` · Expected rental ${formatRM(unit.expectedRental)}/month`
                 : ""}
             </span>
             {unit.amendmentNotes ? (

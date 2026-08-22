@@ -586,6 +586,28 @@ export async function findUnitDetail(
   });
   if (!listing || listing.organizationId !== organizationId) return null;
 
+  // Apartment-wide history: a whole-unit listing may later be partitioned (or
+  // vice versa), so limiting history to the currently opened Listing would
+  // hide earlier legitimate tenancies from the same physical apartment.
+  const tenancyHistoryRows = await db.tenancy.findMany({
+    where: {
+      organizationId,
+      unit: { apartmentId: listing.apartmentId },
+    },
+    orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
+    select: {
+      id: true,
+      tenancyCode: true,
+      tenantPartyId: true,
+      status: true,
+      startDate: true,
+      endDate: true,
+      monthlyRentAmount: true,
+      tenantParty: { select: { displayName: true } },
+      unit: { select: { listingType: true } },
+    },
+  });
+
   // Resolve hiddenFromPartyIds → agent names. Skip the round-trip when empty.
   let hiddenFromAgentNames: string[] = [];
   if (listing.hiddenFromPartyIds.length > 0) {
@@ -702,6 +724,17 @@ export async function findUnitDetail(
           };
         })()
       : null,
+    tenancyHistory: tenancyHistoryRows.map((t) => ({
+      id: t.id,
+      tenancyCode: t.tenancyCode,
+      tenantPartyId: t.tenantPartyId,
+      tenantName: t.tenantParty.displayName,
+      listingLabel: t.unit.listingType,
+      status: t.status,
+      startDate: t.startDate.toISOString().slice(0, 10),
+      endDate: t.endDate?.toISOString().slice(0, 10) ?? null,
+      monthlyRentAmount: Number(t.monthlyRentAmount.toString()),
+    })),
     currentTenancyStartDate:
       listing.tenancies[0]?.startDate?.toISOString() ?? null,
     currentTenancyEndDate:

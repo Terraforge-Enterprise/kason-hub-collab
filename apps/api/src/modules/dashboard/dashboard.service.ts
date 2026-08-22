@@ -4,6 +4,7 @@ import { getCounts, getOrgName, getPostedCharges } from "./dashboard.repository"
 import { dashboardCache } from "../../lib/cache";
 
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const DASHBOARD_COMPANY_NAME = "KAEN Properties Management Sdn Bhd";
 
 export async function getDashboardSummaryService(session: DashboardSession) {
   const cacheKey = `dashboard:summary:${session.orgId}`;
@@ -16,7 +17,7 @@ export async function getDashboardSummaryService(session: DashboardSession) {
 }
 
 async function _getDashboardSummary(session: DashboardSession) {
-  const [orgName, counts, postedCharges] = await Promise.all([
+  const [, counts, postedCharges] = await Promise.all([
     getOrgName(session.orgId),
     getCounts(session.orgId),
     getPostedCharges(session.orgId),
@@ -49,7 +50,7 @@ async function _getDashboardSummary(session: DashboardSession) {
   const occupancyRate = counts.unitCount > 0 ? Math.round((counts.occupiedUnitCount / counts.unitCount) * 100) : 0;
 
   return {
-    orgName,
+    orgName: DASHBOARD_COMPANY_NAME,
     metrics: {
       ...counts,
       occupancyRate,

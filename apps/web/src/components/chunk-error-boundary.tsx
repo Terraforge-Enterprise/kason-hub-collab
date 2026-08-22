@@ -41,12 +41,12 @@ export function ChunkLoadMarker(): null {
  */
 export class ChunkErrorBoundary extends Component<
   { children: ReactNode },
-  { failed: boolean }
+  { failed: boolean; chunkFailure: boolean }
 > {
-  state = { failed: false };
+  state = { failed: false, chunkFailure: false };
 
-  static getDerivedStateFromError(): { failed: boolean } {
-    return { failed: true };
+  static getDerivedStateFromError(error: unknown): { failed: boolean; chunkFailure: boolean } {
+    return { failed: true, chunkFailure: isChunkLoadError(error) };
   }
 
   componentDidCatch(error: unknown): void {
@@ -72,8 +72,9 @@ export class ChunkErrorBoundary extends Component<
       return (
         <div className="flex h-full min-h-[50vh] flex-col items-center justify-center gap-4 p-8 text-center">
           <p className="max-w-sm text-sm text-muted-foreground">
-            This page failed to load. The app may have just updated — reloading usually
-            fixes it.
+            {this.state.chunkFailure
+              ? "This page could not load the latest app files. Reloading usually fixes it."
+              : "This page encountered an unexpected error. Reload the page and try again."}
           </p>
           <button
             type="button"

@@ -8,6 +8,7 @@ import { getAdminToken } from "@/lib/auth";
 import type { GridColumn } from "./columns";
 import { buildGridWorkbook } from "./export-xlsx";
 import { projectedOwnerPayout } from "./owner-payout";
+import { isApplicable } from "./cell-applicability";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -46,17 +47,17 @@ function payoutSummaryRow(row: GridRow, owner: OwnerDetail | null) {
   const rental = row.subRows.reduce((sum, item) => sum + amount(item.rental), 0);
   const deposit = row.subRows.reduce((sum, item) => sum + amount(item.deposit), 0);
   const cleaning = amount(row.cleaningRecurringAmount ?? row.entry?.cleaning);
-  const cleaningOwner = row.entry?.cleaningBearer === "owner" ? cleaning : 0;
-  const cleaningTenant = row.entry?.cleaningBearer === "tenant" ? cleaning : 0;
+  const cleaningOwner = isApplicable(row, "cleaningOwner") ? cleaning : 0;
+  const cleaningTenant = isApplicable(row, "cleaningTenant") ? cleaning : 0;
   const tnb = amount(row.entry?.tnbTotal);
-  const tnbTenant = ["recharged", "manager_advanced"].includes(row.entry?.tnbPattern ?? "") ? tnb : 0;
-  const tnbOwner = tnbTenant ? 0 : tnb;
+  const tnbTenant = isApplicable(row, "tnbTenant") ? tnb : 0;
+  const tnbOwner = isApplicable(row, "tnbOwner") ? tnb : 0;
   const water = amount(row.entry?.airSelangor);
-  const waterTenant = ["recharged", "manager_advanced"].includes(row.entry?.airPattern ?? "") ? water : 0;
-  const waterOwner = waterTenant ? 0 : water;
+  const waterTenant = isApplicable(row, "airTenant") ? water : 0;
+  const waterOwner = isApplicable(row, "airOwner") ? water : 0;
   const wifi = amount(row.wifiRecurringAmount ?? row.entry?.wifi);
-  const wifiTenant = row.entry?.wifiBearer === "tenant" ? wifi : 0;
-  const wifiOwner = wifiTenant ? 0 : wifi;
+  const wifiTenant = isApplicable(row, "wifiTenant") ? wifi : 0;
+  const wifiOwner = isApplicable(row, "wifiOwner") ? wifi : 0;
   const maintenance = amount(row.entry?.maintenanceFee);
   return {
     Property: row.propertyName,
@@ -86,8 +87,10 @@ function payoutSummaryRow(row: GridRow, owner: OwnerDetail | null) {
     "Tenant Expenses With SST": amount(row.expenses.tenant.withSstTotal),
     "Owner Expenses Non SST": nonSst(row.expenses.owner.total, row.expenses.owner.withSstTotal),
     "Owner Expenses With SST": amount(row.expenses.owner.withSstTotal),
-    "Management Fee Non SST": amount(row.managementFee?.nonSst),
-    "Management Fee With SST": amount(row.managementFee?.sst),
+    "TA Fee With SST": amount(
+      String(Number(row.agreementFees?.new.amount ?? 0) + Number(row.agreementFees?.renewal.amount ?? 0)),
+    ),
+    "Management Fee With SST": amount(row.managementFee?.total),
     "Owner Payout": projectedOwnerPayout(row),
     "Payout Status": row.ownerPartyId ? (row.ownerPayoutStatus ?? "draft") : "No owner",
   };

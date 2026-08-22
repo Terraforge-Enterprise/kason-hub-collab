@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, it, expect, vi } from "vitest";
-import { OccupancyFields } from "../occupancy-fields";
+import { OccupancyFields, tenancyEndDate } from "../occupancy-fields";
 import { apiFetch } from "@/lib/api-client";
 
 vi.mock("@/lib/api-client", () => ({ apiFetch: vi.fn().mockResolvedValue({ data: [] }) }));
@@ -21,6 +21,12 @@ const base = {
 };
 
 describe("<OccupancyFields>", () => {
+  it("computes one- and two-year tenancy end dates as the day before the anniversary", () => {
+    expect(tenancyEndDate("2026-08-01", 1)).toBe("2027-07-31");
+    expect(tenancyEndDate("2026-08-01", 2)).toBe("2028-07-31");
+    expect(tenancyEndDate("2024-02-29", 1)).toBe("2025-02-28");
+  });
+
   it("renders nothing when not occupied", () => {
     const { container } = render(wrap(<OccupancyFields {...base} occupancyStatus="vacant" />));
     expect(container.firstChild).toBeNull();

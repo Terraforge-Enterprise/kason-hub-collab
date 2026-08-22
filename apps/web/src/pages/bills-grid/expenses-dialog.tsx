@@ -621,7 +621,7 @@ function ExpenseEditForm({
         // (or a stale row left in state across a settlement) can never send a PATCH the
         // server would answer with 409 ENTRY_LOCKED — which, in this all-or-nothing save,
         // would fail the WHOLE batch and lose the admin's edits to the OTHER lines.
-        if (isExpenseLineLocked(r)) continue;
+        const locked = isExpenseLineLocked(r);
         const normalizedAmount = Number(r.amount).toFixed(2);
         const normalizedActualCost = r.actualCost.trim() ? Number(r.actualCost).toFixed(2) : null;
         // `original.chargeCategoryId ?? null`: degrades a stale/partial fixture's
@@ -643,6 +643,21 @@ function ExpenseEditForm({
           (original.costPaymentDate?.slice(0, 10) ?? "") !== r.costPaymentDate ||
           (original.costPaymentAccount ?? "") !== r.costPaymentAccount.trim() ||
           (original.costNotes ?? "") !== r.costNotes.trim();
+        if (locked && costChanged) {
+          // Payments freeze what the customer was charged, not the internal
+          // supplier-cost bookkeeping. Send a cost-only patch so the server can
+          // preserve the immutable charge while the admin completes actual cost.
+          await updateExpense(r.id as string, {
+            actualCost: normalizedActualCost,
+            costVendor: r.costVendor.trim() || null,
+            costPaymentStatus: r.costPaymentStatus,
+            costPaymentDate: r.costPaymentDate || null,
+            costPaymentAccount: r.costPaymentAccount.trim() || null,
+            costNotes: r.costNotes.trim() || null,
+          });
+          continue;
+        }
+        if (locked) continue;
         if (
           original.description !== r.description.trim() ||
           original.amount !== normalizedAmount ||
@@ -1067,36 +1082,24 @@ function ExpenseEditForm({
                   </div>
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                     <Field label="Actual cost (RM)" error={rowError?.field === "actualCost" ? rowError.message : null}>
-                      {locked ? <ReadOnlyValue>{row.actualCost || "Cost pending"}</ReadOnlyValue> : (
-                        <TextInput type="text" inputMode="decimal" aria-label={`Line ${index + 1} actual cost`} value={row.actualCost} onChange={(e) => updateRow(row.key, { actualCost: e.target.value })} placeholder="Leave blank if pending" />
-                      )}
+                      <TextInput type="text" inputMode="decimal" aria-label={`Line ${index + 1} actual cost`} value={row.actualCost} onChange={(e) => updateRow(row.key, { actualCost: e.target.value })} placeholder="Enter 0 if there was no cost" />
                     </Field>
                     <Field label="Vendor / Paid to">
-                      {locked ? <ReadOnlyValue>{row.costVendor || "—"}</ReadOnlyValue> : (
-                        <TextInput aria-label={`Line ${index + 1} cost vendor`} value={row.costVendor} onChange={(e) => updateRow(row.key, { costVendor: e.target.value })} placeholder="Supplier or payee" />
-                      )}
+                      <TextInput aria-label={`Line ${index + 1} cost vendor`} value={row.costVendor} onChange={(e) => updateRow(row.key, { costVendor: e.target.value })} placeholder="Supplier or payee" />
                     </Field>
                     <Field label="Cost payment status" error={rowError?.field === "costPaymentStatus" ? rowError.message : null}>
-                      {locked ? <ReadOnlyValue>{row.costPaymentStatus}</ReadOnlyValue> : (
-                        <SelectInput aria-label={`Line ${index + 1} cost payment status`} value={row.costPaymentStatus} onChange={(e) => updateRow(row.key, { costPaymentStatus: e.target.value as EditableRow["costPaymentStatus"] })}>
-                          <option value="unpaid">Unpaid</option><option value="partial">Partially Paid</option><option value="paid">Paid</option>
-                        </SelectInput>
-                      )}
+                      <SelectInput aria-label={`Line ${index + 1} cost payment status`} value={row.costPaymentStatus} onChange={(e) => updateRow(row.key, { costPaymentStatus: e.target.value as EditableRow["costPaymentStatus"] })}>
+                        <option value="unpaid">Unpaid</option><option value="partial">Partially Paid</option><option value="paid">Paid</option>
+                      </SelectInput>
                     </Field>
                     <Field label="Payment date">
-                      {locked ? <ReadOnlyValue>{row.costPaymentDate || "—"}</ReadOnlyValue> : (
-                        <TextInput type="date" aria-label={`Line ${index + 1} cost payment date`} value={row.costPaymentDate} onChange={(e) => updateRow(row.key, { costPaymentDate: e.target.value })} />
-                      )}
+                      <TextInput type="date" aria-label={`Line ${index + 1} cost payment date`} value={row.costPaymentDate} onChange={(e) => updateRow(row.key, { costPaymentDate: e.target.value })} />
                     </Field>
                     <Field label="Payment account">
-                      {locked ? <ReadOnlyValue>{row.costPaymentAccount || "—"}</ReadOnlyValue> : (
-                        <TextInput aria-label={`Line ${index + 1} cost payment account`} value={row.costPaymentAccount} onChange={(e) => updateRow(row.key, { costPaymentAccount: e.target.value })} placeholder="e.g. Maybank" />
-                      )}
+                      <TextInput aria-label={`Line ${index + 1} cost payment account`} value={row.costPaymentAccount} onChange={(e) => updateRow(row.key, { costPaymentAccount: e.target.value })} placeholder="e.g. Maybank" />
                     </Field>
                     <Field label="Cost remarks">
-                      {locked ? <ReadOnlyValue>{row.costNotes || "—"}</ReadOnlyValue> : (
-                        <TextInput aria-label={`Line ${index + 1} cost remarks`} value={row.costNotes} onChange={(e) => updateRow(row.key, { costNotes: e.target.value })} placeholder="Payment/reference notes" />
-                      )}
+                      <TextInput aria-label={`Line ${index + 1} cost remarks`} value={row.costNotes} onChange={(e) => updateRow(row.key, { costNotes: e.target.value })} placeholder="Payment/reference notes" />
                     </Field>
                   </div>
                 </div>

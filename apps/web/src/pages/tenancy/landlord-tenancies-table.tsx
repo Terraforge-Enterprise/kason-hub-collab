@@ -1,6 +1,10 @@
 import { EnhancedDataTable } from "@/components/data-table";
 import { StatusPill } from "@/components/ui";
-import { formatDate, formatMoney, getStatusTone } from "@/components/format";
+import { formatDate, getStatusTone } from "@/components/format";
+import { useState } from "react";
+import { FileSignature } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ManagementAgreementDialog } from "./management-agreement-dialog";
 
 export type LandlordTenancyListItem = {
   id: string;
@@ -21,6 +25,7 @@ export function LandlordTenancyTable({
 }: {
   tenancies: LandlordTenancyListItem[];
 }) {
+  const [agreement, setAgreement] = useState<LandlordTenancyListItem | null>(null);
   const columns = [
     {
       key: "propertyName",
@@ -33,31 +38,24 @@ export function LandlordTenancyTable({
     },
     {
       key: "landlordName",
-      label: "Landlord",
+      label: "Owner",
       sortable: true,
       sortValue: (row: LandlordTenancyListItem) => row.landlordName,
       render: (row: LandlordTenancyListItem) => row.landlordName,
     },
     {
       key: "startDate",
-      label: "Start",
+      label: "Management Start",
       sortable: true,
       sortValue: (row: LandlordTenancyListItem) => row.startDate,
       render: (row: LandlordTenancyListItem) => formatDate(row.startDate),
     },
     {
       key: "endDate",
-      label: "End",
+      label: "Management End",
       sortable: true,
       sortValue: (row: LandlordTenancyListItem) => row.endDate ?? "",
       render: (row: LandlordTenancyListItem) => formatDate(row.endDate),
-    },
-    {
-      key: "monthlyRent",
-      label: "Monthly Rent",
-      sortable: true,
-      sortValue: (row: LandlordTenancyListItem) => row.monthlyRent,
-      render: (row: LandlordTenancyListItem) => formatMoney(row.monthlyRent),
     },
     {
       key: "status",
@@ -65,18 +63,26 @@ export function LandlordTenancyTable({
       sortable: true,
       sortValue: (row: LandlordTenancyListItem) => row.status,
       render: (row: LandlordTenancyListItem) => (
-        <StatusPill tone={getStatusTone(row.status)}>{row.status}</StatusPill>
+        <StatusPill tone={getStatusTone(row.status)}>
+          {row.status.charAt(0).toUpperCase() + row.status.slice(1)}
+        </StatusPill>
       ),
+    },
+    {
+      key: "agreement",
+      label: "Management Agreement",
+      render: (row: LandlordTenancyListItem) => <Button type="button" variant="outline" size="sm" className="gap-1.5 whitespace-nowrap" onClick={() => setAgreement(row)}><FileSignature className="h-4 w-4" />Create / Open Agreement</Button>,
     },
   ];
 
-  return (
+  return (<>
     <EnhancedDataTable
       data={tenancies}
       columns={columns}
       searchPlaceholder="Search landlord tenancies..."
       searchKeys={["propertyName", "landlordName"]}
-      emptyMessage="No landlord-tenancy linkages yet. Create one below."
+      emptyMessage="No Property Management Agreement records yet."
     />
-  );
+    {agreement ? <ManagementAgreementDialog relation={agreement} open onClose={() => setAgreement(null)} /> : null}
+  </>);
 }

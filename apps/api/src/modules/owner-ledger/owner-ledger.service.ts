@@ -634,7 +634,7 @@ export async function getOwnerMonthsService(
   // pre-statement months (the per-line mgmt fee is COMPUTED, never read from ledger rows).
   const feeConfigRows = await db.managementFeeConfig.findMany({
     where: { organizationId: actor.orgId, ownerPartyId, isActive: true },
-    select: { propertyId: true, feeType: true, feeValue: true, capAmount: true, sstPercent: true, updatedAt: true },
+    select: { propertyId: true, apartmentId: true, feeType: true, feeValue: true, capAmount: true, sstPercent: true, effectiveFrom: true, effectiveTo: true, freePeriodStart: true, freePeriodEnd: true, updatedAt: true },
   });
 
   // 4. Build MonthlyStatementSummary per month
@@ -690,13 +690,14 @@ export async function getOwnerMonthsService(
       rows: [...monthEntries, ...receivableRows] as typeof monthEntries,
       feeConfigRows,
       depositCollectedC: depositC,
+      statementMonth: monthStart,
     });
 
     items.push({
       month,
       grossRental: summary.grossRental,
       totalExpenses: summary.totalExpenses,
-      netPayoutToOwner: centsToString(payout.totalPayoutC),
+      netPayoutToOwner: centsToString(payout.payableToOwnerC),
       depositCollected: centsToString(depositC),
       statementId: stmt?.id ?? null,
       statementStatus: stmt?.status ?? null,
@@ -800,14 +801,14 @@ export async function getUnitsSummaryService(
     sumGrossRentalC       += breakdown.grossRentalC;
     sumDepositCollectedC  += breakdown.depositCollectedC;
     sumDeductibleExpensesC += breakdown.deductibleExpensesC;
-    sumTotalPayoutC       += breakdown.totalPayoutC;
+    sumTotalPayoutC       += breakdown.payableToOwnerC;
     units.push({
       apartmentId: apt.id,
       unitCode: apt.unitCode,
       incomeCollected: centsToString(breakdown.grossRentalC),
       depositCollected: centsToString(breakdown.depositCollectedC),
       deductibleExpenses: centsToString(breakdown.deductibleExpensesC),
-      netPayout: centsToString(breakdown.totalPayoutC),
+      netPayout: centsToString(breakdown.payableToOwnerC),
     });
   }
 
@@ -819,7 +820,7 @@ export async function getUnitsSummaryService(
         incomeCollected: centsToString(combinedBreakdown.grossRentalC),
         depositCollected: centsToString(combinedBreakdown.depositCollectedC),
         deductibleExpenses: centsToString(combinedBreakdown.deductibleExpensesC),
-        netPayout: centsToString(combinedBreakdown.totalPayoutC),
+        netPayout: centsToString(combinedBreakdown.payableToOwnerC),
       }
     : null;
 
@@ -832,7 +833,7 @@ export async function getUnitsSummaryService(
     const residualIncomeC      = combinedBreakdown.grossRentalC       - sumGrossRentalC;
     const residualDepositC     = combinedBreakdown.depositCollectedC  - sumDepositCollectedC;
     const residualDeductibleC  = combinedBreakdown.deductibleExpensesC - sumDeductibleExpensesC;
-    const residualNetC         = combinedBreakdown.totalPayoutC       - sumTotalPayoutC;
+    const residualNetC         = combinedBreakdown.payableToOwnerC    - sumTotalPayoutC;
     if (residualIncomeC !== 0 || residualDepositC !== 0 || residualDeductibleC !== 0 || residualNetC !== 0) {
       units.push({
         apartmentId: null,
@@ -1098,7 +1099,7 @@ export async function getOrgUnitsSummaryService(
           {
             income: centsToString(b?.grossRentalC ?? 0),
             expenses: centsToString(b?.deductibleExpensesC ?? 0),
-            netPayout: centsToString(b?.totalPayoutC ?? 0),
+            netPayout: centsToString(b?.payableToOwnerC ?? 0),
           },
         ];
       }),
@@ -1277,7 +1278,7 @@ export async function getOrgUnitsSummaryService(
           figures: {
             income: centsToString(b.grossRentalC),
             expenses: centsToString(b.deductibleExpensesC),
-            netPayout: centsToString(b.totalPayoutC),
+            netPayout: centsToString(b.payableToOwnerC),
           },
           statement: null,
           openDocuments: unassignedDocsByProperty.get(p.propertyId) ?? 0,
@@ -1333,15 +1334,20 @@ async function resolvePropertyResidualBreakdown(
     where: { organizationId: ctx.orgId, ownerPartyId, isActive: true },
     select: {
       propertyId: true,
+      apartmentId: true,
       feeType: true,
       feeValue: true,
       capAmount: true,
       sstPercent: true,
+      effectiveFrom: true,
+      effectiveTo: true,
+      freePeriodStart: true,
+      freePeriodEnd: true,
       updatedAt: true,
     },
   });
 
-  return computeOwnerPayout({ rows, feeConfigRows, depositCollectedC: 0 });
+  return computeOwnerPayout({ rows, feeConfigRows, depositCollectedC: 0, statementMonth: monthStart });
 }
 
 // ─── Apartment context (P4 unit workspace resolve) ───────────────────────────

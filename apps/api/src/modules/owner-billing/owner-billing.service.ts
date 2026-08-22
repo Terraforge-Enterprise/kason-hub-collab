@@ -45,9 +45,10 @@ import {
   findInvoiceByIdInTx,
   findInvoiceByIdempotencyKey,
   findInvoiceByIdempotencyKeyInTx,
-  findOwnerBorneCommissionSstCharges,
+  findCommissionRentCharges,
   findOwnerBorneUtilityComponents,
   findOwnerInOrg,
+  findApartmentOwnedByOwner,
   findPropertyInOrg,
   findStatementById,
   findUnitOwnedByOwner,
@@ -84,6 +85,8 @@ import type {
   OwnerBillingServiceResult,
   OwnerStatementListRow,
   OwnerStatementPdfResult,
+  OwnerPayoutApprovalPreflight,
+  OwnerPayoutSafetyCheck,
   OwnerStatementRow,
   OwnerStatementSendResult,
   StatementLineInput,
@@ -94,6 +97,7 @@ const STALE = "Record changed — reloaded";
 const NOT_FOUND = "Fee config not found";
 const OWNER_NOT_IN_ORG = "Owner not found in this organization";
 const PROPERTY_NOT_IN_ORG = "Property not found in this organization";
+const UNIT_NOT_OWNED = "Unit not found for this owner";
 const CAP_REQUIRES_AMOUNT = "capAmount is required when feeType is 'cap'";
 
 /**
@@ -108,6 +112,7 @@ function mapConfig(row: DbManagementFeeConfig): ManagementFeeConfigRow {
     id: row.id,
     ownerPartyId: row.ownerPartyId,
     propertyId: row.propertyId,
+    apartmentId: row.apartmentId,
     feeType: row.feeType,
     feeValue: row.feeValue.toString(),
     capAmount: row.capAmount === null ? null : row.capAmount.toString(),
@@ -138,7 +143,12 @@ export async function createFeeConfigService(
   // a Property in this org.
   const ownerInOrg = await findOwnerInOrg(ctx.orgId, input.ownerPartyId);
   if (!ownerInOrg) return { ok: false as const, status: 404, error: OWNER_NOT_IN_ORG };
-  if (input.propertyId != null) {
+  let resolvedPropertyId = input.propertyId ?? null;
+  if (input.apartmentId != null) {
+    const apartment = await findApartmentOwnedByOwner(ctx.orgId, input.ownerPartyId, input.apartmentId);
+    if (!apartment) return { ok: false as const, status: 404, error: UNIT_NOT_OWNED };
+    resolvedPropertyId = apartment.propertyId;
+  } else if (input.propertyId != null) {
     const propertyInOrg = await findPropertyInOrg(ctx.orgId, input.propertyId);
     if (!propertyInOrg) return { ok: false as const, status: 404, error: PROPERTY_NOT_IN_ORG };
   }
@@ -147,7 +157,8 @@ export async function createFeeConfigService(
     const row = await createFeeConfig(tx, {
       organizationId: ctx.orgId,
       ownerPartyId: input.ownerPartyId,
-      propertyId: input.propertyId ?? null,
+      propertyId: resolvedPropertyId,
+      apartmentId: input.apartmentId ?? null,
       feeType: input.feeType,
       feeValue: input.feeValue,
       capAmount: input.capAmount ?? null,
@@ -250,6 +261,12 @@ export async function updateFeeConfigService(
     const propertyInOrg = await findPropertyInOrg(ctx.orgId, patch.propertyId);
     if (!propertyInOrg) return { ok: false as const, status: 404, error: PROPERTY_NOT_IN_ORG };
   }
+  if (patch.apartmentId !== undefined && patch.apartmentId !== null) {
+    const effectiveOwnerId = patch.ownerPartyId ?? existing.ownerPartyId;
+    const apartment = await findApartmentOwnedByOwner(ctx.orgId, effectiveOwnerId, patch.apartmentId);
+    if (!apartment) return { ok: false as const, status: 404, error: UNIT_NOT_OWNED };
+    patch.propertyId = apartment.propertyId;
+  }
 
   // Cap invariant guard. The route-level refine only fires when the patch carries
   // feeType: "cap" (v.feeType !== undefined). A patch that sets capAmount: null
@@ -270,6 +287,7 @@ export async function updateFeeConfigService(
   const data: Prisma.ManagementFeeConfigUncheckedUpdateManyInput = {
     ...(fields.ownerPartyId !== undefined ? { ownerPartyId: fields.ownerPartyId } : {}),
     ...(fields.propertyId !== undefined ? { propertyId: fields.propertyId } : {}),
+    ...(fields.apartmentId !== undefined ? { apartmentId: fields.apartmentId } : {}),
     ...(fields.feeType !== undefined ? { feeType: fields.feeType } : {}),
     ...(fields.feeValue !== undefined ? { feeValue: fields.feeValue } : {}),
     ...(fields.capAmount !== undefined ? { capAmount: fields.capAmount } : {}),
@@ -431,7 +449,7 @@ export function mapStatement(inv: DbInvoice): OwnerStatementRow {
 
 /** A single line to write onto the statement (resolved BEFORE the tx). */
 interface PlannedLine {
-  chargeType: "management_fee" | "cleaning" | "letting_commission_sst";
+  chargeType: "management_fee" | "cleaning" | "letting_commission" | "letting_commission_sst";
   unitId: string;
   amount: string; // 2dp string (mgmt-fee = base; cleaning = config; letting_commission_sst = 8% of the commission charge)
 }
@@ -612,19 +630,29 @@ export async function generateStatementService(
   // the bearer, the recurring tick and the per-apartment amount. Do NOT add a second
   // issuer back here.
 
-  // 6b) LETTING COMMISSION SST (Phase 3) — when a scoped unit's tenancy has commissionSstBearer
+  // 6b) LETTING COMMISSION — the tenant's first-month document remains Rental.
+  // The owner statement carries a separate KAEN fee line for the same amount,
+  // so the owner's rent income and KAEN's commission are explicit and auditable
+  // without ever charging the tenant twice.
+  const commissionRows = isLettingCommissionEnabled()
+    ? await findCommissionRentCharges(
+        ctx.orgId,
+        scopedUnits.map((u) => u.unitId),
+        firstOfMonth,
+      )
+    : [];
+  for (const row of commissionRows) {
+    plannedLines.push({ chargeType: "letting_commission", unitId: row.unitId, amount: row.amount });
+  }
+
+  // 6c) LETTING COMMISSION SST (Phase 3) — when a scoped unit's tenancy has commissionSstBearer
   // "owner" AND this statement month is that tenancy's commission month, the owner owes KAEN the
   // 8% SST on KAEN's first-month commission. Derive the SST from the ACTUAL letting_commission
   // charge amount (= 8% of what was really billed to the tenant, never a re-derived rent — M-F2),
   // billed as a flat owner IVOWN line that DEDUCTS from payout via owner-ledger Source 2 only
   // (owner_income ≠ expense/nature → Source 6 skips it → no double-deduct, M-B2). Flag kill-switch.
   if (isLettingCommissionEnabled()) {
-    const commissionRows = await findOwnerBorneCommissionSstCharges(
-      ctx.orgId,
-      scopedUnits.map((u) => u.unitId),
-      firstOfMonth,
-    );
-    for (const row of commissionRows) {
+    for (const row of commissionRows.filter((item) => item.sstBearer === "owner")) {
       const sstCents = Math.round(toCents(row.amount, "generateStatement") * 0.08);
       if (sstCents <= 0) continue;
       plannedLines.push({ chargeType: "letting_commission_sst", unitId: row.unitId, amount: centsToString(sstCents) });
@@ -644,6 +672,7 @@ export async function generateStatementService(
   // (C7) so generate + the manual cleaning endpoints can never double-bill the
   // same unit+month. Split the plan here so each family writes through its path.
   const mgmtLines = plannedLines.filter((l) => l.chargeType === "management_fee");
+  const commissionLines = plannedLines.filter((l) => l.chargeType === "letting_commission");
   const sstLines = plannedLines.filter((l) => l.chargeType === "letting_commission_sst");
 
   try {
@@ -718,6 +747,18 @@ export async function generateStatementService(
         sstToWrite.push(line);
       }
 
+      const commissionToWrite: PlannedLine[] = [];
+      for (const line of commissionLines) {
+        const pre = await findUnvoidedChargeForUnitMonth(tx, {
+          orgId: ctx.orgId,
+          unitId: line.unitId,
+          billingMonth: firstOfMonth,
+          chargeType: line.chargeType,
+        });
+        if (pre) continue;
+        commissionToWrite.push(line);
+      }
+
       // SST aggregate over the KEPT mgmt-fee lines, so a skipped (already-billed)
       // line never inflates Invoice.sstAmount.
       const writeSstCents = recomputeSstForLines(
@@ -730,9 +771,10 @@ export async function generateStatementService(
 
       const mgmtCents = mgmtToWrite.reduce((sum, l) => sum + toCents(l.amount, "generateStatement"), 0);
       const utilCents = utilToWrite.reduce((sum, l) => sum + toCents(l.amount, "generateStatement"), 0);
+      const commissionCents = commissionToWrite.reduce((sum, l) => sum + toCents(l.amount, "generateStatement"), 0);
       const commissionSstCents = sstToWrite.reduce((sum, l) => sum + toCents(l.amount, "generateStatement"), 0);
       // cleaningCents is gone with the duplicate cleaning issuer (2026-07-29).
-      const totalCents = mgmtCents + utilCents + writeSstCents + commissionSstCents;
+      const totalCents = mgmtCents + utilCents + commissionCents + writeSstCents + commissionSstCents;
 
       // APPEND: reuse the existing draft. Its header is incremented after the
       // charges are written (below) so total/SST move with the lines. CREATE
@@ -821,6 +863,30 @@ export async function generateStatementService(
         await attachChargeToInvoice(tx, ctx.orgId, charge.id, invoice.id);
       }
 
+      // Owner-facing letting commission base. This is the KAEN invoice line;
+      // the tenant-facing Rental charge remains separate and unchanged.
+      for (const line of commissionToWrite) {
+        seq += 1;
+        const charge = await createStatementCharge(tx, {
+          organizationId: ctx.orgId,
+          chargeNumber: `${chargePrefix}${String(seq).padStart(4, "0")}`,
+          unitId: line.unitId,
+          partyId: input.ownerPartyId,
+          chargeType: line.chargeType,
+          status: "draft",
+          description: "Letting commission (first month rent)",
+          dueDate: firstOfMonth,
+          billingMonth: firstOfMonth,
+          amount: line.amount,
+          outstandingAmount: line.amount,
+          currency: "MYR",
+          invoiceId: invoice.id,
+          attachmentKeys: [],
+        });
+        createdChargeIds.push(charge.id);
+        await attachChargeToInvoice(tx, ctx.orgId, charge.id, invoice.id);
+      }
+
       // Letting commission SST lines — flat owner IVOWN charges on the same chargeNumber run.
       for (const line of sstToWrite) {
         seq += 1;
@@ -844,7 +910,7 @@ export async function generateStatementService(
         await attachChargeToInvoice(tx, ctx.orgId, charge.id, invoice.id);
       }
 
-      const lineCount = mgmtToWrite.length + utilToWrite.length + sstToWrite.length;
+      const lineCount = mgmtToWrite.length + utilToWrite.length + commissionToWrite.length + sstToWrite.length;
 
       // APPEND: the charges above were attached to an invoice created by an EARLIER
       // pass, whose header still reflects only that pass. Move it by exactly what
@@ -1550,6 +1616,131 @@ const STATEMENT_NOT_SENDABLE =
 const STATEMENT_NO_PDF =
   "Generate the statement PDF before sending";
 
+function moneyNumber(value: string): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export async function getStatementApprovalPreflightService(
+  ctx: OwnerBillingActorCtx,
+  id: string,
+): Promise<OwnerBillingServiceResult<OwnerPayoutApprovalPreflight>> {
+  const inv = await findStatementById(ctx.orgId, id);
+  if (!inv) return { ok: false as const, status: 404, error: STATEMENT_NOT_FOUND };
+
+  return buildStatementApprovalPreflight(ctx, inv);
+}
+
+async function buildStatementApprovalPreflight(
+  ctx: OwnerBillingActorCtx,
+  inv: DbInvoice,
+): Promise<OwnerBillingServiceResult<OwnerPayoutApprovalPreflight>> {
+  const id = inv.id;
+  const sections = await assembleYannieStatement(ctx, id);
+  if (!sections) return { ok: false as const, status: 404, error: STATEMENT_NOT_FOUND };
+
+  const checks: OwnerPayoutSafetyCheck[] = [];
+  const bankMissing = [
+    sections.header.bankName ? null : "bank name",
+    sections.header.accountHolder ? null : "bank account holder",
+    sections.header.accountNumberMasked ? null : "bank account number",
+  ].filter((part): part is string => part != null);
+  checks.push(bankMissing.length === 0 ? {
+    code: "owner_bank_details",
+    label: "Owner bank details",
+    status: "pass",
+    detail: "Bank name, account holder and account number are complete.",
+    blocks: null,
+  } : {
+    code: "owner_bank_details",
+    label: "Owner bank details",
+    status: "block",
+    detail: `Complete ${bankMissing.join(", ")} before final Approval.`,
+    blocks: "approve",
+  });
+
+  const netPayout = moneyNumber(sections.payoutSummary.netPayoutToOwner);
+  checks.push(netPayout >= 0 ? {
+    code: "non_negative_payout",
+    label: "Payout amount",
+    status: "pass",
+    detail: `Cash-basis Owner Payout is RM ${sections.payoutSummary.netPayoutToOwner}.`,
+    blocks: null,
+  } : {
+    code: "non_negative_payout",
+    label: "Payout amount",
+    status: "block",
+    detail: `Owner Payout is negative (RM ${sections.payoutSummary.netPayoutToOwner}). Review charges and deductions.`,
+    blocks: "both",
+  });
+
+  const depositHeld = moneyNumber(sections.payoutSummary.depositHeld);
+  checks.push(depositHeld === 0 ? {
+    code: "deposit_custody",
+    label: "Deposit custody",
+    status: "pass",
+    detail: "No tenant deposit is recorded as held by KAEN.",
+    blocks: null,
+  } : {
+    code: "deposit_custody",
+    label: "Deposit custody",
+    status: "block",
+    detail: `RM ${sections.payoutSummary.depositHeld} is still recorded as held by KAEN. Deposits must be transferred to the owner before payout approval.`,
+    blocks: "both",
+  });
+
+  const collectedRentUnitCodes = new Set(
+    sections.incomeBreakdown.rows
+      .filter((row) => (row.incomeType === "Monthly" || row.incomeType === "Prorate") && moneyNumber(row.amount) > 0)
+      .map((row) => row.unitCode),
+  );
+  const month = inv.periodMonth?.toISOString().slice(0, 7) ?? null;
+  let missingFeeUnits: string[] = [];
+  if (inv.ownerPartyId && month && collectedRentUnitCodes.size > 0) {
+    const firstOfMonth = new Date(`${month}-01T00:00:00.000Z`);
+    const [configs, units] = await Promise.all([
+      findFeeConfigsForOwner(ctx.orgId, inv.ownerPartyId),
+      resolveOwnerUnitsForMonth(ctx.orgId, inv.ownerPartyId, firstOfMonth),
+    ]);
+    missingFeeUnits = units
+      .filter((unit) => collectedRentUnitCodes.has(unit.unitCode))
+      .filter((unit) => resolveConfigForUnit(configs, unit, firstOfMonth) == null)
+      .map((unit) => unit.unitCode);
+  }
+  checks.push(missingFeeUnits.length === 0 ? {
+    code: "management_fee_config",
+    label: "Management Fee coverage",
+    status: "pass",
+    detail: collectedRentUnitCodes.size > 0
+      ? "Every unit with collected rent has an applicable Management Fee setting."
+      : "No collected rental income requires a Management Fee for this period.",
+    blocks: null,
+  } : {
+    code: "management_fee_config",
+    label: "Management Fee coverage",
+    status: "block",
+    detail: `Missing an applicable Management Fee setting for: ${missingFeeUnits.join(", ")}.`,
+    blocks: "both",
+  });
+
+  const canFirstCheck = !checks.some((check) => check.status === "block" && (check.blocks === "first_check" || check.blocks === "both"));
+  const canApprove = !checks.some((check) => check.status === "block" && (check.blocks === "approve" || check.blocks === "both"));
+  return {
+    ok: true as const,
+    status: 200,
+    data: { statementId: id, canFirstCheck, canApprove, netPayoutToOwner: sections.payoutSummary.netPayoutToOwner, checks },
+  };
+}
+
+function preflightBlockMessage(preflight: OwnerPayoutApprovalPreflight, stage: "first_check" | "approve"): string | null {
+  const blocked = preflight.checks.filter((check) =>
+    check.status === "block" && (check.blocks === stage || check.blocks === "both"),
+  );
+  return blocked.length > 0
+    ? `Owner Payout safety check failed: ${blocked.map((check) => check.detail).join(" ")}`
+    : null;
+}
+
 /**
  * Approve an owner statement (requireRole("manager") at the route). ONLY a draft
  * statement may be approved; any other state → 409 (idempotent re-approve is not
@@ -1566,6 +1757,10 @@ export async function firstCheckStatementService(
   if (inv.status !== "draft") {
     return { ok: false as const, status: 409, error: STATEMENT_NOT_FIRST_CHECKABLE };
   }
+  const preflightResult = await buildStatementApprovalPreflight(ctx, inv);
+  if (!preflightResult.ok) return preflightResult;
+  const preflightError = preflightBlockMessage(preflightResult.data, "first_check");
+  if (preflightError) return { ok: false as const, status: 409, error: preflightError };
   try {
     const checked = await withTransaction(async (tx) => {
       const row = await transitionStatementStatusGuarded(
@@ -1600,6 +1795,10 @@ export async function approveStatementService(
   if (inv.status !== (inv.apartmentId ? "first_checked" : "draft")) {
     return { ok: false as const, status: 409, error: STATEMENT_NOT_APPROVABLE };
   }
+  const preflightResult = await buildStatementApprovalPreflight(ctx, inv);
+  if (!preflightResult.ok) return preflightResult;
+  const preflightError = preflightBlockMessage(preflightResult.data, "approve");
+  if (preflightError) return { ok: false as const, status: 409, error: preflightError };
 
   // redesign P1 — OST- statement display number, minted ONCE at approval (the
   // statement is LOCKED after approval — approval is the stable, non-regenerable
@@ -1677,10 +1876,17 @@ export async function approveStatementService(
 
   // Keep the published PDF in lockstep with approval: the owner sees the statement
   // the moment it is approved, so the soft-copy must match the approved figures.
-  const pdf = await regenerateStatementPdf(ctx, id);
-  if (!pdf.ok) {
+  try {
+    const pdf = await regenerateStatementPdf(ctx, id);
+    if (!pdf.ok) {
+      // eslint-disable-next-line no-console
+      console.warn(`[owner-billing] approve: PDF regenerate failed for ${id} (status ${pdf.status})`);
+    }
+  } catch (error) {
+    // Approval is already committed. A renderer/storage failure must not make the
+    // client retry the financial approval and mistake it for a failed transition.
     // eslint-disable-next-line no-console
-    console.warn(`[owner-billing] approve: PDF regenerate failed for ${id} (status ${pdf.status})`);
+    console.warn(`[owner-billing] approve: PDF regenerate threw for ${id}`, error);
   }
   return { ok: true as const, status: 200, data: mapStatement(approved) };
 }

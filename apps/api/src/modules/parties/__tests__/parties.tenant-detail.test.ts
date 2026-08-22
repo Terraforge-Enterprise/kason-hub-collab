@@ -81,6 +81,8 @@ const tenantDetailFixture = {
   createdAt: "2024-01-01T00:00:00.000Z",
   // updatedAt intentionally absent — spec's TenantDetail ends at createdAt
   hasActiveTenancy: false,
+  tenancyHistory: [],
+  depositLedger: [],
   portalUser: null,
 };
 

@@ -19,8 +19,12 @@ const mockChargeFindFirst = vi.fn();
 type ChargeCreateArgs = { data: Record<string, unknown> & { amount: string } };
 const mockChargeCreate = vi.fn(async (_args: ChargeCreateArgs) => ({ id: "charge-1" }));
 const mockCategoryFindMany = vi.fn();
-const mockInvoiceCreate = vi.fn(async () => ({ id: "invoice-1" }));
-const mockChargeFindMany = vi.fn(async () => []);
+type InvoiceCreateArgs = { data: Record<string, unknown> & { periodMonth?: Date } };
+const mockInvoiceCreate = vi.fn(async (_args: InvoiceCreateArgs) => ({ id: "invoice-1" }));
+const mockInvoiceFindFirst = vi.fn();
+type ExistingCharge = { id: string; chargeNumber: string; status: string };
+const mockChargeFindMany = vi.fn(async (): Promise<ExistingCharge[]> => []);
+const mockChargeUpdate = vi.fn(async () => ({ id: "charge-1" }));
 const mockInvoiceUpdate = vi.fn();
 const mockAuditCreate = vi.fn();
 
@@ -29,10 +33,11 @@ const fakeTx = {
     findFirst: mockChargeFindFirst,
     create: mockChargeCreate,
     findMany: mockChargeFindMany,
+    update: mockChargeUpdate,
   },
   chargeCategory: { findMany: mockCategoryFindMany },
   chargeEvent: { create: vi.fn(async () => ({ id: "evt-1" })) },
-  invoice: { create: mockInvoiceCreate, update: mockInvoiceUpdate },
+  invoice: { findFirst: mockInvoiceFindFirst, create: mockInvoiceCreate, update: mockInvoiceUpdate },
   auditLog: { create: mockAuditCreate },
 };
 const mockTransaction = vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(fakeTx));
@@ -98,6 +103,7 @@ beforeEach(() => {
   mockOrgFindUnique.mockResolvedValue({ timezone: "Asia/Kuala_Lumpur" });
   mockChargeFindFirst.mockResolvedValue(null);
   mockChargeFindMany.mockResolvedValue([]);
+  mockInvoiceFindFirst.mockResolvedValue(null);
   mockCategoryFindMany.mockResolvedValue([
     { id: "cat-rental", code: "tenancy_rental_deposit" },
     { id: "cat-utility", code: "tenancy_utility_deposit" },
@@ -156,15 +162,15 @@ describe("GATE — move-in must be the org-local CURRENT month", () => {
     expect(mockChargeCreate).not.toHaveBeenCalled();
   });
 
-  it("refuses a move-in dated NEXT month — its deposit belongs to the month it starts", async () => {
+  it("allows a move-in dated NEXT month for the one-month advance billing window", async () => {
     mockTenancyFindFirst.mockResolvedValue(
       tenancyRow({ startDate: new Date("2026-09-01T00:00:00.000Z") }),
     );
 
     const out = await createTenancyDepositsForTenancy(CTX, "tenancy-1", NOW);
 
-    expect(out).toEqual({ created: false, reason: "move_in_not_current_month" });
-    expect(mockChargeCreate).not.toHaveBeenCalled();
+    expect(out).toMatchObject({ created: true, invoiceId: "invoice-1" });
+    expect(mockInvoiceCreate.mock.calls[0]?.[0]?.data.periodMonth).toBeDefined();
   });
 
   it("fails CLOSED when the org has no timezone — never falls back to UTC", async () => {
@@ -237,7 +243,7 @@ describe("GATE — flag, owner, renewal, and once-per-tenancy", () => {
 
   it("skips when a deposit charge already exists — once per tenancy, forever", async () => {
     mockTenancyFindFirst.mockResolvedValue(tenancyRow());
-    mockChargeFindFirst.mockResolvedValue({ id: "existing-charge" });
+    mockChargeFindMany.mockResolvedValue([{ id: "existing-charge", chargeNumber: "DEPRENT-tenancy-1", status: "posted" }]);
 
     const out = await createTenancyDepositsForTenancy(CTX, "tenancy-1", NOW);
 

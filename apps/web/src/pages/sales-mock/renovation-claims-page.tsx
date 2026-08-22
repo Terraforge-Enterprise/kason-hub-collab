@@ -337,7 +337,7 @@ export default function RenovationClaimsPage() {
                     {drawerClaim.paymentType === "offset_from_rental" && drawerClaim.monthlyOffsetAmount && (
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Monthly offset</span>
-                        <span className="font-medium">{formatRMShort(drawerClaim.monthlyOffsetAmount)}/mo</span>
+                        <span className="font-medium">{formatRMShort(drawerClaim.monthlyOffsetAmount)}/month</span>
                       </div>
                     )}
                   </CardContent>

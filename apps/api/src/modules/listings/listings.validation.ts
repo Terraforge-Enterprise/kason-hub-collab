@@ -31,6 +31,7 @@ export const updateListingSchema = createListingSchema.partial();
 
 export const mediaUploadUrlSchema = z.object({
   kind: z.enum(["photo", "video"]),
+  category: z.enum(["advertising", "before_move_in", "move_out"]).default("advertising"),
   filename: z.string().min(1).max(255),
   mimeType: z.string().min(1).max(100),
   sizeBytes: z.number().int().positive(),

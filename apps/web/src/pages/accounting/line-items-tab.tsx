@@ -31,23 +31,33 @@ export function LineItemsTab({
 
   return (
     <TableWrap>
-      <DataTable>
+      <DataTable className="w-full table-fixed text-base [&_thead]:text-xs [&_th]:leading-tight">
+        <colgroup>
+          <col className="w-[5%]" />
+          <col className="w-[33%]" />
+          <col className="w-[10.5%]" />
+          <col className="w-[8%]" />
+          <col className="w-[11.5%]" />
+          <col className="w-[10.5%]" />
+          <col className="w-[9%]" />
+          <col className="w-[12.5%]" />
+        </colgroup>
         <TableHead>
           <tr>
-            <HeadCell className="w-10">#</HeadCell>
+            <HeadCell className="px-3 text-center">#</HeadCell>
             <HeadCell>Description</HeadCell>
-            <HeadCell className="text-right">Original</HeadCell>
+            <HeadCell className="px-3 text-right">Original</HeadCell>
             {/* Per-line tax made a COLUMN (user ask 2026-08-07): the rate was only
                 discoverable inside the description meta-line, and the amount not at
                 all — an SST-bearing line read as if untaxed. Server value verbatim
                 (BillingDocumentLineDto.adjustedSstAmount — the note-adjusted figure,
                 which equals sstAmount when the charge carries no notes); this
                 component still derives nothing. */}
-            <HeadCell className="text-right">SST</HeadCell>
-            <HeadCell className="text-right">Adjustments</HeadCell>
-            <HeadCell className="text-right">Adjusted</HeadCell>
-            <HeadCell className="text-right">Paid</HeadCell>
-            <HeadCell className="text-right">Outstanding</HeadCell>
+            <HeadCell className="px-3 text-right">SST</HeadCell>
+            <HeadCell className="px-3 text-right">Adjustments</HeadCell>
+            <HeadCell className="px-3 text-right">Adjusted</HeadCell>
+            <HeadCell className="px-3 text-right">Paid</HeadCell>
+            <HeadCell className="px-3 text-right">Outstanding</HeadCell>
           </tr>
         </TableHead>
         <tbody>
@@ -73,8 +83,8 @@ export function LineItemsTab({
 
               const mainRow = (
                 <Row key={l.id}>
-                  <BodyCell className="align-top text-muted-foreground">{i + 1}</BodyCell>
-                  <BodyCell>
+                  <BodyCell className="px-3 text-center align-top text-muted-foreground">{i + 1}</BodyCell>
+                  <BodyCell className="px-3">
                     <span className="font-medium text-foreground">{l.description}</span>
                     {/* Which unit this line bills, leading the meta line. On a
                         COMBINED owner statement the header's Property/Unit both
@@ -83,7 +93,7 @@ export function LineItemsTab({
                         three "Management fee" rows. Null ⇒ the line has no unit
                         (charge-less line, or a charge without a unitId) and the
                         meta line simply starts at the category. */}
-                    <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                    <span className="mt-1 block text-sm leading-snug text-muted-foreground">
                       {l.unitCode ? (
                         <>
                           <span className="font-semibold text-foreground/80">{l.unitCode}</span>
@@ -94,28 +104,28 @@ export function LineItemsTab({
                       {sstRate > 0 ? ` · SST ${sstRate}%` : ""}
                     </span>
                   </BodyCell>
-                  <BodyCell className="align-top text-right tabular-nums">{formatRM(Number(original))}</BodyCell>
-                  <BodyCell className="align-top text-right tabular-nums">
+                  <BodyCell className="whitespace-nowrap px-3 align-top text-right tabular-nums">{formatRM(Number(original))}</BodyCell>
+                  <BodyCell className="whitespace-nowrap px-3 align-top text-right tabular-nums">
                     {Number(sst) > 0 ? (
                       formatRM(Number(sst))
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}
                   </BodyCell>
-                  <BodyCell className="align-top text-right tabular-nums">
+                  <BodyCell className="whitespace-nowrap px-3 align-top text-right tabular-nums">
                     {hasAdjustments ? (
                       <span className={adjustmentToneClass(net.tone)}>{net.text}</span>
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}
                   </BodyCell>
-                  <BodyCell className="align-top text-right tabular-nums font-medium text-foreground">
+                  <BodyCell className="whitespace-nowrap px-3 align-top text-right tabular-nums font-medium text-foreground">
                     {formatRM(Number(adjusted))}
                   </BodyCell>
-                  <BodyCell className="align-top text-right tabular-nums text-muted-foreground">
+                  <BodyCell className="whitespace-nowrap px-3 align-top text-right tabular-nums text-muted-foreground">
                     {formatRM(paid)}
                   </BodyCell>
-                  <BodyCell className="align-top text-right">
+                  <BodyCell className="whitespace-nowrap px-3 align-top text-right">
                     <div className="flex flex-col items-end gap-1">
                       <span className="font-medium tabular-nums text-foreground">{formatRM(outstanding)}</span>
                       <div className="flex items-center gap-1">

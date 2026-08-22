@@ -14,7 +14,9 @@ export function DashboardLayout() {
   const { user, clearAuth } = useAuth();
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const isBillingMatrix = pathname === "/billing/tenant-owner-billing";
+  const isBillingMatrix = pathname === "/billing/tenant-owner-billing"
+    || pathname === "/accounting/bank-reconciliation"
+    || pathname === "/accounting/employee-expense-claims";
 
   const handleLogout = async () => {
     try { await apiFetch("/auth/logout", { method: "POST" }); } catch { /* ignore */ }
@@ -58,7 +60,7 @@ export function DashboardLayout() {
           <div
             className={isBillingMatrix
               ? "w-full max-w-none space-y-4 overflow-x-hidden px-1 py-3 sm:px-2 lg:px-3 lg:py-4"
-              : "mx-auto w-full max-w-[1400px] space-y-5 overflow-x-hidden px-4 py-5 lg:px-6 lg:py-6"}
+              : "dashboard-content mx-auto w-full max-w-[1400px] space-y-5 overflow-x-hidden px-4 py-5 lg:px-6 lg:py-6"}
           >
             <Outlet />
           </div>

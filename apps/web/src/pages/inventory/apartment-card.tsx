@@ -2,17 +2,16 @@
 // Phase D of 2026-05-13 apartment-aggregation-and-highlights spec.
 //
 // Renders one card per apartment with: summary line (room count + shared
-// fields + amenity/highlight chips), expandable room list, drift warning
+// fields + amenity/highlight chips), always-visible room list, drift warning
 // when sibling rows disagree on shared fields, and two action buttons
 // (+ Add rooms / Edit apartment) wired by the parent.
 
-import { useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowUpRight,
   Bath,
   BedDouble,
-  ChevronRight,
   Maximize2,
   Pencil,
   UserPlus,
@@ -24,7 +23,6 @@ import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { StatusPill } from "@/components/ui";
 import { getStatusTone } from "@/components/format";
-import { isEditableKeyTarget } from "@/lib/dom";
 import { listingLabel, occupancyLabel } from "@/lib/listing-status";
 import type { ApartmentSummary } from "@/api/inventory-units-batch";
 
@@ -42,7 +40,7 @@ export function ApartmentCard({
   editApartmentTrigger,
   addTenantTrigger,
   addOwnerTrigger,
-  initiallyExpanded = false,
+  initiallyExpanded: _initiallyExpanded,
 }: {
   apartment: ApartmentSummary;
   // Trigger is injected by the parent so the parent owns the dialog
@@ -52,9 +50,9 @@ export function ApartmentCard({
   addTenantTrigger?: ReactNode;
   /** Opens the existing apartment edit flow so an owner can be assigned. */
   addOwnerTrigger?: ReactNode;
+  /** @deprecated Rooms are always shown once their property is expanded. */
   initiallyExpanded?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(initiallyExpanded);
   const roomCount = apartment.rooms.length;
   // "Listed" rooms = rooms whose listing is active (Draft listings exist but
   // aren't visible to tenants, so they don't count toward the numerator).
@@ -63,40 +61,25 @@ export function ApartmentCard({
   ).length;
   const wholeUnitTenant =
     apartment.listingMode === "WHOLE"
-      ? (apartment.rooms.find((r) => r.tenantName)?.tenantName ?? null)
+      ? (apartment.rooms.find((r) => r.tenantName) ?? null)
       : null;
+  const anchorRoom = apartment.rooms[0] ?? null;
 
   return (
-    <Card
-      role="button"
-      tabIndex={0}
-      aria-expanded={expanded}
-      aria-label={`${expanded ? "Collapse" : "Expand"} apartment ${apartment.unitCode}`}
-      onClick={(e) => {
-        const target = e.target as HTMLElement;
-        if (target.closest("button, input, select, a, [data-slot='dialog-trigger']")) return;
-        setExpanded((v) => !v);
-      }}
-      onKeyDown={(e) => {
-        if (isEditableKeyTarget(e)) return;
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          setExpanded((v) => !v);
-        }
-      }}
-      className="cursor-pointer bg-background/60 backdrop-blur-xl border-border/50 shadow-xl transition-all hover:border-border/80 hover:shadow-2xl"
-    >
+    <Card className="bg-background/60 backdrop-blur-xl border-border/50 shadow-xl">
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-3">
-          <div className="flex flex-1 items-center gap-2 text-left group min-w-0 -mx-2 -my-1 px-2 py-1 rounded-md transition-colors hover:bg-accent hover:text-accent-foreground cursor-pointer">
-            <ChevronRight
-              className={`h-4 w-4 text-muted-foreground shrink-0 transition-all group-hover:text-primary ${
-                expanded ? "rotate-90" : ""
-              }`}
-            />
-            <span className="font-mono text-base font-semibold text-foreground">
-              {apartment.unitCode}
-            </span>
+          <div className="flex flex-1 items-center gap-2 text-left min-w-0 -mx-2 -my-1 px-2 py-1 rounded-md">
+            {anchorRoom ? (
+              <Link
+                to={`/inventory/units/${anchorRoom.id}`}
+                className="font-mono text-base font-semibold text-foreground underline decoration-[var(--gold)] underline-offset-4 hover:text-[var(--gold)]"
+              >
+                {apartment.unitCode}
+              </Link>
+            ) : (
+              <span className="font-mono text-base font-semibold text-foreground">{apartment.unitCode}</span>
+            )}
             {/* KAEN-management indicator: a red tag calls out apartments NOT under
                 KAEN management. Under-management apartments show nothing (the norm). */}
             {!apartment.underManagement && (
@@ -170,10 +153,39 @@ export function ApartmentCard({
         {(apartment.ownerName || wholeUnitTenant) && (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-xs text-muted-foreground pl-6">
             {apartment.ownerName && (
-              <span>Owner: <span className="text-foreground">{apartment.ownerName}</span></span>
+              <span>
+                Owner:{" "}
+                {apartment.ownerPartyId ? (
+                  <Link
+                    to={`/parties/owners?partyId=${encodeURIComponent(apartment.ownerPartyId)}`}
+                    className="font-medium text-foreground underline decoration-[var(--gold)] underline-offset-4 hover:text-[var(--gold)]"
+                  >
+                    {apartment.ownerName}
+                  </Link>
+                ) : (
+                  <span className="text-foreground">{apartment.ownerName}</span>
+                )}
+              </span>
             )}
             {wholeUnitTenant && (
-              <span>Tenant: <span className="text-foreground">{wholeUnitTenant}</span></span>
+              <span className="inline-flex flex-wrap items-center gap-x-2">
+                Tenant:{" "}
+                {wholeUnitTenant.tenantPartyId ? (
+                  <Link
+                    to={`/parties/tenants?partyId=${encodeURIComponent(wholeUnitTenant.tenantPartyId)}`}
+                    className="font-medium text-foreground underline decoration-[var(--gold)] underline-offset-4 hover:text-[var(--gold)]"
+                  >
+                    {wholeUnitTenant.tenantName}
+                  </Link>
+                ) : (
+                  <span className="text-foreground">{wholeUnitTenant.tenantName}</span>
+                )}
+                {formatTenancyPeriod(wholeUnitTenant.tenancyStartDate, wholeUnitTenant.tenancyEndDate) && (
+                  <span className="font-medium text-[var(--deep-navy,#082F55)]">
+                    {formatTenancyPeriod(wholeUnitTenant.tenancyStartDate, wholeUnitTenant.tenancyEndDate)}
+                  </span>
+                )}
+              </span>
             )}
           </div>
         )}
@@ -218,25 +230,40 @@ export function ApartmentCard({
         </div>
       )}
 
-      {expanded && (
-        <CardContent className="pt-2">
+      <CardContent className="pt-2">
           <div className="space-y-1.5">
             {apartment.rooms.map((room) => (
-              <Link
+              <div
                 key={room.id}
-                to={`/inventory/units/${room.id}`}
-                className="flex items-center justify-between rounded-lg border border-border/50 bg-background/40 px-3 py-2 backdrop-blur-sm transition-all hover:bg-background/60 hover:border-border/80 cursor-pointer group"
+                className="flex items-center justify-between rounded-lg border border-border/50 bg-background/40 px-3 py-2 backdrop-blur-sm transition-all hover:bg-background/60 hover:border-border/80 group"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <span className="text-sm font-medium text-foreground capitalize shrink-0">
+                  <Link
+                    to={`/inventory/units/${room.id}`}
+                    className="cursor-pointer text-sm font-medium text-foreground capitalize shrink-0 underline decoration-[var(--gold)] underline-offset-4 hover:text-[var(--gold)]"
+                  >
                     {room.unitType}
-                  </span>
+                  </Link>
                   <span className="text-sm text-muted-foreground tabular-nums">
                     {formatRental(room.rentalRate)}
                   </span>
                   {room.tenantName && (
-                    <span className="text-xs text-muted-foreground truncate">
-                      Tenant: {room.tenantName}
+                    <span className="flex min-w-0 flex-col gap-0.5">
+                    {room.tenantPartyId ? (
+                      <Link
+                        to={`/parties/tenants?partyId=${encodeURIComponent(room.tenantPartyId)}`}
+                        className="text-xs font-medium text-foreground truncate underline decoration-[var(--gold)] underline-offset-4 hover:text-[var(--gold)]"
+                      >
+                        Tenant: {room.tenantName}
+                      </Link>
+                    ) : (
+                      <span className="text-xs text-muted-foreground truncate">Tenant: {room.tenantName}</span>
+                    )}
+                    {formatTenancyPeriod(room.tenancyStartDate, room.tenancyEndDate) && (
+                      <span className="text-xs font-medium text-[var(--deep-navy,#082F55)] tabular-nums">
+                        {formatTenancyPeriod(room.tenancyStartDate, room.tenancyEndDate)}
+                      </span>
+                    )}
                     </span>
                   )}
                 </div>
@@ -254,11 +281,10 @@ export function ApartmentCard({
                     aria-hidden="true"
                   />
                 </div>
-              </Link>
+              </div>
             ))}
           </div>
-        </CardContent>
-      )}
+      </CardContent>
     </Card>
   );
 }
@@ -330,4 +356,13 @@ export function EditApartmentButton({
       Edit details
     </Button>
   );
+}
+function formatTenancyDate(value: string): string {
+  const [year, month, day] = value.slice(0, 10).split("-");
+  return year && month && day ? `${day}/${month}/${year}` : value;
+}
+
+function formatTenancyPeriod(startDate?: string | null, endDate?: string | null): string | null {
+  if (!startDate) return null;
+  return `${formatTenancyDate(startDate)} – ${endDate ? formatTenancyDate(endDate) : "Present"}`;
 }

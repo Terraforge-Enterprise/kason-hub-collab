@@ -4,4 +4,7 @@ export {
   createTenancySchema,
   updateTenancySchema,
   renewTenancySchema,
+  cancelRenewalSchema,
+  moveOutTenancySchema,
+  updateRenewalReviewSchema,
 } from "@kason/shared";

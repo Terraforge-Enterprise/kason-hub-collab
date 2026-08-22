@@ -6,6 +6,7 @@ import { Field, TextInput, SelectInput } from "@/components/form-ui";
 import { apiFetch } from "@/lib/api-client";
 import { useCreateUser, useUpdateUser, useSetPartyUpline } from "@/api/users";
 import type { OperatorUser, CreateUserInput, UpdateUserInput } from "@/api/users";
+import { PERMISSION_GROUPS, effectivePermission, permissionCanBeGrantedToRole, roleHasPermission, type PermissionCode, type PermissionOverrides } from "@/lib/permissions";
 
 export type AdminFormMode = "create" | "edit";
 
@@ -14,18 +15,21 @@ type Props = {
   mode: AdminFormMode;
   user: OperatorUser | null;
   onClose: () => void;
-  forcedRole?: "manager" | "editor" | "viewer";
-  availableRoles?: ("manager" | "editor" | "viewer")[];
+  forcedRole?: StaffAssignableRole;
+  availableRoles?: StaffAssignableRole[];
 };
+
+type StaffAssignableRole = "director" | "accountant" | "manager" | "editor" | "viewer";
 
 type FormState = {
   fullName: string;
   email: string;
-  role: "manager" | "editor" | "viewer";
+  role: StaffAssignableRole;
   password: string;
   showPassword: boolean;
   uplineId: string | null;
   uplineDisplayName: string;
+  permissionOverrides: PermissionOverrides;
 };
 
 // Slim shape from /parties/assignable — must match the agent-form-drawer's
@@ -150,13 +154,15 @@ function UplineTypeahead({
 
 type FormErrors = Partial<Record<keyof Omit<FormState, "showPassword">, string>>;
 
-const ALL_ROLE_OPTIONS: { value: "manager" | "editor" | "viewer"; label: string }[] = [
+const ALL_ROLE_OPTIONS: { value: StaffAssignableRole; label: string }[] = [
+  { value: "director", label: "Director" },
+  { value: "accountant", label: "Finance" },
   { value: "manager", label: "Manager" },
-  { value: "editor", label: "Editor" },
+  { value: "editor", label: "Operations Admin" },
   { value: "viewer", label: "Viewer" },
 ];
 
-function blankForm(forcedRole?: "manager" | "editor" | "viewer"): FormState {
+function blankForm(forcedRole?: StaffAssignableRole): FormState {
   return {
     fullName: "",
     email: "",
@@ -165,6 +171,7 @@ function blankForm(forcedRole?: "manager" | "editor" | "viewer"): FormState {
     showPassword: false,
     uplineId: null,
     uplineDisplayName: "",
+    permissionOverrides: {},
   };
 }
 
@@ -180,11 +187,12 @@ export function AdminFormDrawer({ open, mode, user, onClose, forcedRole, availab
 
   const [form, setForm] = useState<FormState>(() => blankForm(forcedRole));
   const [errors, setErrors] = useState<FormErrors>({});
+  const [permissionSearch, setPermissionSearch] = useState("");
 
   useEffect(() => {
     if (open) {
       if (mode === "edit" && user) {
-        const editRole = forcedRole ?? ((user.role === "admin" ? "editor" : (user.role as "manager" | "editor" | "viewer")));
+        const editRole = forcedRole ?? ((user.role === "admin" ? "editor" : (user.role as StaffAssignableRole)));
         // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate: local form state is (re)seeded from props/query data on open or upstream change
         setForm({
           fullName: user.fullName,
@@ -194,11 +202,13 @@ export function AdminFormDrawer({ open, mode, user, onClose, forcedRole, availab
           showPassword: false,
           uplineId: user.party?.uplineId ?? null,
           uplineDisplayName: user.party?.upline?.displayName ?? "",
+          permissionOverrides: user.permissionOverrides ?? {},
         });
       } else {
         setForm(blankForm(forcedRole));
       }
       setErrors({});
+      setPermissionSearch("");
     }
   }, [open, mode, user?.id, forcedRole]);
 
@@ -234,6 +244,7 @@ export function AdminFormDrawer({ open, mode, user, onClose, forcedRole, availab
         email: form.email.trim().toLowerCase(),
         role: form.role,
         password: form.password,
+        permissionOverrides: form.permissionOverrides,
       };
       createUser.mutate(input, { onSuccess: onClose });
     } else if (user) {
@@ -241,6 +252,7 @@ export function AdminFormDrawer({ open, mode, user, onClose, forcedRole, availab
         id: user.id,
         fullName: form.fullName.trim(),
         role: form.role,
+        permissionOverrides: form.permissionOverrides,
       };
       // Detect upline change against the snapshot, then fire BOTH mutations.
       // The upline call goes to /parties/:partyId/upline (the User PATCH
@@ -262,7 +274,7 @@ export function AdminFormDrawer({ open, mode, user, onClose, forcedRole, availab
     }
   }
 
-  const title = mode === "create" ? "Add admin user" : "Edit admin user";
+  const title = mode === "create" ? "Add staff user" : "Edit staff user";
   const description =
     mode === "create"
       ? "Create a new operator user account."
@@ -272,7 +284,7 @@ export function AdminFormDrawer({ open, mode, user, onClose, forcedRole, availab
     <FormDrawer
       open={open}
       onClose={onClose}
-      size="md"
+      size="screen"
       title={title}
       description={description}
       onSubmit={handleSubmit}
@@ -322,6 +334,71 @@ export function AdminFormDrawer({ open, mode, user, onClose, forcedRole, availab
           )}
           {errors.role && <p className="mt-1 text-xs text-rose-500">{errors.role}</p>}
         </Field>
+
+        <div className="rounded-xl border border-[var(--gold)]/60 bg-[#FFF9EC] p-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h3 className="font-bold text-[var(--navy-text)]">Detailed custom permissions</h3>
+              <p className="mt-0.5 text-xs text-[var(--text-secondary)]">Every checkbox controls one specific business action. Role defaults apply until you customise this user.</p>
+            </div>
+            {Object.keys(form.permissionOverrides).length > 0 && (
+              <button type="button" className="rounded-lg border border-[var(--gold)] bg-white px-3 py-1.5 text-xs font-bold text-[var(--navy-text)]" onClick={() => setForm((old) => ({ ...old, permissionOverrides: {} }))}>Reset to role defaults</button>
+            )}
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
+            <input
+              type="search"
+              value={permissionSearch}
+              onChange={(event) => setPermissionSearch(event.target.value)}
+              placeholder="Search permissions, e.g. bill, bank, delete…"
+              className="h-10 rounded-lg border border-[var(--border)] bg-white px-3 text-sm text-[var(--navy-text)] outline-none focus:border-[var(--gold)]"
+            />
+            <div className="text-xs font-bold text-[var(--text-secondary)]">
+              {PERMISSION_GROUPS.reduce((total, item) => total + item.items.length, 0)} permissions · {Object.keys(form.permissionOverrides).length} customised
+            </div>
+          </div>
+          <div className="mt-3 columns-1 gap-3 lg:columns-3 2xl:columns-4">
+            {PERMISSION_GROUPS.map((group) => ({
+              ...group,
+              items: group.items.filter(([, label, description]) => `${group.group} ${label} ${description}`.toLowerCase().includes(permissionSearch.trim().toLowerCase())),
+            })).filter((group) => group.items.length > 0).map((group) => (
+              <section key={group.group} className="mb-3 break-inside-avoid overflow-hidden rounded-lg border border-[var(--border)] bg-white">
+                <div className="flex items-center justify-between bg-[var(--table-header)] px-3 py-2 text-xs font-extrabold uppercase tracking-wide text-[var(--navy-text)]">
+                  <span>{group.group}</span><span>{group.items.length}</span>
+                </div>
+                <div className="divide-y divide-[var(--border)]">
+                  {group.items.map(([code, label, description, sensitive]) => {
+                    const defaultOn = roleHasPermission(form.role, code);
+                    const enabled = effectivePermission(form.role, form.permissionOverrides, code);
+                    const customised = typeof form.permissionOverrides[code] === "boolean";
+                    const roleLocked = !permissionCanBeGrantedToRole(form.role, code);
+                    return <label key={code} className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 hover:bg-[var(--page-bg)]">
+                      <input
+                        type="checkbox"
+                        checked={enabled}
+                        disabled={roleLocked}
+                        onChange={(event) => setForm((old) => {
+                          const next = { ...old.permissionOverrides };
+                          if (event.target.checked === defaultOn) delete next[code as PermissionCode];
+                          else next[code as PermissionCode] = event.target.checked;
+                          return { ...old, permissionOverrides: next };
+                        })}
+                        className="h-4 w-4 shrink-0 accent-[var(--navy)] disabled:cursor-not-allowed disabled:opacity-40"
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-1.5 text-xs font-bold text-[var(--navy-text)]">{label}{sensitive && <span className="rounded bg-rose-50 px-1 py-0.5 text-[8px] font-extrabold uppercase text-rose-700">Sensitive</span>}</span>
+                        <span className="block text-[10px] leading-tight text-[var(--text-secondary)]">{description}</span>
+                      </span>
+                      <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${customised ? "bg-[var(--gold-soft)] text-[var(--navy-text)]" : "bg-slate-100 text-slate-600"}`}>
+                        {roleLocked ? "Role restricted" : customised ? (enabled ? "Individually granted" : "Individually blocked") : (defaultOn ? "Role default" : "Not included")}
+                      </span>
+                    </label>;
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
+        </div>
 
         {mode === "edit" && user?.partyId && (
           <Field label="Upline" hint="Who this user reports to in the org chart. Pick any agent or staff member.">

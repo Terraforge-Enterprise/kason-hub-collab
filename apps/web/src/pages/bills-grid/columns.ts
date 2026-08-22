@@ -8,7 +8,8 @@ export type ColumnId =
   | "maintenanceFee" | "ownerRecurring" | "tenantRecurring"
   | "tenantExpWithSst" | "tenantExpNonSst"
   | "ownerExpWithSst" | "ownerExpNonSst"
-  | "managementFeeNonSst" | "managementFeeSst" | "ownerPayout";
+  | "agreementFee"
+  | "managementFeeSst" | "ownerPayout";
 
 export interface GridColumn {
   id: ColumnId; header: string; band?: string;
@@ -21,6 +22,7 @@ export const CURRENT_COLUMNS: GridColumn[] = [
   { id: "unitCode",         header: "Unit",            grain: "unit",   editable: false, numeric: false },
   { id: "rental",           header: "Rental",           band: "Rent & Deposit", grain: "unit", editable: false, numeric: true },
   { id: "deposit",          header: "Deposit",          band: "Rent & Deposit", grain: "unit", editable: false, numeric: true },
+  { id: "agreementFee",     header: "TA",               band: "Rent & Deposit", grain: "unit", editable: false, numeric: true },
   // Recurring-charges (R9): cleaning/WiFi are settings-controlled recurring fees, generated
   // read-only per period like rental — NOT editable grid cells (backend also 409s a direct edit).
   { id: "cleaningOwner",    header: "Owner",           band: "Cleaning", grain: "unit",  editable: false, numeric: true },
@@ -45,7 +47,6 @@ export const CURRENT_COLUMNS: GridColumn[] = [
   { id: "tenantExpWithSst", header: "With SST",        band: "Tenant Expenses", grain: "unit", editable: false, numeric: true },
   { id: "ownerExpNonSst",   header: "Non SST",         band: "Owner Expenses",  grain: "unit", editable: false, numeric: true },
   { id: "ownerExpWithSst",  header: "With SST",        band: "Owner Expenses",  grain: "unit", editable: false, numeric: true },
-  { id: "managementFeeNonSst", header: "Non SST",      band: "Management Fee", grain: "unit", editable: false, numeric: true },
   { id: "managementFeeSst", header: "With SST",        band: "Management Fee", grain: "unit", editable: false, numeric: true },
   { id: "ownerPayout",     header: "Total",           band: "Owner Payout", grain: "unit", editable: false, numeric: true },
 ];
@@ -93,7 +94,7 @@ export const SETTLEMENT_BUCKET_OF_COLUMN: Record<ColumnId, import("@kason/shared
   tenantExpNonSst: "expensesTenant",
   ownerExpWithSst: "expensesOwner",
   ownerExpNonSst: "expensesOwner",
-  managementFeeNonSst: null,
+  agreementFee: null,
   managementFeeSst: null,
   ownerPayout: null,
 };

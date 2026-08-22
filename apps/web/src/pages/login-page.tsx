@@ -50,7 +50,7 @@ export default function LoginPage() {
     setError(null);
     try {
       const result = await apiFetch<{
-        user: { id: string; fullName: string; email: string; role: string; userType: string };
+        user: { id: string; fullName: string; email: string; role: string; userType: string; permissions: string[] };
         orgId: string;
         token: string;
       }>("/auth/login", {
@@ -68,6 +68,7 @@ export default function LoginPage() {
         role: result.user.role,
         orgId: result.orgId,
         userType: result.user.userType,
+        permissions: result.user.permissions,
       });
       navigate("/dashboard", { replace: true });
     } catch (err) {

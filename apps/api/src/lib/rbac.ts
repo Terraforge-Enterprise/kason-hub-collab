@@ -1,6 +1,6 @@
-export type AdminRole = "admin" | "manager" | "editor";
+export type AdminRole = "admin" | "director" | "manager" | "editor";
 
-const RANK: Record<AdminRole, number> = { editor: 1, manager: 2, admin: 3 };
+const RANK: Record<AdminRole, number> = { editor: 1, manager: 2, director: 3, admin: 4 };
 
 export function atLeast(role: AdminRole, min: AdminRole): boolean {
   return RANK[role] >= RANK[min];

@@ -138,17 +138,27 @@ export function OwnerTable({ owners, focusedPartyId = null }: { owners: OwnerLis
 
       {/* Table */}
       <div className="overflow-x-auto">
-        <table className="min-w-full border-collapse text-left text-sm">
+        <table className="w-full table-fixed border-collapse text-sm">
+          <colgroup>
+            <col className="w-9" />
+            <col className="w-[18%]" />
+            <col className="w-[20%]" />
+            <col className="w-[18%]" />
+            <col className="w-[14%]" />
+            <col className="w-[12%]" />
+            <col className="w-[12%]" />
+            <col className="w-16" />
+          </colgroup>
           <thead className="border-b border-[var(--border)] bg-[var(--page-bg)] text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
             <tr>
-              <th className="w-8 px-2 py-3" aria-label="Expand" />
-              <th className="px-4 py-3 font-semibold">Name</th>
-              <th className="px-4 py-3 font-semibold">Email</th>
-              <th className="px-4 py-3 font-semibold">Phone</th>
-              <th className="px-4 py-3 font-semibold">Nationality</th>
-              <th className="px-4 py-3 font-semibold">Status</th>
-              <th className="px-4 py-3 font-semibold">Blacklisted</th>
-              <th className="px-4 py-3 text-right font-semibold">Actions</th>
+              <th className="px-2 py-3" aria-label="Expand" />
+              <th className="px-3 py-3 font-semibold" style={{ textAlign: "left" }}>Name</th>
+              <th className="px-3 py-3 text-left font-semibold">Email</th>
+              <th className="px-3 py-3 text-left font-semibold">Phone</th>
+              <th className="px-3 py-3 text-left font-semibold">Nationality</th>
+              <th className="px-3 py-3 text-left font-semibold">Status</th>
+              <th className="px-3 py-3 text-left font-semibold">Blacklisted</th>
+              <th className="px-3 py-3 text-left font-semibold">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -205,7 +215,7 @@ function OwnerRow({ owner, initiallyExpanded = false }: { owner: OwnerListItem; 
         className="cursor-pointer border-b border-[var(--border)] transition hover:bg-[var(--page-bg)]"
       >
         {/* Leading chevron — toggles the expand panel */}
-        <td className="px-2 py-3.5 text-sm">
+        <td className="align-middle px-2 py-3.5 text-sm">
           <button
             type="button"
             onClick={(e) => {
@@ -224,7 +234,7 @@ function OwnerRow({ owner, initiallyExpanded = false }: { owner: OwnerListItem; 
           </button>
         </td>
 
-        <td className="px-4 py-3.5 text-sm text-[var(--text-primary)]">
+        <td className="align-middle px-3 py-3.5 text-left text-sm text-[var(--text-primary)]">
           <span className="font-medium text-[var(--text-primary)]">{owner.displayName}</span>
           <div className="mt-0.5 text-xs text-[var(--text-muted)]">
             {owner.units && owner.units.length > 0
@@ -232,19 +242,19 @@ function OwnerRow({ owner, initiallyExpanded = false }: { owner: OwnerListItem; 
               : "(no unit)"}
           </div>
         </td>
-        <td className="px-4 py-3.5 text-sm text-[var(--text-primary)]">
+        <td className="align-middle px-3 py-3.5 text-left text-sm text-[var(--text-primary)]">
           {owner.primaryEmail ?? "-"}
         </td>
-        <td className="px-4 py-3.5 text-sm text-[var(--text-primary)]">
+        <td className="align-middle px-3 py-3.5 text-left text-sm text-[var(--text-primary)]">
           {owner.formattedPhone ?? owner.primaryPhone ?? "-"}
         </td>
-        <td className="px-4 py-3.5 text-sm text-[var(--text-primary)]">
+        <td className="align-middle px-3 py-3.5 text-left text-sm text-[var(--text-primary)]">
           {owner.nationality ?? "-"}
         </td>
-        <td className="px-4 py-3.5 text-sm text-[var(--text-primary)]">
+        <td className="align-middle px-3 py-3.5 text-left text-sm text-[var(--text-primary)]">
           <StatusPill tone={getStatusTone(owner.status)}>{owner.status}</StatusPill>
         </td>
-        <td className="px-4 py-3.5 text-sm text-[var(--text-primary)]">
+        <td className="align-middle px-3 py-3.5 text-left text-sm text-[var(--text-primary)]">
           <StatusPill tone={owner.isBlacklisted ? "rose" : "emerald"}>
             {owner.isBlacklisted ? "yes" : "no"}
           </StatusPill>
@@ -253,9 +263,9 @@ function OwnerRow({ owner, initiallyExpanded = false }: { owner: OwnerListItem; 
             dialogs it triggers) never toggles the row's expand panel. */}
         <td
           onClick={(e) => e.stopPropagation()}
-          className="px-4 py-3.5 text-right text-sm text-[var(--text-primary)]"
+          className="align-middle px-3 py-3.5 text-left text-sm text-[var(--text-primary)]"
         >
-          <div className="flex justify-end">
+          <div className="flex justify-start">
             <DropdownMenu>
               <DropdownMenuTrigger
                 aria-label={`Actions for ${owner.displayName}`}

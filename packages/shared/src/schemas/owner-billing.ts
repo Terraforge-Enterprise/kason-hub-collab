@@ -44,6 +44,7 @@ const decimalString = z.string().regex(/^\d+(\.\d{1,2})?$/, "expected a non-nega
 const managementFeeConfigShape = z.object({
   ownerPartyId: z.string().uuid(),
   propertyId: z.string().uuid().nullable().optional(), // null = all the owner's properties
+  apartmentId: z.string().uuid().nullable().optional(), // unit override; null = property/owner default
   feeType: z.enum(FEE_TYPES),
   feeValue: decimalString, // % when percent/cap, RM when fixed
   capAmount: decimalString.nullable().optional(),

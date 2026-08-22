@@ -396,8 +396,8 @@ describe("toGridRowDto", () => {
     );
     // P5: real rooms with no reading ⇒ updatedAt/lastEditedByName both null. Tenant phone passes through.
     expect(dto.subRows).toEqual([
-      { listingId: "L1", tenancyId: "T1", partyId: null, partyName: "Ali bin Ahmad", partyPhone: "012-3456789", previousKwh: null, currentKwh: null, amount: null, ratePerKwh: "0.5500", rateConfigured: true, rental: "1800.00", rentalBillingState: null, deposit: null, depositBillingState: null, updatedAt: null, lastEditedByName: null, numberOfPax: null },
-      { listingId: "L2", tenancyId: null, partyId: null, partyName: null, partyPhone: null, previousKwh: null, currentKwh: null, amount: null, ratePerKwh: "0.6000", rateConfigured: false, rental: null, rentalBillingState: null, deposit: null, depositBillingState: null, updatedAt: null, lastEditedByName: null, numberOfPax: null },
+      { listingId: "L1", tenancyId: "T1", partyId: null, partyName: "Ali bin Ahmad", partyPhone: "012-3456789", tenancyEndDate: null, renewalDecision: null, previousKwh: null, currentKwh: null, amount: null, ratePerKwh: "0.5500", rateConfigured: true, rental: "1800.00", rentalBillingState: null, deposit: null, depositBillingState: null, updatedAt: null, lastEditedByName: null, numberOfPax: null },
+      { listingId: "L2", tenancyId: null, partyId: null, partyName: null, partyPhone: null, tenancyEndDate: null, renewalDecision: null, previousKwh: null, currentKwh: null, amount: null, ratePerKwh: "0.6000", rateConfigured: false, rental: null, rentalBillingState: null, deposit: null, depositBillingState: null, updatedAt: null, lastEditedByName: null, numberOfPax: null },
     ]);
   });
 
@@ -505,7 +505,7 @@ describe("toGridRowDto", () => {
     );
     // P5: this orphan-reading fixture carries no updatedAt/updatedById ⇒ both null.
     expect(dto.subRows).toEqual([
-      { listingId: "L-ORPHAN", tenancyId: null, partyId: null, partyName: null, partyPhone: null, previousKwh: null, currentKwh: null, amount: null, ratePerKwh: "0.6000", rateConfigured: false, rental: null, rentalBillingState: null, deposit: null, depositBillingState: null, updatedAt: null, lastEditedByName: null, numberOfPax: null },
+      { listingId: "L-ORPHAN", tenancyId: null, partyId: null, partyName: null, partyPhone: null, tenancyEndDate: null, renewalDecision: null, previousKwh: null, currentKwh: null, amount: null, ratePerKwh: "0.6000", rateConfigured: false, rental: null, rentalBillingState: null, deposit: null, depositBillingState: null, updatedAt: null, lastEditedByName: null, numberOfPax: null },
     ]);
   });
 

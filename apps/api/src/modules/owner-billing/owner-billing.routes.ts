@@ -15,6 +15,7 @@ import {
 import { requireRole } from "../../middleware/require-role";
 import type { SessionPayload } from "../../lib/auth";
 import type { AdminRole } from "../../lib/rbac";
+import { requirePermission } from "../../middleware/require-permission";
 import { getActorHeaders } from "../../lib/actor-ctx";
 import { formatZodError } from "../../lib/zod-error-mapper";
 import { isPhase2FlagEnabled } from "../../lib/feature-flags";
@@ -24,6 +25,7 @@ import {
   addStatementLineService,
   approveStatementService,
   firstCheckStatementService,
+  getStatementApprovalPreflightService,
   createFeeConfigService,
   generateStatementService,
   getBillingReadinessService,
@@ -427,13 +429,19 @@ ownerBillingRoutes.post("/statements/:id/adjust", requireRole("admin"), async (c
 // org-scoped; cross-org / unknown → 404. Stale transition → 409 "Record changed —
 // reloaded". (Reads/list stay manager; generate stays admin.)
 
-ownerBillingRoutes.post("/statements/:id/approve", requireRole("admin"), async (c) => {
+ownerBillingRoutes.get("/statements/:id/approval-preflight", requireRole("manager"), async (c) => {
+  const result = await getStatementApprovalPreflightService(actor(c), c.req.param("id"));
+  if (!result.ok) return c.json({ error: result.error }, result.status as 404);
+  return c.json({ data: result.data });
+});
+
+ownerBillingRoutes.post("/statements/:id/approve", requirePermission("owner_report.final_approve"), async (c) => {
   const result = await approveStatementService(actor(c), c.req.param("id"));
   if (!result.ok) return c.json({ error: result.error }, result.status as 404 | 409);
   return c.json({ data: result.data });
 });
 
-ownerBillingRoutes.post("/statements/:id/first-check", requireRole("admin"), async (c) => {
+ownerBillingRoutes.post("/statements/:id/first-check", requirePermission("owner_report.first_check"), async (c) => {
   const result = await firstCheckStatementService(actor(c), c.req.param("id"));
   if (!result.ok) return c.json({ error: result.error }, result.status as 404 | 409);
   return c.json({ data: result.data });

@@ -149,6 +149,38 @@ dn("per-line expense lock (R6 write half)", () => {
     expect(r.error).toBe("ENTRY_LOCKED");
   });
 
+  it("allows internal actual-cost bookkeeping after the customer charge is paid", async () => {
+    const [paidId] = await twoExpenses();
+    await payExpense(paidId);
+
+    const r = await updateExpenseService(session, paidId, {
+      actualCost: "80.00",
+      costVendor: "Sofa supplier",
+      costPaymentStatus: "paid",
+      costPaymentDate: "2026-08-20",
+      costPaymentAccount: "Maybank",
+    });
+    expect(r.ok).toBe(true);
+
+    const saved = await getDb().gridExpense.findUniqueOrThrow({ where: { id: paidId } });
+    expect(saved.actualCost?.toFixed(2)).toBe("80.00");
+    expect(saved.costVendor).toBe("Sofa supplier");
+    expect(saved.costPaymentStatus).toBe("paid");
+  });
+
+  it("does not allow a cost patch to smuggle a paid customer amount edit", async () => {
+    const [paidId] = await twoExpenses();
+    await payExpense(paidId);
+
+    const r = await updateExpenseService(session, paidId, {
+      amount: "999.00",
+      actualCost: "80.00",
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error).toBe("ENTRY_LOCKED");
+  });
+
   it("the paid line cannot be voided, the unpaid one can", async () => {
     const [paidId, otherId] = await twoExpenses();
     await payExpense(paidId);

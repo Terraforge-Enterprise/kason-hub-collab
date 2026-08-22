@@ -115,12 +115,8 @@ describe("getTemplateForOrgDocType", () => {
     expect(t.logoUrl).toBe("https://s3.test/logos/org-wide.png?sig=x");
   });
 
-  // orgName resolution — after the 2026-05-21 letterhead consolidation,
-  // Organization.name is the single source of truth (legalEntityName was
-  // removed). The Document Templates editor saves to Organization.name so
-  // the live preview and the rendered PDF always agree.
-  it("uses Organization.name as orgName", async () => {
-    mockOrgName = "KAEN Properties Sdn Bhd";
+  it("uses the fixed registered legal entity name", async () => {
+    mockOrgName = "KAEN PROPERTIES MANAGEMENT SDN BHD";
     mockOrgCardSettings = { logoKey: "logos/x.png", legalEntityName: null };
     vi.mocked(repo.findTemplate).mockResolvedValue({
       id: "tpl-1", organizationId: "org-1", docType: "reservation_form",
@@ -131,13 +127,13 @@ describe("getTemplateForOrgDocType", () => {
     });
 
     const t = await getTemplateForOrgDocType("org-1", "reservation_form");
-    expect(t.orgName).toBe("KAEN Properties Sdn Bhd");
+    expect(t.orgName).toBe("KAEN PROPERTIES MANAGEMENT SDN BHD");
   });
 
   it("ignores the now-deprecated legalEntityName when set", async () => {
     // Existing rows may still carry a non-null legalEntityName from before
     // the consolidation — the render path no longer reads it.
-    mockOrgName = "KAEN Properties Sdn Bhd";
+    mockOrgName = "KAEN PROPERTIES MANAGEMENT SDN BHD";
     mockOrgCardSettings = {
       logoKey: null,
       legalEntityName: "STALE OVERRIDE THAT SHOULD NOT WIN",
@@ -151,7 +147,7 @@ describe("getTemplateForOrgDocType", () => {
     });
 
     const t = await getTemplateForOrgDocType("org-1", "reservation_form");
-    expect(t.orgName).toBe("KAEN Properties Sdn Bhd");
+    expect(t.orgName).toBe("KAEN PROPERTIES MANAGEMENT SDN BHD");
   });
 
   it("uses per-template logoKey over org-wide when both are set", async () => {

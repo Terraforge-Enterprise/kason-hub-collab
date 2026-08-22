@@ -4,9 +4,9 @@ import { useAuth } from "@/lib/auth";
  * Admin roles recognised by the UI. Mirrors apps/api/src/lib/rbac.ts.
  * editor < manager < admin — higher rank includes every lower-rank capability.
  */
-export type AdminRole = "admin" | "manager" | "editor";
+export type AdminRole = "admin" | "director" | "manager" | "editor";
 
-const ROLE_RANK: Record<AdminRole, number> = { editor: 1, manager: 2, admin: 3 };
+const ROLE_RANK: Record<AdminRole, number> = { editor: 1, manager: 2, director: 3, admin: 4 };
 
 /**
  * Hide children unless the current session meets `min` (admin role rank).

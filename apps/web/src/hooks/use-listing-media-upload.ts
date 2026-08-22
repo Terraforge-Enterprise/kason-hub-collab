@@ -3,11 +3,13 @@ import { toast } from "sonner";
 import { apiFetch } from "@/lib/api-client";
 
 type UploadKind = "photo" | "video";
+export type MediaCategory = "advertising" | "before_move_in" | "move_out";
 
 export type QueueItem = {
   id: string;
   file: File;
   kind: UploadKind;
+  category: MediaCategory;
   status: "queued" | "requesting" | "uploading" | "completing" | "done" | "error";
   progress: number; // 0-100
   storageKey?: string;
@@ -50,6 +52,7 @@ export function useListingMediaUpload(opts: {
    * pass them through so the UI guard matches the server gate exactly.
    */
   caps?: { photoMaxBytes: number; videoMaxBytes: number };
+  category?: MediaCategory;
 }) {
   const photoMaxBytes = opts.caps?.photoMaxBytes ?? PHOTO_MAX_BYTES;
   const videoMaxBytes = opts.caps?.videoMaxBytes ?? VIDEO_MAX_BYTES;
@@ -59,10 +62,12 @@ export function useListingMediaUpload(opts: {
   // Keep opts fresh inside the async runOne without stale-closure bugs.
   const listingIdRef = useRef(opts.listingId);
   const onSuccessRef = useRef(opts.onSuccess);
+  const categoryRef = useRef<MediaCategory>(opts.category ?? "advertising");
   useEffect(() => {
     listingIdRef.current = opts.listingId;
     onSuccessRef.current = opts.onSuccess;
-  }, [opts.listingId, opts.onSuccess]);
+    categoryRef.current = opts.category ?? "advertising";
+  }, [opts.listingId, opts.onSuccess, opts.category]);
 
   // Track mount state and any in-flight XHR so the cleanup effect can abort
   // mid-flight uploads when the component unmounts.
@@ -94,6 +99,7 @@ export function useListingMediaUpload(opts: {
           method: "POST",
           body: JSON.stringify({
             kind: item.kind,
+            category: item.category,
             filename: item.file.name,
             mimeType: item.file.type,
             sizeBytes: item.file.size,
@@ -203,6 +209,7 @@ export function useListingMediaUpload(opts: {
         id: crypto.randomUUID(),
         file,
         kind,
+        category: categoryRef.current,
         status: "queued",
         progress: 0,
       });

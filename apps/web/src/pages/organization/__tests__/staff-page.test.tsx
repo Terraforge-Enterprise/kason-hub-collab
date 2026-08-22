@@ -28,7 +28,7 @@ vi.mock("@/components/role-gate", () => ({
     fallback?: React.ReactNode;
   }) => {
     const { __testRole } = globalThis as { __testRole?: string };
-    const RANK: Record<string, number> = { editor: 1, manager: 2, admin: 3 };
+    const RANK: Record<string, number> = { editor: 1, manager: 2, director: 3, admin: 4 };
     const role = __testRole ?? "editor";
     const current = RANK[role] ?? 0;
     const required = RANK[min] ?? Number.POSITIVE_INFINITY;
@@ -87,6 +87,8 @@ const sampleUsers = [
   u({ id: "u2", email: "bob@example.com", fullName: "Bob Editor", role: "editor", status: "disabled" }),
   u({ id: "u3", email: "root@example.com", fullName: "Root Admin", role: "admin", status: "active" }),
   u({ id: "u4", email: "vera@example.com", fullName: "Vera Viewer", role: "viewer", status: "active" }),
+  u({ id: "u5", email: "diana@example.com", fullName: "Diana Director", role: "director", status: "active" }),
+  u({ id: "u6", email: "fiona@example.com", fullName: "Fiona Finance", role: "accountant", status: "active" }),
 ];
 
 function roleGroup() {
@@ -115,7 +117,7 @@ describe("StaffPage", () => {
     vi.restoreAllMocks();
   });
 
-  it("fetches the four managed operator roles in one query, excluding accountant", async () => {
+  it("fetches all six formal staff roles in one query", async () => {
     const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
     fetchMock.mockResolvedValue(makeResponse({ data: [] }));
 
@@ -124,15 +126,10 @@ describe("StaffPage", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const url = fetchMock.mock.calls[0][0] as string;
     expect(url).toContain("/users");
-    // One query for the whole register (the merge point) — the union of the two
-    // retired pages' roles. Crucially it must NOT leak the accountant capability
-    // role, which has no filter chip, no ROLE_LABELS entry, and no editable role
-    // in the Add/Edit drawer.
     expect(url).toMatch(/roles=/);
-    for (const role of ["admin", "manager", "editor", "viewer"]) {
+    for (const role of ["admin", "director", "accountant", "manager", "editor", "viewer"]) {
       expect(url).toContain(role);
     }
-    expect(url).not.toContain("accountant");
   });
 
   it("renders empty state when there are no users", async () => {
@@ -149,6 +146,8 @@ describe("StaffPage", () => {
     expect(screen.getByText("Bob Editor")).toBeInTheDocument();
     expect(screen.getByText("Root Admin")).toBeInTheDocument();
     expect(screen.getByText("Vera Viewer")).toBeInTheDocument();
+    expect(screen.getByText("Diana Director")).toBeInTheDocument();
+    expect(screen.getByText("Fiona Finance")).toBeInTheDocument();
     // Status pills render (Bob is disabled; the other three active). getAllByText
     // because "Active"/"Disabled" also appear as PageHeader metric labels — this
     // mirrors the assertion the retired admins-page test carried.
@@ -170,13 +169,13 @@ describe("StaffPage", () => {
     expect(screen.queryByText("Root Admin")).toBeNull();
     expect(screen.queryByText("Vera Viewer")).toBeNull();
 
-    // Switch to Admin → only the admin row.
-    fireEvent.click(roleGroup().getByRole("button", { name: /admin/i }));
+    // Switch to Super Admin → only the protected Super Admin row.
+    fireEvent.click(roleGroup().getByRole("button", { name: /^super admin/i }));
     expect(screen.getByText("Root Admin")).toBeInTheDocument();
     expect(screen.queryByText("Alice Manager")).toBeNull();
   });
 
-  it("shows + Add user for a manager session, hides it for an editor", async () => {
+  it("shows + Add user only for a Super Admin session", async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(makeResponse({ data: [] }));
 
     // Editor: hidden.
@@ -184,10 +183,10 @@ describe("StaffPage", () => {
     await waitFor(() => expect(screen.queryByRole("button", { name: /\+ add user/i })).toBeNull());
     editor.unmount();
 
-    // Manager: shown.
-    (globalThis as { __testRole?: string }).__testRole = "manager";
+    // Super Admin: shown.
+    (globalThis as { __testRole?: string }).__testRole = "admin";
     mockUseAuth.mockReturnValue({
-      user: { id: "current-user", fullName: "Current User", role: "manager", email: "current@example.com", orgId: "org1" },
+      user: { id: "current-user", fullName: "Current User", role: "admin", email: "current@example.com", orgId: "org1" },
       setAuth: vi.fn(),
       clearAuth: vi.fn(),
       isAuthenticated: true,
@@ -213,10 +212,10 @@ describe("StaffPage", () => {
     expect(screen.getByRole("button", { name: /actions for alice manager/i })).toBeInTheDocument();
   });
 
-  it("+ Add user drawer offers Manager as a role (not just editor/viewer)", async () => {
-    (globalThis as { __testRole?: string }).__testRole = "manager";
+  it("+ Add user drawer offers the five assignable roles", async () => {
+    (globalThis as { __testRole?: string }).__testRole = "admin";
     mockUseAuth.mockReturnValue({
-      user: { id: "current-user", fullName: "Current User", role: "manager", email: "current@example.com", orgId: "org1" },
+      user: { id: "current-user", fullName: "Current User", role: "admin", email: "current@example.com", orgId: "org1" },
       setAuth: vi.fn(),
       clearAuth: vi.fn(),
       isAuthenticated: true,
@@ -227,10 +226,13 @@ describe("StaffPage", () => {
     await waitFor(() => screen.getByRole("button", { name: /\+ add user/i }));
     fireEvent.click(screen.getByRole("button", { name: /\+ add user/i }));
 
-    // The role <select> must include Manager, Editor, and Viewer options.
+    // Super Admin is protected and is intentionally not assignable here.
+    await waitFor(() => expect(screen.getByRole("option", { name: "Director" })).toBeInTheDocument());
+    expect(screen.getByRole("option", { name: "Finance" })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("option", { name: "Manager" })).toBeInTheDocument());
-    expect(screen.getByRole("option", { name: "Editor" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Operations Admin" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Viewer" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Super Admin" })).toBeNull();
   });
 
   it("marks the self row with '(you)'", async () => {

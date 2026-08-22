@@ -8,7 +8,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import type { GridRow, GridEntryDto, GridBearerConfigDto, GridSubRow } from "@/api/bills-grid";
-import { GridTable, rowHasBillingState } from "../grid-table";
+import { billingStateForCell, GridTable, renewalSignalForRow, rowHasBillingState } from "../grid-table";
 import { CURRENT_COLUMNS } from "../columns";
 import { emptySettlementCells } from "@kason/shared";
 
@@ -88,6 +88,47 @@ function makeRow(partial: Partial<GridRow> = {}): GridRow {
 }
 
 describe("GridTable", () => {
+  it("shows a 60-day renewal signal and advances its message with the tenant decision", () => {
+    const now = new Date(2026, 7, 22);
+    const ending = makeSubRow({ tenancyId: "T1", tenancyEndDate: "2026-10-21T00:00:00.000Z", renewalDecision: "pending" });
+    expect(renewalSignalForRow(makeRow({ subRows: [ending] }), now)).toEqual({
+      tenancyId: "T1",
+      label: "Ask tenant about renewal · 60d left",
+      urgent: true,
+    });
+    expect(renewalSignalForRow(makeRow({ subRows: [{ ...ending, renewalDecision: "contacted" }] }), now)?.label).toBe("Renewal answer pending · 60d left");
+    expect(renewalSignalForRow(makeRow({ subRows: [{ ...ending, renewalDecision: "renew" }] }), now)?.label).toBe("Renewal · add TA fee");
+    expect(renewalSignalForRow(makeRow({
+      subRows: [{ ...ending, renewalDecision: "renew" }],
+      agreementFees: {
+        new: { amount: "0.00", outstanding: "0.00", state: "none" },
+        renewal: { amount: "0.00", outstanding: "0.00", state: "saved" },
+      },
+    }), now)?.label).toBe("Renewal ready to complete");
+    expect(renewalSignalForRow(makeRow({ subRows: [{ ...ending, renewalDecision: "not_renew" }] }), now)?.label).toBe("Move-out planned · 60d left");
+  });
+
+  it("uses compact content-led widths for Rent, Deposit and TA without forcing Fit All wider than its container", () => {
+    const compactColumns = CURRENT_COLUMNS.filter((column) =>
+      ["rental", "deposit", "agreementFee"].includes(column.id),
+    );
+    const { container, rerender } = render(
+      <GridTable rows={[]} columns={compactColumns} displayMode="easy-read" />,
+    );
+
+    expect(Array.from(container.querySelectorAll("col"), (col) => col.style.width)).toEqual([
+      "300px",
+      "86px",
+      "86px",
+      "72px",
+    ]);
+
+    rerender(<GridTable rows={[]} columns={compactColumns} displayMode="fit-all" />);
+    const table = container.querySelector("table");
+    expect(table?.className).not.toContain("min-w-[1680px]");
+    expect(table?.style.minWidth).toBe("");
+  });
+
   it("does not render the redundant Billed lifecycle tag", () => {
     render(<GridTable rows={[makeRow({ billed: true, billedAt: null })]} columns={CURRENT_COLUMNS} />);
     expect(screen.queryByTestId("billed-badge")).not.toBeInTheDocument();
@@ -392,14 +433,54 @@ describe("GridTable", () => {
     expect(cell.getAttribute("aria-readonly")).toBe("true");
   });
 
-  it('"band order": headers include Water and the management-fee tax split', () => {
+  it('"band order": TA sits inside Rent & Deposit and management fee has one SST-inclusive column', () => {
     render(<GridTable rows={[]} columns={CURRENT_COLUMNS} />);
     const bands = screen.getAllByTestId("band-header").map((el) => el.textContent);
     expect(bands).toEqual([
-      "Monthly Rental & Deposit", "Cleaning", "TNB", "Water", "WiFi",
-      "Maintenance Fee", "Recurring", "Tenant Expenses", "Owner Expenses", "Management Fee", "Owner Payout",
+      "Rent & Deposit", "Cleaning", "TNB", "Water", "WiFi",
+      "Maint Fee", "Recurring", "Tenant Expenses", "Owner Expenses", "Management Fee", "Owner Payout",
     ]);
     expect(screen.queryByText(/aircond/i)).toBeNull();
+  });
+
+  it("combines new and renewal agreement fees into one SST-inclusive TA cell", () => {
+    const row = makeRow({
+      agreementFees: {
+        new: { amount: "350.00", outstanding: "350.00", state: "saved" },
+        renewal: { amount: "250.00", outstanding: "0.00", state: "paid" },
+      },
+      managementFee: { nonSst: "250.00", sst: "20.00", total: "270.00" },
+    });
+    render(<GridTable rows={[row]} columns={CURRENT_COLUMNS} />);
+    expect(screen.getByTestId("cell-agreementFee")).toHaveTextContent("600.00");
+    expect(screen.getByTestId("cell-managementFeeSst")).toHaveTextContent("270.00");
+    expect(billingStateForCell(row, row.apartmentId, "agreementFee")).toBe("saved");
+  });
+
+  it("distinguishes no TA charge from a deliberately saved zero-value TA charge", () => {
+    const noTa = makeRow({
+      agreementFees: {
+        new: { amount: "0.00", outstanding: "0.00", state: "none" },
+        renewal: { amount: "0.00", outstanding: "0.00", state: "none" },
+      },
+    });
+    const zeroTa = makeRow({
+      apartmentId: "APT-ZERO-TA",
+      unitCode: "A-01-02",
+      agreementFees: {
+        new: { amount: "0.00", outstanding: "0.00", state: "saved" },
+        renewal: { amount: "0.00", outstanding: "0.00", state: "none" },
+      },
+    });
+
+    const { rerender } = render(<GridTable rows={[noTa]} columns={CURRENT_COLUMNS} />);
+    expect(screen.getByTestId("cell-agreementFee")).toHaveTextContent("—");
+
+    rerender(<GridTable key="zero-ta" rows={[zeroTa]} columns={CURRENT_COLUMNS} />);
+    expect(billingStateForCell(zeroTa, zeroTa.apartmentId, "agreementFee")).toBe("saved");
+    const cell = screen.getByTestId("cell-agreementFee");
+    expect(cell).toHaveTextContent("0.00");
+    expect(cell).toHaveAttribute("data-billing-state", "saved");
   });
 
   it('"prior strip": 3 months selected → DOM has NO prior-month cells for rental/maintenance/meter/SST-split', () => {
@@ -588,10 +669,10 @@ describe("GridTable", () => {
 
   // Task 11 (R4b) — full sticky header: on vertical scroll the WHOLE header
   // (both thead rows), not just the Unit corner, must stay visible. Row 1
-  // (band groups) pins at top-0; row 2 (per-column headers) pins at top-14
-  // (3.5rem = row 1's own h-14 height) so it sits directly below row 1
+  // (band groups) pins at top-0; row 2 (per-column headers) pins at top-10
+  // (2.5rem = row 1's own h-10 height) so it sits directly below row 1
   // instead of overlapping it.
-  it('"sticky full header (R4b)": a band-header cell (row 1) carries sticky + top-0 + opaque bg; a column-header cell (row 2) carries sticky + top-14 + opaque bg', () => {
+  it('"sticky full header (R4b)": a band-header cell (row 1) carries sticky + top-0 + opaque bg; a column-header cell (row 2) carries sticky + top-10 + opaque bg', () => {
     render(<GridTable rows={[]} columns={CURRENT_COLUMNS} />);
 
     const bandHeaderCell = screen.getAllByTestId("band-header")[0];
@@ -601,7 +682,7 @@ describe("GridTable", () => {
 
     const columnHeaderCell = screen.getByTestId("col-header-rental");
     expect(columnHeaderCell.className).toContain("sticky");
-    expect(columnHeaderCell.className).toContain("top-14");
+    expect(columnHeaderCell.className).toContain("top-10");
     expect(columnHeaderCell.className).toContain("bg-[var(--page-bg)]");
   });
 

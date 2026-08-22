@@ -8,7 +8,7 @@ import { billingDocsFlagGate } from "./billing-documents.gate";
 import { chargeAdjustmentsFlagGate } from "./charge-adjustment.gate";
 import { listBillingDocuments, getBillingDocumentDetail } from "./repository";
 import { getPendingPaymentsForDocument } from "./pending-payments.service";
-import { getBillingDocumentPdfUrl } from "./pdf.service";
+import { getBillingDocumentPdfUrl, renderBillingDocumentPdfFile } from "./pdf.service";
 import { resolveAttachmentUrlService } from "./attachment-url.service";
 import { applyCreditManuallyService } from "./credit-apply.service";
 import { createManualInvoiceService } from "./invoice-create.service";
@@ -87,6 +87,19 @@ billingDocumentsRoutes.get("/:id/pdf", async (c) => {
   const result = await getBillingDocumentPdfUrl(session.orgId, c.req.param("id"));
   if (!result) return c.json({ error: "Document not found" }, 404);
   return c.json({ data: result });
+});
+
+// Local-storage-independent PDF download. The URL endpoint above points here
+// automatically when Supabase is not configured; it is also useful as a stable
+// direct-download route for accountants.
+billingDocumentsRoutes.get("/:id/pdf-file", async (c) => {
+  const session = c.get("session");
+  const result = await renderBillingDocumentPdfFile(session.orgId, c.req.param("id"));
+  if (!result) return c.json({ error: "Document not found" }, 404);
+  c.header("Content-Type", "application/pdf");
+  c.header("Content-Disposition", `inline; filename="${result.filename.replace(/["\\\r\n]/g, " ")}"`);
+  c.header("Cache-Control", "private, no-store");
+  return c.body(new Uint8Array(result.bytes));
 });
 
 // P3: manual invoice create (R11). Mints posted Charge rows + issues one

@@ -7,7 +7,7 @@ import type { SessionPayload } from "../../lib/auth";
 
 export async function listUsersService(
   session: SessionPayload,
-  opts?: { roles?: ("admin" | "manager" | "editor" | "viewer")[] },
+  opts?: { roles?: ("admin" | "director" | "accountant" | "manager" | "editor" | "viewer")[] },
 ) {
   const db = getDb();
   const users = await db.user.findMany({
@@ -21,6 +21,7 @@ export async function listUsersService(
       email: true,
       fullName: true,
       role: true,
+      permissionOverrides: true,
       status: true,
       lastLoginAt: true,
       createdAt: true,
@@ -49,6 +50,15 @@ export async function listUsersService(
 export async function createUserService(session: SessionPayload, input: CreateUserInput) {
   const db = getDb();
   const email = input.email.trim().toLowerCase();
+
+  // A Manager may administer day-to-day staff, but cannot manufacture the
+  // one capability deliberately withheld from that role.
+  if (
+    !["admin", "director"].includes(session.role) &&
+    (input.role === "director" || input.permissionOverrides?.["owner_report.final_approve"] === true)
+  ) {
+    return { ok: false as const, status: 403 as const, error: "cannot grant final owner-report approval" };
+  }
 
   // Reject admin role (belt-and-suspenders — zod schema already blocks it)
   if ((input.role as string) === "admin") {
@@ -105,6 +115,7 @@ export async function createUserService(session: SessionPayload, input: CreateUs
         email,
         fullName: input.fullName,
         role: input.role,
+        permissionOverrides: input.permissionOverrides ?? {},
         passwordHash,
         userType: "operator",
         status: "active",
@@ -182,12 +193,20 @@ export async function updateUserService(
   const adminCheck = rejectAdminTier(target);
   if (adminCheck) return adminCheck;
 
+  if (
+    !["admin", "director"].includes(session.role) &&
+    (target.role === "director" || input.role === "director" || input.permissionOverrides?.["owner_report.final_approve"] === true)
+  ) {
+    return { ok: false as const, status: 403 as const, error: "cannot grant or modify final owner-report approval" };
+  }
+
   await db.$transaction(async (tx) => {
     await tx.user.update({
       where: { id: targetId },
       data: {
         ...(input.fullName !== undefined && { fullName: input.fullName }),
         ...(input.role !== undefined && { role: input.role }),
+        ...(input.permissionOverrides !== undefined && { permissionOverrides: input.permissionOverrides }),
       },
     });
 

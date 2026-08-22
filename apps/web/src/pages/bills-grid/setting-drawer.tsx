@@ -349,16 +349,17 @@ export function SettingDrawer({ apartmentId, open, onClose, subRows, isWholeUnit
       return res;
     },
     onSuccess: (res) => {
-      // Honest save feedback (user rule 2026-08-06): a billed/invoiced month's snapshot is
-      // frozen — saying "Saved." while syncing nothing read as "the toggle is broken".
+      // Honest save feedback: billed-but-unpaid months are updated and become re-billable.
+      // Only money received or an approved/frozen owner report prevents a current snapshot
+      // from moving to the newly selected Owner/Tenant side.
       const locked = res.lockedEntries ?? 0;
       const synced = res.syncedEntries ?? 0;
       if (locked > 0 && synced === 0) {
         toast.error(
-          "This month is already billed — its charges can't change. The new settings are saved and apply from the next unbilled month.",
+          "This month already has a payment or an approved owner report, so its billing side cannot change. The new setting applies to future months.",
         );
       } else if (locked > 0) {
-        toast.success("Setting saved. Already-billed months stay unchanged.");
+        toast.success("Setting saved. Paid or approved-report months stay unchanged.");
       } else {
         toast.success("Setting saved.");
       }

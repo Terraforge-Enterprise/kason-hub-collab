@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { computeManagementFee, type FeeType } from "@kason/shared";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import {
   createUnitsBatch,
@@ -33,7 +34,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { ActionButton } from "@/components/form-ui";
+import { ActionButton, SelectInput, TextInput } from "@/components/form-ui";
 import {
   blankUnitFormState,
   UnitFormBody,
@@ -44,6 +45,40 @@ import {
 import { CreateUnitMediaStep, type CreatedRoom } from "./unit-media-step";
 
 export type PropertyOption = { id: string; name: string; propertyCode: string };
+
+type CreateManagementFeeState = {
+  enabled: boolean;
+  feeType: FeeType;
+  feeValue: string;
+  capAmount: string;
+  sstPercent: string;
+  freePeriodStart: string;
+  freePeriodEnd: string;
+};
+
+const blankManagementFee = (): CreateManagementFeeState => ({
+  enabled: true,
+  feeType: "percent",
+  feeValue: "10",
+  capAmount: "",
+  sstPercent: "8",
+  freePeriodStart: "",
+  freePeriodEnd: "",
+});
+
+function dateInputToIso(value: string): string | null {
+  return value ? `${value}T00:00:00.000Z` : null;
+}
+
+function sixMonthFreePeriod(moveInDate: string): { start: string; end: string } | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(moveInDate)) return null;
+  const [year, month, day] = moveInDate.split("-").map(Number);
+  const start = new Date(Date.UTC(year!, month! - 1, day));
+  const afterSixMonths = new Date(Date.UTC(year!, month! - 1 + 6, day));
+  afterSixMonths.setUTCDate(afterSixMonths.getUTCDate() - 1);
+  const toInput = (date: Date) => date.toISOString().slice(0, 10);
+  return { start: toInput(start), end: toInput(afterSixMonths) };
+}
 
 /**
  * Server codes that name a control on this form. Surfacing them beside the
@@ -147,6 +182,9 @@ export function CreateUnitDialog({
   // Two-phase create: after a successful save the dialog does NOT close — it
   // shows the media step for the created listing(s). null = still on the form.
   const [mediaStep, setMediaStep] = useState<CreatedRoom[] | null>(null);
+  const [managementFee, setManagementFee] = useState<CreateManagementFeeState>(
+    blankManagementFee,
+  );
   const queryClient = useQueryClient();
 
   // Active Room Types for the per-room type picker in the strip. Shares the
@@ -184,6 +222,26 @@ export function CreateUnitDialog({
     );
   }, [apartmentsQuery.data, form.unitCode]);
 
+  const managementFeePreview = useMemo(() => {
+    if (!managementFee.enabled) return null;
+    const rent = form.monthlyRent.trim() || form.rentalRate.trim();
+    if (!rent || !managementFee.feeValue || !managementFee.sstPercent) return null;
+    try {
+      return computeManagementFee(
+        {
+          feeType: managementFee.feeType,
+          feeValue: managementFee.feeValue,
+          capAmount:
+            managementFee.feeType === "cap" ? managementFee.capAmount : null,
+          sstPercent: managementFee.sstPercent,
+        },
+        rent,
+      );
+    } catch {
+      return null;
+    }
+  }, [form.monthlyRent, form.rentalRate, managementFee]);
+
   // Pre-fill owner + billing model from the matched apartment, once per match,
   // so the admin sees what the new room will inherit and cannot unknowingly
   // submit a conflicting value. Keyed on the apartment id rather than the
@@ -220,23 +278,90 @@ export function CreateUnitDialog({
       setActiveRoomIndex(0);
       setRoomErrors({});
       setMediaStep(null);
+      setManagementFee(blankManagementFee());
       prefilledApartmentId.current = null;
     }
     setOpen(next);
   }
 
+  async function createManagementFeeConfig(apartmentId: string) {
+    if (!managementFee.enabled || !form.ownerPartyId || matchedApartment) return null;
+    try {
+      await apiFetch("/owner-billing/fee-configs", {
+        method: "POST",
+        body: JSON.stringify({
+          ownerPartyId: form.ownerPartyId,
+          propertyId,
+          apartmentId,
+          feeType: managementFee.feeType,
+          feeValue: managementFee.feeValue,
+          capAmount:
+            managementFee.feeType === "cap" ? managementFee.capAmount : null,
+          sstPercent: managementFee.sstPercent,
+          freePeriodStart: dateInputToIso(managementFee.freePeriodStart),
+          freePeriodEnd: dateInputToIso(managementFee.freePeriodEnd),
+        }),
+      });
+      queryClient.invalidateQueries({ queryKey: ["owner-fee-configs"] });
+      return null;
+    } catch (error) {
+      return error instanceof Error ? error.message : "Unknown error";
+    }
+  }
+
+  async function registerCreatedCarparks(apartmentId: string) {
+    if (matchedApartment || Number(form.parkingQuantity || 0) <= 0) return null;
+    try {
+      const quantity = Number(form.parkingQuantity);
+      await Promise.all(
+        Array.from({ length: quantity }, (_, index) =>
+          apiFetch("/carparks", {
+            method: "POST",
+            body: JSON.stringify({
+              apartmentId,
+              label: form.parkingNumbers[index]?.trim() || `Parking ${index + 1}`,
+              monthlyRate: form.parkingMonthlyRates[index]?.trim() || "0",
+            }),
+          }),
+        ),
+      );
+      queryClient.invalidateQueries({ queryKey: ["carparks"] });
+      return null;
+    } catch (error) {
+      return error instanceof Error ? error.message : "Unknown carpark setup error";
+    }
+  }
+
   const mutation = useMutation({
-    mutationFn: (body: Record<string, unknown>) =>
-      apiFetch<{ id?: string; warnings?: string[] }>("/inventory/units", {
+    mutationFn: async (body: Record<string, unknown>) => {
+      const response = await apiFetch<{
+        id?: string;
+        apartmentId?: string;
+        warnings?: string[];
+      }>("/inventory/units", {
         method: "POST",
         body: JSON.stringify(body),
-      }),
+      });
+      const setupWarnings: string[] = [];
+      if (response.apartmentId) {
+        const feeWarning = await createManagementFeeConfig(response.apartmentId);
+        if (feeWarning) setupWarnings.push(`management fee: ${feeWarning}`);
+        const carparkWarning = await registerCreatedCarparks(response.apartmentId);
+        if (carparkWarning) setupWarnings.push(`carparks: ${carparkWarning}`);
+      }
+      return { ...response, setupWarning: setupWarnings.join("; ") || null };
+    },
     onSuccess: (response) => {
       queryClient.invalidateQueries({ queryKey: ["inventory"] });
       // Coerce-to-draft: server flipped listingStatus to "draft" because
       // required-for-publish fields were missing. Surface a warning toast
       // (yellow) instead of the standard success toast.
-      if (response?.warnings && response.warnings.length > 0) {
+      if (response.setupWarning) {
+        toast.warning(
+          `Unit created, but related setup needs attention: ${response.setupWarning}.`,
+          { duration: 9000 },
+        );
+      } else if (response?.warnings && response.warnings.length > 0) {
         toast.warning(response.warnings.join(" "));
       } else {
         toast.success("Unit created.");
@@ -277,11 +402,23 @@ export function CreateUnitDialog({
     mutationFn: (body: {
       shared: CreateUnitsBatchSharedFields;
       rooms: CreateUnitsBatchRoom[];
-    }) => createUnitsBatch(body),
+    }) => createUnitsBatch(body).then(async (data) => ({
+      ...data,
+      feeConfigWarning: data.apartmentId
+        ? await createManagementFeeConfig(data.apartmentId)
+        : null,
+    })),
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["inventory"] });
       const n = data.ids.length;
-      toast.success(n === 1 ? "Room created." : `${n} rooms created.`);
+      if (data.feeConfigWarning) {
+        toast.warning(
+          `${n === 1 ? "Room" : `${n} rooms`} created, but management fee setup failed: ${data.feeConfigWarning}.`,
+          { duration: 9000 },
+        );
+      } else {
+        toast.success(n === 1 ? "Room created." : `${n} rooms created.`);
+      }
       if (n > 0) {
         setMediaStep(
           data.ids.map((id, i) => ({
@@ -328,6 +465,35 @@ export function CreateUnitDialog({
     if (!form.unitCode.trim()) {
       toast.error("Unit code is required.");
       return;
+    }
+    if (form.ownerPartyId && !matchedApartment && managementFee.enabled) {
+      if (!/^\d+(\.\d{1,2})?$/.test(managementFee.feeValue)) {
+        toast.error("Enter a valid management fee value (maximum 2 decimal places).");
+        return;
+      }
+      if (!/^\d+(\.\d{1,2})?$/.test(managementFee.sstPercent)) {
+        toast.error("Enter a valid SST percentage.");
+        return;
+      }
+      if (
+        managementFee.feeType === "cap" &&
+        !/^\d+(\.\d{1,2})?$/.test(managementFee.capAmount)
+      ) {
+        toast.error("Enter the management fee cap amount.");
+        return;
+      }
+      if (Boolean(managementFee.freePeriodStart) !== Boolean(managementFee.freePeriodEnd)) {
+        toast.error("Set both the free-period start and end dates, or leave both blank.");
+        return;
+      }
+      if (
+        managementFee.freePeriodStart &&
+        managementFee.freePeriodEnd &&
+        managementFee.freePeriodEnd < managementFee.freePeriodStart
+      ) {
+        toast.error("Management fee free-period end cannot be before its start.");
+        return;
+      }
     }
 
     // Partition: route to the batch endpoint. Branches BEFORE the single-unit
@@ -544,12 +710,162 @@ export function CreateUnitDialog({
             showPropertySelect={!defaultPropertyId}
             showOwner
             ownerEditable
+            allowCreateAgent
             showBillingModel
             alwaysShowRent
             partitionFieldsInStrip
             onModeChange={setMode}
             errors={errors}
           />
+
+          {form.ownerPartyId && !matchedApartment && (
+            <section className="rounded-xl border border-[#C9A35C]/60 bg-[#fffaf0] p-4 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold text-[#082B4F]">Management fee setup</h3>
+                  <p className="mt-1 text-sm text-[#657069]">
+                    Saved directly to this unit and owner. A management fee is charged only in months with rental.
+                  </p>
+                </div>
+                <label className="flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border border-[#9DAFC1] bg-white px-3 text-sm font-semibold text-[#082B4F]">
+                  <input
+                    type="checkbox"
+                    checked={managementFee.enabled}
+                    onChange={(event) =>
+                      setManagementFee((current) => ({ ...current, enabled: event.target.checked }))
+                    }
+                  />
+                  Charge management fee
+                </label>
+              </div>
+
+              {managementFee.enabled && (
+                <div className="mt-4 space-y-4">
+                  <div className="grid gap-3 md:grid-cols-4">
+                    <label className="space-y-1 text-sm font-semibold text-[#082B4F]">
+                      <span>Fee type</span>
+                      <SelectInput
+                        value={managementFee.feeType}
+                        onChange={(event) =>
+                          setManagementFee((current) => ({
+                            ...current,
+                            feeType: event.target.value as FeeType,
+                          }))
+                        }
+                      >
+                        <option value="percent">Percent of rent</option>
+                        <option value="fixed">Fixed RM</option>
+                        <option value="cap">Percent with cap</option>
+                      </SelectInput>
+                    </label>
+                    <label className="space-y-1 text-sm font-semibold text-[#082B4F]">
+                      <span>{managementFee.feeType === "fixed" ? "Fee (RM)" : "Fee (%)"}</span>
+                      <TextInput
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={managementFee.feeValue}
+                        onChange={(event) =>
+                          setManagementFee((current) => ({ ...current, feeValue: event.target.value }))
+                        }
+                      />
+                    </label>
+                    {managementFee.feeType === "cap" && (
+                      <label className="space-y-1 text-sm font-semibold text-[#082B4F]">
+                        <span>Cap (RM)</span>
+                        <TextInput
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={managementFee.capAmount}
+                          onChange={(event) =>
+                            setManagementFee((current) => ({ ...current, capAmount: event.target.value }))
+                          }
+                        />
+                      </label>
+                    )}
+                    <label className="space-y-1 text-sm font-semibold text-[#082B4F]">
+                      <span>SST (%)</span>
+                      <TextInput
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={managementFee.sstPercent}
+                        onChange={(event) =>
+                          setManagementFee((current) => ({ ...current, sstPercent: event.target.value }))
+                        }
+                      />
+                    </label>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
+                    <label className="space-y-1 text-sm font-semibold text-[#082B4F]">
+                      <span>Free period start</span>
+                      <TextInput
+                        type="date"
+                        value={managementFee.freePeriodStart}
+                        onChange={(event) =>
+                          setManagementFee((current) => ({ ...current, freePeriodStart: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label className="space-y-1 text-sm font-semibold text-[#082B4F]">
+                      <span>Free period end</span>
+                      <TextInput
+                        type="date"
+                        value={managementFee.freePeriodEnd}
+                        onChange={(event) =>
+                          setManagementFee((current) => ({ ...current, freePeriodEnd: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <ActionButton
+                      type="button"
+                      variant="secondary"
+                      onClick={() => {
+                        const period = sixMonthFreePeriod(form.moveInDate);
+                        if (!period) {
+                          toast.error("Set the tenant move-in date before applying 6 months free.");
+                          return;
+                        }
+                        setManagementFee((current) => ({
+                          ...current,
+                          freePeriodStart: period.start,
+                          freePeriodEnd: period.end,
+                        }));
+                      }}
+                    >
+                      Apply 6 months free
+                    </ActionButton>
+                  </div>
+
+                  <div className="rounded-lg bg-[#082F55] px-4 py-3 text-white">
+                    {managementFeePreview ? (
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-sm">Estimated monthly fee when rent is charged</span>
+                        <strong className="text-lg text-[#F3D493]">
+                          RM {managementFeePreview.base} + SST RM {managementFeePreview.sst} = RM {managementFeePreview.total}
+                        </strong>
+                      </div>
+                    ) : (
+                      <p className="text-sm">Enter the rent and fee settings to see the monthly estimate.</p>
+                    )}
+                    {managementFee.freePeriodEnd && (
+                      <p className="mt-1 text-xs text-[#DFE9F3]">
+                        First chargeable rental period begins after {managementFee.freePeriodEnd}.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+
+          {matchedApartment && form.ownerPartyId && (
+            <p className="rounded-lg border border-[#9DAFC1] bg-[#F3F6F9] px-4 py-3 text-sm text-[#082B4F]">
+              This room will use the existing unit&apos;s management fee setup; no duplicate fee configuration will be created.
+            </p>
+          )}
 
           {/* Partition: per-room strip. Owner + billing model stay in the form
               body above (apartment-scoped, entered once); rent/deposits/cards/

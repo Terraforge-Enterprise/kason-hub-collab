@@ -58,7 +58,10 @@ export const sheetSizes = {
   md:      "md:w-[520px]",          // single-section forms
   lg:      "md:w-[720px]",          // multi-section forms (FormDrawer default)
   xl:      "md:w-[960px]",          // dense forms with 2-col body
-  full:    "md:w-[min(100vw,1200px)]", // detail surfaces adapted to drawer
+  // Large enough for document tables, while retaining visible page context.
+  // Percentage width follows the real fixed containing block under browser zoom.
+  full:    "md:w-[90%] md:max-w-[1080px]", // detail surfaces adapted to drawer
+  screen:  "md:w-[96vw] md:max-w-[1800px]", // wide administration workspaces
 } as const;
 
 export type SheetSize = keyof typeof sheetSizes;

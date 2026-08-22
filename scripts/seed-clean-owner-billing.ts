@@ -140,10 +140,10 @@ async function main() {
   console.log("Organization...");
   await prisma.organization.upsert({
     where: { slug: "kaen-clean" },
-    update: { name: "KAEN Properties Sdn Bhd", managementFeePercent: 10 },
+    update: { name: "KAEN Properties Management Sdn Bhd", managementFeePercent: 10 },
     create: {
       id: ID.org,
-      name: "KAEN Properties Sdn Bhd",
+      name: "KAEN Properties Management Sdn Bhd",
       slug: "kaen-clean",
       status: "active",
       defaultCurrency: "MYR",

@@ -1,10 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { Plus, Users, UserCheck, ShieldAlert, Briefcase } from "lucide-react";
+import { Plus } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { GlowCard } from "@/components/ui/glow-card";
 import { TenantTable } from "./tenants-table";
 import { CreateTenantDialog } from "./tenants-action-dialogs";
 import { PartiesAreaTabs } from "./parties-area-tabs";
@@ -63,76 +62,50 @@ export default function TenantsPage() {
     {
       label: "Tenants",
       value: tenantList.length,
-      glowColor: "gold" as const,
-      icon: Users,
-      iconClass: "text-amber-500 bg-amber-500/10",
     },
     {
       label: "Active",
       value: activeCount,
-      glowColor: "green" as const,
-      icon: UserCheck,
-      iconClass: "text-green-600 bg-green-500/10",
     },
     {
       label: "Blacklisted",
       value: blacklistedCount,
-      glowColor: "red" as const,
-      icon: ShieldAlert,
-      iconClass: "text-rose-600 bg-red-500/10",
     },
     {
       label: "With occupation",
       value: withOccupationCount,
-      glowColor: "blue" as const,
-      icon: Briefcase,
-      iconClass: "text-blue-600 bg-blue-500/10",
     },
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <PartiesAreaTabs activeTab="tenants" />
 
       {/* Compact header band */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-1">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
           <h1 className="text-2xl font-bold text-foreground">Tenant registry</h1>
-          <p className="text-sm text-muted-foreground">
-            Identity, affordability metadata, and blacklist risk signals in one place.
+          <p className="text-xs text-muted-foreground">
+            Identity, tenancy and tenant status.
           </p>
         </div>
-        <CreateTenantDialog
-          trigger={
-            <Button variant="gold">
-              <Plus className="size-4" /> New Tenant
-            </Button>
-          }
-        />
-      </div>
-
-      {/* Slim metric strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {metrics.map((m) => {
-          const Icon = m.icon;
-          return (
-            <GlowCard
-              key={m.label}
-              glowColor={m.glowColor}
-              className="p-4 bg-background/40 backdrop-blur-xl border border-border/50"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <p className="text-xs font-medium text-muted-foreground">{m.label}</p>
-                  <p className="text-2xl font-bold text-foreground">{m.value}</p>
-                </div>
-                <div className={`p-2 rounded-lg ${m.iconClass}`}>
-                  <Icon className="size-5" />
-                </div>
+        <div className="flex items-center gap-3">
+          <div className="grid min-w-[420px] grid-cols-4 overflow-hidden rounded-xl border border-[var(--card-border)] bg-card shadow-sm">
+            {metrics.map((metric) => (
+              <div key={metric.label} className="border-r border-[var(--card-border)] px-3 py-2 last:border-r-0">
+                <p className="text-[11px] text-muted-foreground">{metric.label}</p>
+                <p className="text-lg font-bold leading-tight text-[var(--navy-text)]">{metric.value}</p>
               </div>
-            </GlowCard>
-          );
-        })}
+            ))}
+          </div>
+          <CreateTenantDialog
+            trigger={
+              <Button variant="gold">
+                <Plus className="size-4" /> New Tenant
+              </Button>
+            }
+          />
+        </div>
       </div>
 
       {/* Glass table card */}

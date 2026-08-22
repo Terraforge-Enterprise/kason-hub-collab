@@ -15,10 +15,15 @@ import { useAuth } from "@/lib/auth";
 import { isPhase2FlagEnabled } from "@/lib/feature-flags";
 import { canSeeNavItem, type NavItem, type MinRole } from "@/components/navigation";
 
-const SECTIONS: NavItem[] = [
-  { title: "Commission & TA",    href: "/settings/commission",         icon: Calculator,     minRole: "manager" },
+type SettingsDepartment = {
+  title: string;
+  company: string;
+  description: string;
+  sections: NavItem[];
+};
+
+const TENANT_MANAGEMENT_SECTIONS: NavItem[] = [
   { title: "Inventory",          href: "/settings/inventory",          icon: Building2,      minRole: "manager" },
-  { title: "Sales & Renovation", href: "/settings/sales-renovation",   icon: Paintbrush,     minRole: "admin" },
   { title: "Document Templates", href: "/settings/document-templates", icon: LayoutTemplate, minRole: "admin" },
   // Phase-2 Owner Billing (M6) — section only exists when the flag is on
   // (router.tsx gates the child route the same way).
@@ -50,10 +55,49 @@ const SECTIONS: NavItem[] = [
   // That table is now a panel inside Billing Config above. The /settings/charge-categories
   // route still resolves (charge-categories-section.tsx redirects) so old bookmarks work —
   // it just has no nav item of its own.
-  // Feature Flags (2026-08-06) — deliberately NOT flag-gated: the flag diagnostic must
-  // stay reachable precisely when flags are misconfigured.
-  { title: "Feature Flags", href: "/settings/feature-flags", icon: Flag, minRole: "manager" },
 ];
+
+const SETTINGS_DEPARTMENTS: SettingsDepartment[] = [
+  {
+    title: "Tenant Management",
+    company: "KAEN Properties Management Sdn Bhd",
+    description: "Managed units, billing, utilities and documents",
+    sections: TENANT_MANAGEMENT_SECTIONS,
+  },
+  {
+    title: "Rental Services",
+    company: "KAEN Properties Management Sdn Bhd",
+    description: "Rental commission and tenancy administration",
+    sections: [
+      { title: "Commission & TA", href: "/settings/commission", icon: Calculator, minRole: "manager" },
+    ],
+  },
+  {
+    title: "Investment Renovation",
+    company: "KAEN Properties Sdn Bhd",
+    description: "Renovation commercial configuration",
+    sections: [
+      { title: "Sales & Renovation", href: "/settings/sales-renovation", icon: Paintbrush, minRole: "admin" },
+    ],
+  },
+  {
+    title: "New Projects",
+    company: "KAEN Properties Sdn Bhd",
+    description: "No dedicated settings in this module yet",
+    sections: [],
+  },
+  {
+    title: "System & Access",
+    company: "Shared system controls",
+    description: "Technical diagnostics and system-wide controls",
+    sections: [
+      // Deliberately not flag-gated: diagnostics must remain reachable when flags fail.
+      { title: "Feature Flags", href: "/settings/feature-flags", icon: Flag, minRole: "manager" },
+    ],
+  },
+];
+
+const SECTIONS: NavItem[] = SETTINGS_DEPARTMENTS.flatMap((department) => department.sections);
 
 function isSectionActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(href + "/");
@@ -63,7 +107,11 @@ export default function SettingsLayout() {
   const { pathname } = useLocation();
   const { user } = useAuth();
   const role = user?.role;
-  const allowed = SECTIONS.filter((s) => canSeeNavItem(role, s));
+  const allowedDepartments = SETTINGS_DEPARTMENTS.map((department) => ({
+    ...department,
+    sections: department.sections.filter((section) => canSeeNavItem(role, section)),
+  }));
+  const allowed = allowedDepartments.flatMap((department) => department.sections);
 
   if (allowed.length === 0) {
     return <Navigate to="/dashboard" replace />;
@@ -74,35 +122,61 @@ export default function SettingsLayout() {
   }
 
   return (
-    <div className="flex flex-col md:flex-row gap-6 md:gap-8 min-h-[calc(100vh-8rem)]">
-      <aside className="md:w-64 md:shrink-0 md:border-r md:border-border/50 md:pr-6">
-        <p className="hidden md:block mb-3 px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
-          Settings
-        </p>
+    <div className="flex flex-col md:flex-row gap-5 md:gap-7 min-h-[calc(100vh-8rem)]">
+      <aside className="md:w-72 md:shrink-0 md:border-r md:border-border/50 md:pr-5">
+        <div className="mb-4 px-1">
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#9A742B]">Settings</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            Organised by KAEN business department.
+          </p>
+        </div>
         <nav
           aria-label="Settings sections"
-          className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible -mb-px md:mb-0 border-b md:border-b-0 border-border/50"
+          className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:flex md:flex-col"
         >
-          {allowed.map((section) => {
-            const active = isSectionActive(pathname, section.href);
+          {allowedDepartments.map((department) => {
+            const hasVisibleSections = department.sections.length > 0;
             return (
-              <Link
-                key={section.href}
-                to={section.href}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all whitespace-nowrap",
-                  active
-                    ? "bg-white/[0.08] text-[#D4AF37]"
-                    : "text-muted-foreground hover:bg-white/[0.05] hover:text-foreground",
-                )}
+              <section
+                key={department.title}
+                className="rounded-xl border border-[#9DAFC1]/65 bg-white/70 p-2 shadow-[0_2px_8px_rgba(8,47,85,0.05)]"
               >
-                {active && (
-                  <span className="hidden md:block absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-[#D4AF37]" />
+                <div className="px-2 pb-2 pt-1">
+                  <h2 className="text-sm font-bold text-[#082B4F]">{department.title}</h2>
+                  <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[#9A742B]">
+                    {department.company}
+                  </p>
+                  <p className="mt-1 text-[11px] leading-4 text-muted-foreground">{department.description}</p>
+                </div>
+
+                {hasVisibleSections ? (
+                  <div className="space-y-1">
+                    {department.sections.map((section) => {
+                      const active = isSectionActive(pathname, section.href);
+                      return (
+                        <Link
+                          key={section.href}
+                          to={section.href}
+                          aria-current={active ? "page" : undefined}
+                          className={cn(
+                            "group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-all",
+                            active
+                              ? "bg-[#082F55] text-[#F3D493] shadow-sm"
+                              : "text-[#082B4F] hover:bg-[#DFE9F3]",
+                          )}
+                        >
+                          <section.icon className="h-[17px] w-[17px] shrink-0" aria-hidden="true" />
+                          <span>{section.title}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="rounded-lg bg-[#F3F6F9] px-2.5 py-2 text-[11px] leading-4 text-muted-foreground">
+                    No settings available yet.
+                  </p>
                 )}
-                <section.icon className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
-                <span className="truncate">{section.title}</span>
-              </Link>
+              </section>
             );
           })}
         </nav>
@@ -116,4 +190,5 @@ export default function SettingsLayout() {
 }
 
 export { SECTIONS as SETTINGS_SECTIONS };
+export { SETTINGS_DEPARTMENTS };
 export type { MinRole };

@@ -67,9 +67,10 @@ export default function BillingDocumentsPage() {
     "rounded-md border border-[var(--input-border)] bg-[var(--card-bg)] px-2 py-1.5 text-sm text-[var(--text-primary)]";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <div className="flex items-start justify-between gap-3">
         <PageHeader
+          compact
           title="Documents"
           description="Immutable invoices, debit notes, credit notes and refund notes — series-numbered, linked to their charges, never edited after issue."
           metrics={[{ label: "Documents", value: String(total), hint: "Matching current filters" }]}

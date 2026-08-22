@@ -70,12 +70,12 @@ function MetaItem({
   children: ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-border/50 bg-background/40 p-3">
+    <div className="min-w-0 rounded-lg border border-border/50 bg-background/40 p-3">
       <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         <Icon className="h-3.5 w-3.5" />
         {label}
       </div>
-      <div className="text-sm text-foreground">{children}</div>
+      <div className="min-w-0 break-words text-base leading-snug text-foreground">{children}</div>
     </div>
   );
 }
@@ -237,12 +237,12 @@ function DrawerTabs({
   const entityIds = [doc.id, ...relatedDocuments.map((r) => r.id)];
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 max-w-full space-y-4">
       <div
         role="tablist"
         aria-label="Document details"
         onKeyDown={onTabListKeyDown}
-        className="flex gap-1 border-b border-border/50"
+        className="flex max-w-full gap-1 overflow-x-auto border-b border-border/50"
       >
         {DETAIL_TABS.map((t, i) => {
           const isActive = t.id === active;
@@ -260,7 +260,7 @@ function DrawerTabs({
               tabIndex={isActive ? 0 : -1}
               onClick={() => setActive(t.id)}
               className={cn(
-                "relative -mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+                "relative -mb-px shrink-0 border-b-2 px-4 py-2.5 text-base font-semibold transition-colors",
                 isActive
                   ? "border-primary text-primary"
                   : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
@@ -382,18 +382,31 @@ export function DocumentDetailDrawer({
   return (
     <Sheet open={doc !== null} onOpenChange={(o) => !o && onClose()}>
       <SheetContent size="full">
-        <SheetHeader>
-          <SheetTitle>
-            {doc ? `${documentKindLabel(doc.docType, doc.documentNumber)} · ${doc.documentNumber}` : "Document"}
-          </SheetTitle>
-          <SheetDescription>
-            {doc ? `Billed to ${doc.partyName}` : "Loading…"}
-          </SheetDescription>
+        <SheetHeader className="pr-14">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <SheetTitle>
+                {doc ? `${documentKindLabel(doc.docType, doc.documentNumber)} · ${doc.documentNumber}` : "Document"}
+              </SheetTitle>
+              <SheetDescription>
+                {doc ? `Billed to ${doc.partyName}` : "Loading…"}
+              </SheetDescription>
+            </div>
+            <Button
+              variant="gold"
+              onClick={openPdf}
+              disabled={pdfLoading || !doc}
+              className="min-h-11 shrink-0 px-5 text-base font-bold"
+            >
+              {pdfLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}
+              {pdfLoading ? "Preparing PDF…" : "View / Download PDF"}
+            </Button>
+          </div>
         </SheetHeader>
 
-        <SheetBody>
+        <SheetBody className="overflow-x-hidden">
           {doc ? (
-            <div className="space-y-6">
+            <div className="min-w-0 max-w-full space-y-6">
               {detail?.reason ? (
                 <Callout variant="info" title="Correction reason">
                   {detail.reason}
@@ -422,7 +435,7 @@ export function DocumentDetailDrawer({
               </div>
 
               {/* Bill-to / Property / Unit / Period — the header block a proper invoice needs */}
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <MetaItem icon={User} label="Bill to">
                   <div className="flex flex-col">
                     <span className="font-medium">{doc.partyName}</span>
@@ -599,7 +612,7 @@ export function DocumentDetailDrawer({
           {/* SheetFooter is flex-row-reverse → primary renders rightmost */}
           <Button variant="gold" onClick={openPdf} disabled={pdfLoading || !doc}>
             {pdfLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            {pdfLoading ? "Opening…" : "Download PDF"}
+            {pdfLoading ? "Preparing PDF…" : "View / Download PDF"}
           </Button>
           {footerActions}
           <Button type="button" variant="ghost" onClick={onClose}>

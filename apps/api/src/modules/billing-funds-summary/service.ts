@@ -26,6 +26,7 @@ export interface BillingFundsSummary {
   deposit: { due: string; collected: string; outstanding: string };
   tenantBreakdown: Array<{ key: string; label: string; due: string; collected: string; outstanding: string }>;
   ownerPayout: string;
+  ownerTopUpRequired: string;
   ownerPaid: string;
   status: "safe" | "attention" | "shortfall";
 }
@@ -113,7 +114,9 @@ export async function getBillingFundsSummary(orgId: string, month: Date): Promis
   const openingC = Math.round(Number(computeOwnerRunningBalance(toLines(priorLedger))) * 100);
   const ownerPayableC = openingC + Math.round(Number(period.netPayoutToOwner) * 100);
   const ownerPaidC = Math.round(Number(period.payoutsTotal) * 100);
-  const ownerPayoutC = ownerPayableC - ownerPaidC;
+  const rawOwnerPayoutC = ownerPayableC - ownerPaidC;
+  const ownerPayoutC = Math.max(0, rawOwnerPayoutC);
+  const ownerTopUpRequiredC = Math.max(0, -rawOwnerPayoutC);
   const ledgerValueC = (row: (typeof currentLedger)[number]) => Math.round((Number(row.amount) + Number(row.sstAmount ?? 0)) * 100);
   const managementFeeC = currentLedger
     .filter((row) => row.direction === "expense" && row.category === "management_fee")
@@ -145,7 +148,7 @@ export async function getBillingFundsSummary(orgId: string, month: Date): Promis
       costPaymentStatus: row.costPaymentStatus,
       withSST: row.withSST,
     }));
-  const status = ownerPayoutC < 0 ? "shortfall" : ownerPayableC > 0 && ownerPayoutC < Math.max(10000, Math.round(ownerPayableC * 0.1)) ? "attention" : "safe";
+  const status = ownerTopUpRequiredC > 0 ? "shortfall" : ownerPayableC > 0 && ownerPayoutC < Math.max(10000, Math.round(ownerPayableC * 0.1)) ? "attention" : "safe";
   const money = (cents: number) => (cents / 100).toFixed(2);
   return {
     tenantDue: money(tenantDueC), tenantOutstanding: money(tenantOutstandingC),
@@ -177,6 +180,6 @@ export async function getBillingFundsSummary(orgId: string, month: Date): Promis
       };
       return rank(a.key) - rank(b.key) || a.label.localeCompare(b.label);
     }),
-    ownerPayout: money(ownerPayoutC), ownerPaid: money(ownerPaidC), status,
+    ownerPayout: money(ownerPayoutC), ownerTopUpRequired: money(ownerTopUpRequiredC), ownerPaid: money(ownerPaidC), status,
   };
 }

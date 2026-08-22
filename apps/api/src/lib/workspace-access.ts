@@ -11,6 +11,7 @@ export type Workspace = "operations" | "accounting";
 // deliberately NOT a rank — see apps/api/src/lib/rbac.ts.
 const WORKSPACE_ACCESS: Record<string, ReadonlySet<Workspace>> = {
   admin: new Set<Workspace>(["operations", "accounting"]),
+  director: new Set<Workspace>(["operations", "accounting"]),
   manager: new Set<Workspace>(["operations", "accounting"]),
   editor: new Set<Workspace>(["operations"]),
   operator: new Set<Workspace>(["operations"]),

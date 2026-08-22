@@ -56,6 +56,7 @@ import { createSignedDownloadUrl } from "../../../lib/storage";
 import { StaleUpdateError } from "../../../lib/concurrency-error";
 import { mintDocumentNumberTx } from "../../../lib/reference-codes/series-numbers";
 import { ensureChargeCategorySeeds } from "../../charge-categories/seed";
+import { assembleYannieStatement } from "../owner-statement-sections";
 import {
   findStatementById,
   transitionStatementStatusGuarded,
@@ -111,6 +112,23 @@ function statement(status: string, inv: Partial<DbInvoice> = {}): DbInvoice {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(assembleYannieStatement)
+    .mockResolvedValueOnce({
+      header: {
+        reportMonth: "June 2026",
+        propertyName: "Test Property",
+        ownerName: "Test Owner",
+        bankName: "Test Bank",
+        accountHolder: "Test Owner",
+        accountNumberMasked: "1234567890",
+      },
+      apartmentId: null,
+      occupancy: { rows: [], occupiedCount: 0, vacantCount: 0, totalMonthlyRental: "0.00" },
+      payoutSummary: { lines: [], netPayoutToOwner: "0.00", depositCollected: "0.00", depositHeld: "0.00" },
+      incomeBreakdown: { rows: [], totalIncome: "0.00", passThroughIncome: "0.00", totalMgmtFee: "0.00" },
+      expenseBreakdown: { rows: [], totalExpenses: "0.00" },
+    })
+    .mockResolvedValue(null);
   // withTransaction's tx here is a bare `{}` stub (see the repository mock
   // above) — it doesn't implement the raw Prisma tx methods issueStatementCreditNoteTx
   // needs for the void→CN path. That flag-on behavior has dedicated coverage in

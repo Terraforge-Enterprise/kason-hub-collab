@@ -24,6 +24,8 @@ const DOC_TYPE_LABEL: Record<DocType, string> = {
   owner_statement: "Owner Statement",
   credit_note: "Credit Note",
   refund_note: "Refund Note",
+  tenancy_agreement: "Tenancy Agreement",
+  property_management_agreement: "Property Management Agreement",
 };
 
 const DOC_TYPE_DESCRIPTION: Record<DocType, string> = {
@@ -34,6 +36,8 @@ const DOC_TYPE_DESCRIPTION: Record<DocType, string> = {
   owner_statement: "Letterhead for owner monthly statements and expense receipts",
   credit_note: "Letterhead for credit notes reversing posted documents",
   refund_note: "Letterhead for refund notes recording money returned",
+  tenancy_agreement: "Editable master wording used to generate each tenancy agreement",
+  property_management_agreement: "Letterhead for editable owner property-management agreements",
 };
 
 type GlowColor = "purple" | "blue" | "green" | "orange" | "gold" | "red";
@@ -46,6 +50,8 @@ const DOC_TYPE_GLOW: Record<DocType, GlowColor> = {
   owner_statement: "purple",
   credit_note: "red",
   refund_note: "gold",
+  tenancy_agreement: "blue",
+  property_management_agreement: "gold",
 };
 
 const DOC_TYPE_ICON: Record<DocType, React.ComponentType<{ className?: string }>> = {
@@ -56,6 +62,8 @@ const DOC_TYPE_ICON: Record<DocType, React.ComponentType<{ className?: string }>
   owner_statement: Landmark,
   credit_note: Receipt,
   refund_note: Banknote,
+  tenancy_agreement: ScrollText,
+  property_management_agreement: ScrollText,
 };
 
 const ICON_BG: Record<GlowColor, string> = {

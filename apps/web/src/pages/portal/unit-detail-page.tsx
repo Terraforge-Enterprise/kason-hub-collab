@@ -597,11 +597,19 @@ export default function PortalUnitDetailPage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
             <div>
               <div className="text-xs text-muted-foreground uppercase tracking-wide">Rental deposit</div>
-              <div>{unit.depositMonths != null ? `${unit.depositMonths} mo` : "—"}</div>
+              <div>
+                {unit.depositMonths != null
+                  ? `${unit.depositMonths} ${unit.depositMonths > 1 ? "months" : "month"}`
+                  : "—"}
+              </div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground uppercase tracking-wide">Utilities deposit</div>
-              <div>{unit.utilitiesDepositMonths != null ? `${unit.utilitiesDepositMonths} mo` : "—"}</div>
+              <div>
+                {unit.utilitiesDepositMonths != null
+                  ? `${unit.utilitiesDepositMonths} ${unit.utilitiesDepositMonths > 1 ? "months" : "month"}`
+                  : "—"}
+              </div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground uppercase tracking-wide">Access cards</div>

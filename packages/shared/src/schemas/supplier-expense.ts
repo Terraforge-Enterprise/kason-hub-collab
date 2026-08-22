@@ -85,6 +85,10 @@ export const supplierExpenseInput = z
     apartmentId: z.string().uuid().nullable().optional(),
     unitId: z.string().uuid().nullable().optional(),
     description: z.string().max(500).nullable().optional(),
+    paymentSource: z.enum(["company_bank", "employee_advance", "supplier_credit"]).optional(),
+    claimantName: z.string().min(1).max(200).nullable().optional(),
+    costPurpose: z.enum(["unit_specific", "shared_materials", "company_overhead"]).optional(),
+    notes: z.string().max(1000).nullable().optional(),
     allocations: z.array(expenseAllocationInput).min(1).max(50),
   })
   .refine((v) => isFullyAllocated(v.totalAmount, v.allocations), {

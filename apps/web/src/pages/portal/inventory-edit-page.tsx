@@ -329,7 +329,7 @@ export default function PortalInventoryEditPage() {
               />
             </label>
             <label className="block">
-              <span className="text-xs text-muted-foreground">Rent (RM/mo)</span>
+              <span className="text-xs text-muted-foreground">Rent (RM/month)</span>
               <Input
                 type="number"
                 min={0}

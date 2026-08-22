@@ -1,20 +1,21 @@
 // deposit-held-on-payment.hook.test.ts
 //
-// A tenant's deposit payment is what records that KAEN now HOLDS that money.
-// These tests pin the trigger conditions (deposit charge types + FULLY paid),
-// the leg mapping, the idempotency that stops a re-settlement doubling the held
-// figure, and the two "never break the money path" contracts: swallow every
+// A tenant's deposit payment is payable onward to the owner. These tests pin
+// partial/full triggers, leg mapping, delta idempotency, and the two
+// "never break the money path" contracts: swallow every
 // error, and leave a durable marker when it does.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const chargeFindMany = vi.hoisted(() => vi.fn());
-const depositFindFirst = vi.hoisted(() => vi.fn());
+const depositAggregate = vi.hoisted(() => vi.fn());
 const depositCreate = vi.hoisted(() => vi.fn());
+const reversalFindMany = vi.hoisted(() => vi.fn());
 const transaction = vi.hoisted(() => vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb({})));
 vi.mock("@kason/db", () => ({
   getDb: () => ({
     charge: { findMany: chargeFindMany },
-    deposit: { findFirst: depositFindFirst, create: depositCreate },
+    deposit: { aggregate: depositAggregate, create: depositCreate },
+    paymentAllocationReversal: { findMany: reversalFindMany },
     $transaction: transaction,
   }),
 }));
@@ -34,8 +35,8 @@ function depositCharge(over: Record<string, unknown> = {}) {
     tenancyId: "ten-1",
     unitId: "unit-1",
     partyId: "party-1",
-    amount: "4400.00",
     chargeType: "security_deposit",
+    allocations: [{ id: "alloc-1", allocatedAmount: "4400.00" }],
     ...over,
   };
 }
@@ -46,13 +47,14 @@ describe("recordDepositsHeldForPaidCharges", () => {
     isPhase2FlagEnabled.mockReturnValue(true);
     transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb({}));
     recordAudit.mockResolvedValue(undefined);
-    depositFindFirst.mockResolvedValue(null);
+    depositAggregate.mockResolvedValue({ _sum: { amount: null } });
+    reversalFindMany.mockResolvedValue([]);
     depositCreate.mockResolvedValue({ id: "dep-1" });
   });
 
   // ── Trigger conditions ────────────────────────────────────────────────────
 
-  it("records a held rental deposit for a paid DEPRENT charge", async () => {
+  it("releases a collected rental deposit to the owner", async () => {
     chargeFindMany.mockResolvedValue([depositCharge()]);
 
     await recordDepositsHeldForPaidCharges("org-1", "user-1", "admin", ["ch-dep-1"]);
@@ -64,29 +66,27 @@ describe("recordDepositsHeldForPaidCharges", () => {
         partyId: "party-1",
         unitId: "unit-1",
         type: "rental",
-        amount: "4400.00",
-        status: "held",
+        amount: 4400,
+        status: "released_to_owner",
       },
     });
   });
 
   it("maps a paid DEPUTIL charge to the utilities leg", async () => {
     chargeFindMany.mockResolvedValue([
-      depositCharge({ id: "ch-dep-2", chargeType: "utility_deposit", amount: "2200.00" }),
+      depositCharge({ id: "ch-dep-2", chargeType: "utility_deposit", allocations: [{ id: "alloc-2", allocatedAmount: "2200.00" }] }),
     ]);
 
     await recordDepositsHeldForPaidCharges("org-1", "user-1", "admin", ["ch-dep-2"]);
 
     expect(depositCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ type: "utilities", amount: "2200.00", status: "held" }),
+        data: expect.objectContaining({ type: "utilities", amount: 2200, status: "released_to_owner" }),
       }),
     );
   });
 
-  it("queries only deposit charge types, and only fully-paid ones", async () => {
-    // Partial payments deliberately do nothing: the held figure would be
-    // ambiguous and the owner-facing line would flicker as instalments arrive.
+  it("queries every live deposit charge with posted allocations", async () => {
     chargeFindMany.mockResolvedValue([]);
 
     await recordDepositsHeldForPaidCharges("org-1", "user-1", "admin", ["ch-x"]);
@@ -96,15 +96,18 @@ describe("recordDepositsHeldForPaidCharges", () => {
         organizationId: "org-1",
         id: { in: ["ch-x"] },
         chargeType: { in: ["security_deposit", "utility_deposit"] },
-        status: "paid",
+        status: { notIn: ["void", "credited"] },
       },
       select: {
         id: true,
         tenancyId: true,
         unitId: true,
         partyId: true,
-        amount: true,
         chargeType: true,
+        allocations: {
+          where: { payment: { status: "posted" } },
+          select: { id: true, allocatedAmount: true },
+        },
       },
     });
     expect(depositCreate).not.toHaveBeenCalled();
@@ -132,19 +135,41 @@ describe("recordDepositsHeldForPaidCharges", () => {
 
   // ── Idempotency ───────────────────────────────────────────────────────────
 
-  it("does not double the held figure when settlement runs again", async () => {
-    // Re-settlement, reallocation and replayed webhooks all re-enter this hook
-    // with the same chargeId. A second row would overstate what KAEN holds.
+  it("does not double the released figure when settlement runs again", async () => {
     chargeFindMany.mockResolvedValue([depositCharge()]);
-    depositFindFirst.mockResolvedValue({ id: "dep-existing" });
+    depositAggregate.mockResolvedValue({ _sum: { amount: "4400.00" } });
 
     await recordDepositsHeldForPaidCharges("org-1", "user-1", "admin", ["ch-dep-1"]);
 
-    expect(depositFindFirst).toHaveBeenCalledWith({
-      where: { organizationId: "org-1", tenancyId: "ten-1", type: "rental" },
-      select: { id: true },
+    expect(depositAggregate).toHaveBeenCalledWith({
+      where: { organizationId: "org-1", tenancyId: "ten-1", type: "rental", status: "released_to_owner" },
+      _sum: { amount: true },
     });
     expect(depositCreate).not.toHaveBeenCalled();
+  });
+
+  it("releases only the new delta after a second partial instalment", async () => {
+    chargeFindMany.mockResolvedValue([depositCharge({ allocations: [
+      { id: "alloc-1", allocatedAmount: "1000.00" },
+      { id: "alloc-2", allocatedAmount: "500.00" },
+    ] })]);
+    depositAggregate.mockResolvedValue({ _sum: { amount: "1000.00" } });
+
+    await recordDepositsHeldForPaidCharges("org-1", "user-1", "admin", ["ch-dep-1"]);
+
+    expect(depositCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ amount: 500 }) });
+  });
+
+  it("writes a negative correction when a posted allocation is reversed", async () => {
+    chargeFindMany.mockResolvedValue([depositCharge({ allocations: [
+      { id: "alloc-1", allocatedAmount: "1000.00" },
+    ] })]);
+    reversalFindMany.mockResolvedValue([{ amount: "250.00" }]);
+    depositAggregate.mockResolvedValue({ _sum: { amount: "1000.00" } });
+
+    await recordDepositsHeldForPaidCharges("org-1", "user-1", "admin", ["ch-dep-1"]);
+
+    expect(depositCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ amount: -250 }) });
   });
 
   // ── Never break the money path ────────────────────────────────────────────
@@ -160,7 +185,7 @@ describe("recordDepositsHeldForPaidCharges", () => {
       expect.anything(),
       expect.objectContaining({
         organizationId: "org-1",
-        action: "owner-billing.deposit_held_on_payment.failed",
+        action: "owner-billing.deposit_payable_to_owner.failed",
         entityType: "Deposit",
       }),
     );

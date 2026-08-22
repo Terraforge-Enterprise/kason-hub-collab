@@ -18,7 +18,8 @@
 // "outstanding" server value, so the filter offers the concrete statuses —
 // "Issued" + "Partially settled" together are the outstanding set.
 import { useState, type KeyboardEvent } from "react";
-import { FileText } from "lucide-react";
+import { Download, FileText } from "lucide-react";
+import { toast } from "sonner";
 import type { BillingDocumentListItem } from "@kason/shared";
 import { PageHeader, Surface } from "@/components/ui";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ import { DocsFilterControls, type DocsFilterValue } from "./docs-filter-controls
 import { NewInvoiceDrawer } from "./new-invoice-drawer";
 import { DocumentsTable } from "./document-shared";
 import { DocumentDetailDrawer } from "./document-detail-drawer";
+import { downloadAllAccountingTransactions } from "@/api/accounting-export";
 
 const PAGE_SIZE = 25;
 
@@ -146,6 +148,7 @@ function DocTypeFacetTabs({ value, onChange }: { value: DocTypeFacet; onChange: 
 
 export default function AccountingInvoicesPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<BillingDocumentListItem | null>(null);
 
   const [page, setPage] = useState(1);
@@ -196,7 +199,29 @@ export default function AccountingInvoicesPage() {
         icon={FileText}
         title="Invoices"
         description="Raise a manual invoice and review everything billed to tenants and owners — invoices plus rent and utility debit notes. Click any row to open the full document — record a payment or adjust it from inside."
-        actions={<Button variant="gold" onClick={() => setDrawerOpen(true)}>New invoice</Button>}
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              disabled={exporting}
+              onClick={async () => {
+                setExporting(true);
+                try {
+                  await downloadAllAccountingTransactions();
+                  toast.success("Accounting workbook downloaded.");
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "Could not download accounting workbook.");
+                } finally {
+                  setExporting(false);
+                }
+              }}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              {exporting ? "Preparing…" : "Export all transactions"}
+            </Button>
+            <Button variant="gold" onClick={() => setDrawerOpen(true)}>New invoice</Button>
+          </div>
+        }
       />
       <Surface title="Issued invoices">
         <div className="space-y-4">

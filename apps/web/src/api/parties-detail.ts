@@ -59,6 +59,30 @@ export type TenantDetail = {
    * "no active tenancy — portal login will fail" warning in the grant UI.
    */
   hasActiveTenancy: boolean;
+  tenancyHistory?: Array<{
+    id: string;
+    tenancyCode: string;
+    propertyName: string;
+    unitCode: string;
+    status: string;
+    billingStatus: string;
+    startDate: string;
+    endDate: string | null;
+    monthlyRentAmount: string;
+  }>;
+  depositLedger?: Array<{
+    id: string;
+    chargeNumber: string;
+    type: "rental" | "utilities";
+    expected: string;
+    collected: string;
+    outstanding: string;
+    ownerTransferred: string;
+    dueDate: string;
+    tenancyCode: string;
+    propertyName: string;
+    unitCode: string;
+  }>;
   portalUser: {
     email: string;
     status: string;

@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { SessionPayload } from "../../lib/auth";
 import { requireRole } from "../../middleware/require-role";
+import { requirePermission } from "../../middleware/require-permission";
 import { formatZodError } from "../../lib/zod-error-mapper";
 import { createUserSchema, updateUserSchema, resetPasswordSchema } from "./users.validation";
 import {
@@ -22,14 +23,14 @@ usersRoutes.get("/", requireRole("editor"), async (c) => {
     ? (rawRoles
         .split(",")
         .map((r) => r.trim())
-        .filter((r) => ["admin", "manager", "editor", "viewer"].includes(r)) as ("admin" | "manager" | "editor" | "viewer")[])
+        .filter((r) => ["admin", "director", "accountant", "manager", "editor", "viewer"].includes(r)) as ("admin" | "director" | "accountant" | "manager" | "editor" | "viewer")[])
     : undefined;
   const result = await listUsersService(session, roles ? { roles } : undefined);
   return c.json({ data: result.data });
 });
 
 // POST /api/users — manager+ can create operator users
-usersRoutes.post("/", requireRole("manager"), async (c) => {
+usersRoutes.post("/", requirePermission("roles.manage"), async (c) => {
   const session = c.get("session");
   const body = await c.req.json().catch(() => null);
   const parsed = createUserSchema.safeParse(body);
@@ -46,7 +47,7 @@ usersRoutes.post("/", requireRole("manager"), async (c) => {
 });
 
 // PATCH /api/users/:id — manager+ can edit fullName / role
-usersRoutes.patch("/:id", requireRole("manager"), async (c) => {
+usersRoutes.patch("/:id", requirePermission("roles.manage"), async (c) => {
   const session = c.get("session");
   const targetId = c.req.param("id");
   const body = await c.req.json().catch(() => null);
@@ -64,7 +65,7 @@ usersRoutes.patch("/:id", requireRole("manager"), async (c) => {
 });
 
 // POST /api/users/:id/deactivate — manager+ sets status to "disabled"
-usersRoutes.post("/:id/deactivate", requireRole("manager"), async (c) => {
+usersRoutes.post("/:id/deactivate", requirePermission("user.disable"), async (c) => {
   const session = c.get("session");
   const targetId = c.req.param("id");
 
@@ -76,7 +77,7 @@ usersRoutes.post("/:id/deactivate", requireRole("manager"), async (c) => {
 });
 
 // POST /api/users/:id/activate — manager+ sets status to "active"
-usersRoutes.post("/:id/activate", requireRole("manager"), async (c) => {
+usersRoutes.post("/:id/activate", requirePermission("user.disable"), async (c) => {
   const session = c.get("session");
   const targetId = c.req.param("id");
 
@@ -88,7 +89,7 @@ usersRoutes.post("/:id/activate", requireRole("manager"), async (c) => {
 });
 
 // POST /api/users/:id/reset-password — manager+ sets new temp password
-usersRoutes.post("/:id/reset-password", requireRole("manager"), async (c) => {
+usersRoutes.post("/:id/reset-password", requirePermission("user.reset_password"), async (c) => {
   const session = c.get("session");
   const targetId = c.req.param("id");
   const body = await c.req.json().catch(() => null);

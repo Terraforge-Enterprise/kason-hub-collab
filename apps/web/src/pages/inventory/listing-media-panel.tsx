@@ -13,7 +13,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useListingMediaUpload } from "@/hooks/use-listing-media-upload";
+import { useListingMediaUpload, type MediaCategory } from "@/hooks/use-listing-media-upload";
 import { useMediaLimits } from "@/api/media-limits";
 import { isEditableKeyTarget } from "@/lib/dom";
 
@@ -34,6 +34,18 @@ type PhotoEntry = { key: string; url: string; thumbnail: string };
 type VideoEntry = { key: string; url: string };
 type BulkMediaResponse = { data: { photos: PhotoEntry[]; videos: VideoEntry[] } };
 
+const MEDIA_CATEGORIES: Array<{ value: MediaCategory; label: string; hint: string }> = [
+  { value: "advertising", label: "Advertising", hint: "Listing and marketing photos" },
+  { value: "before_move_in", label: "Before move-in", hint: "Condition handover evidence" },
+  { value: "move_out", label: "Move-out", hint: "Condition after tenancy ends" },
+];
+
+function categoryForKey(key: string): MediaCategory {
+  if (key.includes("/before_move_in/")) return "before_move_in";
+  if (key.includes("/move_out/")) return "move_out";
+  return "advertising";
+}
+
 export function ListingMediaPanel({
   photoKeys,
   videoKeys,
@@ -45,6 +57,7 @@ export function ListingMediaPanel({
   const [dragOver, setDragOver] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<{ key: string; kind: "photo" | "video" } | null>(null);
   const [removing, setRemoving] = useState(false);
+  const [uploadCategory, setUploadCategory] = useState<MediaCategory>("advertising");
 
   // Compression-prompt modal state. When the user picks (or drops) a
   // large video, we surface a Compress / Upload-as-is / Cancel choice
@@ -80,6 +93,7 @@ export function ListingMediaPanel({
   const { queue, enqueue, clearDone, retry } = useListingMediaUpload({
     listingId: listingId ?? "",
     caps: { photoMaxBytes, videoMaxBytes },
+    category: uploadCategory,
     onSuccess: (updated) => {
       const removed = removedKeysRef.current;
       // The server returned the canonical DB state, including keys the
@@ -240,6 +254,29 @@ export function ListingMediaPanel({
 
   return (
     <div className="space-y-6">
+      <div className="rounded-xl border border-[#9DAFC1] bg-[#F3F6F9] p-3">
+        <p className="mb-2 text-sm font-bold text-[#082B4F]">Upload purpose</p>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {MEDIA_CATEGORIES.map((category) => (
+            <button
+              key={category.value}
+              type="button"
+              onClick={() => setUploadCategory(category.value)}
+              className={`min-h-12 rounded-lg border px-3 py-2 text-left transition ${
+                uploadCategory === category.value
+                  ? "border-[#C9A35C] bg-[#082F55] text-white shadow-sm"
+                  : "border-[#9DAFC1] bg-white text-[#082B4F] hover:border-[#C9A35C]"
+              }`}
+            >
+              <span className="block text-sm font-bold">{category.label}</span>
+              <span className={`block text-xs ${uploadCategory === category.value ? "text-[#DFE9F3]" : "text-[#657069]"}`}>
+                {category.hint}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Upload drop zone */}
       <div
         role="button"
@@ -275,7 +312,7 @@ export function ListingMediaPanel({
       >
         <Upload className="h-8 w-8 mx-auto mb-2 text-[var(--text-muted)]" />
         <p className="text-sm font-medium text-[var(--text-primary)]">
-          Drop photos or videos here, or click to browse
+          Upload {MEDIA_CATEGORIES.find((category) => category.value === uploadCategory)?.label} photos or videos
         </p>
         <p className="text-xs text-[var(--text-muted)] mt-1">
           JPG / PNG / WebP up to {Math.floor(photoMaxBytes / 1024 / 1024)} MB · MP4 / MOV / WebM up to {Math.floor(videoMaxBytes / 1024 / 1024)} MB
@@ -312,6 +349,9 @@ export function ListingMediaPanel({
               <li key={q.id} className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border)] last:border-0">
                 <div className="flex-1 min-w-0">
                   <p className="truncate text-sm text-[var(--text-primary)]">{q.file.name}</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[#657069]">
+                    {MEDIA_CATEGORIES.find((category) => category.value === q.category)?.label}
+                  </p>
                   <div
                     role="progressbar"
                     aria-valuemin={0}
@@ -347,23 +387,33 @@ export function ListingMediaPanel({
         </div>
       )}
 
-      {/* Photos grid */}
-      <MediaGrid
-        label="Photos"
-        keys={photoKeys}
-        kind="photo"
-        urls={photoUrls}
-        onRemove={(key) => setConfirmRemove({ key, kind: "photo" })}
-      />
-
-      {/* Videos grid */}
-      <MediaGrid
-        label="Videos"
-        keys={videoKeys}
-        kind="video"
-        urls={videoUrls}
-        onRemove={(key) => setConfirmRemove({ key, kind: "video" })}
-      />
+      {MEDIA_CATEGORIES.map((category) => {
+        const categoryPhotos = photoKeys.filter((key) => categoryForKey(key) === category.value);
+        const categoryVideos = videoKeys.filter((key) => categoryForKey(key) === category.value);
+        if (categoryPhotos.length === 0 && categoryVideos.length === 0) return null;
+        return (
+          <section key={category.value} className="space-y-3 rounded-xl border border-[#9DAFC1] bg-white p-3">
+            <div>
+              <h3 className="font-bold text-[#082B4F]">{category.label}</h3>
+              <p className="text-xs text-[#657069]">{category.hint}</p>
+            </div>
+            <MediaGrid
+              label="Photos"
+              keys={categoryPhotos}
+              kind="photo"
+              urls={photoUrls}
+              onRemove={(key) => setConfirmRemove({ key, kind: "photo" })}
+            />
+            <MediaGrid
+              label="Videos"
+              keys={categoryVideos}
+              kind="video"
+              urls={videoUrls}
+              onRemove={(key) => setConfirmRemove({ key, kind: "video" })}
+            />
+          </section>
+        );
+      })}
 
       <AlertDialog
         open={confirmRemove !== null}

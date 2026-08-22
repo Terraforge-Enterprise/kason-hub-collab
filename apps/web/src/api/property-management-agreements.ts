@@ -1,0 +1,12 @@
+import { apiFetch } from "@/lib/api-client";
+export type ManagementAgreementTemplate = { id: string; name: string; description: string | null; contentHtml: string; isDefault: boolean };
+export type ManagementAgreement = { id: string; landlordTenancyId: string; templateId: string | null; version: number; status: string; contentHtml: string; previewHtml?: string; fileName: string | null };
+export const listManagementAgreementTemplates = async () => (await apiFetch<{ data: ManagementAgreementTemplate[] }>("/tenancy/management-agreement-templates")).data;
+export const saveManagementAgreementTemplate = async (input: Partial<ManagementAgreementTemplate> & { name: string; contentHtml: string }) => (await apiFetch<{ data: ManagementAgreementTemplate }>("/tenancy/management-agreement-templates", { method: "POST", body: JSON.stringify(input) })).data;
+export const getManagementAgreement = async (id: string) => (await apiFetch<{ data: { draft: ManagementAgreement; history: ManagementAgreement[] } }>(`/tenancy/landlord-tenancies/${id}/management-agreement`)).data;
+export const saveManagementAgreement = async (id: string, contentHtml: string) => (await apiFetch<{ data: ManagementAgreement }>(`/tenancy/management-agreements/${id}`, { method: "PUT", body: JSON.stringify({ contentHtml }) })).data;
+export const applyManagementAgreementTemplate = async (id: string, templateId: string) => (await apiFetch<{ data: ManagementAgreement }>(`/tenancy/management-agreements/${id}/apply-template`, { method: "POST", body: JSON.stringify({ templateId }) })).data;
+export const previewManagementAgreement = async (id: string, contentHtml: string) => (await apiFetch<{ data: { html: string } }>(`/tenancy/management-agreements/${id}/preview`, { method: "POST", body: JSON.stringify({ contentHtml }) })).data.html;
+export const previewManagementAgreementPdf = async (id: string, contentHtml: string) => (await apiFetch<{ data: { fileName: string; contentBase64: string } }>(`/tenancy/management-agreements/${id}/preview-pdf`, { method: "POST", body: JSON.stringify({ contentHtml }) })).data;
+export const generateManagementAgreement = async (id: string) => (await apiFetch<{ data: ManagementAgreement & { downloadUrl: string } }>(`/tenancy/management-agreements/${id}/generate`, { method: "POST" })).data;
+export const downloadManagementAgreement = async (id: string) => (await apiFetch<{ data: { fileName: string; downloadUrl: string } }>(`/tenancy/management-agreements/${id}/download`)).data;

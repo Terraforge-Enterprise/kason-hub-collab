@@ -88,6 +88,7 @@ import { isApplicable } from "./cell-applicability";
 import { planRectangularCopy, matrixToTsv, countCells } from "./grid-copy";
 import { findUnbillableAmounts, type UnbillableRow } from "./unbillable-amounts";
 import { downloadLiveStatementPdf, useAllStatementsForMonth } from "@/api/owner-billing";
+import { getBankReconciliationSummary } from "@/api/bank-reconciliation";
 
 // namespace for view-prefs' localStorage keys (colours + hidden columns) —
 // see use-grid-selection.ts's own `NS` constant, must match.
@@ -183,6 +184,7 @@ function FundsSummaryPanel({ data, onFillExpense }: { data?: BillingFundsSummary
           <div className="rounded-lg bg-[var(--page-bg)] p-3"><span className="text-[var(--text-secondary)]">Management fee SST</span><strong className="block text-base">{rm(data.managementFeeSst)}</strong></div>
           <div className="rounded-lg bg-[var(--page-bg)] p-3"><span className="text-[var(--text-secondary)]">Management fee total</span><strong className="block text-base">{rm(data.managementFee)}</strong></div>
           <div className="rounded-lg bg-[var(--page-bg)] p-3"><span className="text-[var(--text-secondary)]">Owner payout balance</span><strong className="block text-base">{rm(data.ownerPayout)}</strong></div>
+          <div className={cn("rounded-lg p-3", Number(data.ownerTopUpRequired) > 0 ? "border border-red-400 bg-red-50" : "bg-[var(--page-bg)]")}><span className={Number(data.ownerTopUpRequired) > 0 ? "font-semibold text-red-800" : "text-[var(--text-secondary)]"}>Owner top-up required</span><strong className={cn("block text-base", Number(data.ownerTopUpRequired) > 0 && "text-red-800")}>{rm(data.ownerTopUpRequired)}</strong></div>
           <div className="rounded-lg bg-[var(--page-bg)] p-3"><span className="text-[var(--text-secondary)]">Already collected</span><strong className="block text-base">{rm(data.tenantCollected)}</strong></div>
         </div>
       </div>
@@ -281,6 +283,10 @@ function readCellDisplayString(node: HTMLElement): string {
 
 export default function BillsGridPage() {
   const queryClient = useQueryClient();
+  // Multi-user live view: keep polling state outside the query callback so an
+  // in-progress local edit can pause incoming snapshots before they overwrite
+  // what the current user is typing.
+  const dirtyCountRef = useRef(0);
 
   // ── period selection (R6) — `selectedPeriods` is UI state for the toolbar;
   // the query itself only changes params once the user actively picks a
@@ -295,6 +301,8 @@ export default function BillsGridPage() {
     queryFn: () =>
       fetchGrid(periodOverride ? { period: periodOverride.period, months: periodOverride.months } : {}),
     placeholderData: (prev) => prev,
+    refetchInterval: () => (dirtyCountRef.current === 0 ? 1_000 : false),
+    refetchIntervalInBackground: true,
   });
 
   // Error Handling #1: a rejected query's `data` is undefined — keep our own
@@ -342,7 +350,10 @@ export default function BillsGridPage() {
     queryFn: () => fetchBillingFundsSummary(currentPeriod),
     enabled: currentPeriod !== "",
     retry: 1,
+    refetchInterval: () => (dirtyCountRef.current === 0 ? 1_000 : false),
+    refetchIntervalInBackground: true,
   });
+  const bankReconSummaryQuery = useQuery({ queryKey: ["bank-reconciliation", "summary"], queryFn: getBankReconciliationSummary, retry: false });
 
   // The anchor shown/navigated in the toolbar. Falls back to the server's current
   // month until the first selection lands.
@@ -467,6 +478,9 @@ export default function BillsGridPage() {
   // remount isn't required (either is safe per the brief). ──────────────────
   const { staged, stage, unstage, clear, dirtyCount, undo, redo, runBatch, canUndo, canRedo, undoDepth, redoDepth } =
     useStagedEdits(currentPeriod);
+  useEffect(() => {
+    dirtyCountRef.current = dirtyCount;
+  }, [dirtyCount]);
 
   // ── mouse selection (Excel V2, Task 4): `sel` (useGridSelection) is now a
   // pure CONSUMER surface here — the page reads `sel.range`/`sel.count`/`sel.sum`
@@ -1786,7 +1800,15 @@ export default function BillsGridPage() {
         title="Tenant & Owner Billing"
         description="Save owner and tenant charges for the period, then Bill once everything checks out."
         icon={Receipt}
-        actions={<FundsSummaryPanel data={fundsSummaryQuery.data} onFillExpense={(item) => setExpensesTarget({ apartmentId: item.apartmentId, bearer: "tenant", withSST: item.withSST })} />}
+        actions={<div className="flex items-stretch gap-2">
+          {(bankReconSummaryQuery.data?.chargeRequired.count ?? 0) > 0 && (
+            <button type="button" onClick={() => window.location.assign("/accounting/bank-reconciliation")} className="rounded-xl border border-red-500 bg-red-50 px-4 text-left text-red-900 shadow-sm">
+              <span className="block text-xs font-bold uppercase">Costs awaiting charge</span>
+              <span className="block text-lg font-extrabold">{bankReconSummaryQuery.data!.chargeRequired.count} item · RM {Number(bankReconSummaryQuery.data!.chargeRequired.amount).toFixed(2)}</span>
+            </button>
+          )}
+          <FundsSummaryPanel data={fundsSummaryQuery.data} onFillExpense={(item) => setExpensesTarget({ apartmentId: item.apartmentId, bearer: "tenant", withSST: item.withSST })} />
+        </div>}
       />
 
       <div className="-mt-3 rounded-lg border border-[var(--border)] bg-white px-3 py-2 shadow-sm dark:bg-card">

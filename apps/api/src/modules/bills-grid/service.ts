@@ -49,7 +49,7 @@ import {
   GRID_UTILITY_CATEGORY_CODES, UTILITIES, UTILITY_DESCRIPTION, UTILITY_SPEC, UTILITY_SUPPLIER,
   ownerCategoryCode, tenantCategoryCode, type OwnerUtility,
 } from "./utility-spec";
-import { governingScalarKinds, isPeriodSnapshotSyncable, resolveScalarNatures, type ScalarNatureEntry } from "./period-lock";
+import { governingScalarKinds, isPeriodSnapshotSyncable, ownerStatementFrozen, resolveScalarNatures, type ScalarNatureEntry } from "./period-lock";
 // GRID→OWNER-LEDGER SEAM (2026-07-29). Permitted by a NARROWED forbidden-writes exception —
 // see forbidden-writes.integration.test.ts. This module still never writes OwnerLedgerEntry
 // itself; it asks the owner-ledger module to re-derive from ALREADY-COMMITTED charges, which is
@@ -3281,24 +3281,28 @@ export async function billService(
       // eligible: a unit whose ONLY pending money is prorated rent should still be
       // billable from this page and must not need a synthetic empty grid entry.
       if (["billed", "invoiced", "reinvoiced", "already_billed", "no_entry"].includes(rowResult.outcome)) {
-        const rentDrafts = await prisma.invoice.findMany({
+        const tenantDrafts = await prisma.invoice.findMany({
           where: {
             organizationId: session.orgId,
-            invoiceType: "tenant_rental",
+            // Rent and move-in deposits are both visible as orange Saved cells in
+            // this matrix. A selected Bill action must issue both rails together;
+            // otherwise the screen promises one workflow but silently leaves the
+            // deposit behind in Draft Approvals.
+            invoiceType: { in: ["tenant_rental", "tenant_deposit", "tenant_agreement_fee", "tenant_renewal"] },
             status: "draft",
             periodMonth,
             tenancy: { unit: { apartmentId: row.apartmentId } },
           },
           select: { id: true },
         });
-        if (rentDrafts.length > 0) {
+        if (tenantDrafts.length > 0) {
           const approved = await approveBulkService(
             {
               orgId: session.orgId,
               actorUserId: session.userId,
               actorRole: session.role as Parameters<typeof approveBulkService>[0]["actorRole"],
             },
-            rentDrafts.map((invoice) => invoice.id),
+            tenantDrafts.map((invoice) => invoice.id),
           );
           if (approved.ok && approved.data.approved.length > 0) {
             const tenantInvoiceIds = [...new Set([...(rowResult.tenantInvoiceIds ?? []), ...approved.data.approved])];
@@ -3653,6 +3657,8 @@ export interface SubRowDto {
   partyName: string | null;
   /** The tenant's primaryPhone (display + search); null for a vacant room / unresolved orphan. */
   partyPhone: string | null;
+  tenancyEndDate?: string | null;
+  renewalDecision?: "pending" | "contacted" | "renew" | "not_renew" | null;
   previousKwh: string | null;
   currentKwh: string | null;
   amount: string | null;
@@ -4115,6 +4121,14 @@ export interface GridRowDto {
   expenses: GridExpensesDto;
   /** Management fee base and SST split; SST is payable to government, not revenue. */
   managementFee: { nonSst: string; sst: string; total: string };
+  /** Tenant agreement charges created outside the editable bills grid. */
+  agreementFees: {
+    new: { amount: string; outstanding: string; state: "none" | "saved" | "billed-unpaid" | "paid" };
+    renewal: { amount: string; outstanding: string; state: "none" | "saved" | "billed-unpaid" | "paid" };
+  };
+  /** Cash-basis owner payout and any owner top-up shortfall from the authoritative ledger. */
+  ownerPayout: string;
+  ownerTopUpRequired: string;
   /** Recurring-charges (R9): CUSTOM recurring-line totals ONLY (cleaning/WiFi excluded — they
    * have their own columns). "0.00"/0 when `entry` is null or the flag is dark. */
   recurring: GridRecurringDto;
@@ -4231,6 +4245,8 @@ export interface RoomTenancyInfo {
   partyName: string | null;
   /** The active tenant's primaryPhone; null for a vacant room. Display + search only. */
   partyPhone: string | null;
+  tenancyEndDate?: string | null;
+  renewalDecision?: "pending" | "contacted" | "renew" | "not_renew" | null;
   ratePerKwh: string;
   rateConfigured: boolean;
   rental: string | null;
@@ -4299,6 +4315,8 @@ async function subRowsFor(
     partyPhone: string | null,
     rate: Pick<RoomTenancyInfo, "ratePerKwh" | "rateConfigured" | "rental" | "rentalBillingState" | "deposit" | "depositBillingState">,
     numberOfPax: number | null,
+    tenancyEndDate: string | null,
+    renewalDecision: "pending" | "contacted" | "renew" | "not_renew" | null,
   ): SubRowDto => {
     const rd = readingByListing.get(listingId);
     if (rd && rd.previousKwh != null && rd.currentKwh != null) {
@@ -4312,6 +4330,8 @@ async function subRowsFor(
       partyId: rd ? rd.partyId : partyId,
       partyName,
       partyPhone,
+      tenancyEndDate: resolvedTenancyId === tenancyId ? tenancyEndDate : null,
+      renewalDecision: resolvedTenancyId === tenancyId ? renewalDecision : null,
       previousKwh: rd?.previousKwh?.toString() ?? null,
       currentKwh: rd?.currentKwh?.toString() ?? null,
       amount: rd?.amount?.toString() ?? null,
@@ -4338,7 +4358,7 @@ async function subRowsFor(
   // Real rooms first, in the batched listing order (getGridService orders by
   // listingType then id — stable Master/Medium/Small display).
   const roomRows = rooms.map((room) =>
-    toSub(room.listingId, room.tenancyId, room.partyId ?? null, room.partyName, room.partyPhone, room, room.numberOfPax),
+    toSub(room.listingId, room.tenancyId, room.partyId ?? null, room.partyName, room.partyPhone, room, room.numberOfPax, room.tenancyEndDate ?? null, room.renewalDecision ?? null),
   );
 
   // Reading-only rows: a reading whose listingId is not a current room. Party
@@ -4360,7 +4380,7 @@ async function subRowsFor(
       r.listingId, r.tenancyId, r.partyId,
       r.partyId ? (orphanNames.get(r.partyId) ?? null) : null,
       r.partyId ? (orphanPhones.get(r.partyId) ?? null) : null,
-      ORPHAN_RATE_DEFAULTS, null,
+      ORPHAN_RATE_DEFAULTS, null, null, null,
     ),
   );
 
@@ -4401,6 +4421,11 @@ export async function toGridRowDto(
   // for the pure-mapper unit tests, an unsaved entry, and a flag-dark read.
   graduationPending = false,
   managementFee: { nonSst: string; sst: string; total: string } = { nonSst: "0.00", sst: "0.00", total: "0.00" },
+  agreementFees: GridRowDto["agreementFees"] = {
+    new: { amount: "0.00", outstanding: "0.00", state: "none" },
+    renewal: { amount: "0.00", outstanding: "0.00", state: "none" },
+  },
+  ownerMoney: { payout: string; topUp: string } = { payout: "0.00", topUp: "0.00" },
 ): Promise<GridRowDto> {
   const { subRows, warnings: negWarnings } = await subRowsFor(orgId, rooms, entry, nameById);
   return {
@@ -4432,6 +4457,9 @@ export async function toGridRowDto(
     isWholeUnit: apt.listingMode === "WHOLE",
     expenses: toExpensesDto(entry?.expenses ?? []),
     managementFee,
+    agreementFees,
+    ownerPayout: ownerMoney.payout,
+    ownerTopUpRequired: ownerMoney.topUp,
     recurring: toRecurringDto(recurring),
     cleaningRecurringLocked: governed?.CLEANING.governed ?? false,
     wifiRecurringLocked: governed?.WIFI.governed ?? false,
@@ -4554,7 +4582,7 @@ export async function getGridService(
           tenancies: {
             where: tenancyPeriodWhere(periods[0]),
             orderBy: [{ startDate: "desc" }, { id: "asc" }],
-            select: { id: true, numberOfPax: true, startDate: true, endDate: true, status: true, tenantParty: { select: { id: true, displayName: true, primaryPhone: true } } },
+            select: { id: true, numberOfPax: true, startDate: true, endDate: true, status: true, renewalDecision: true, tenantParty: { select: { id: true, displayName: true, primaryPhone: true } } },
           },
         },
       },
@@ -4589,7 +4617,10 @@ export async function getGridService(
           organizationId: session.orgId,
           tenancyId: { in: allTenancyIds },
           billingMonth: periods[0],
-          chargeType: { in: ["rent", "security_deposit", "utility_deposit"] },
+          // First-month rent may be economically reclassified as KAEN's
+          // letting commission, but it is still the tenant's rental document
+          // for this cell. Excluding it left a real saved draft colourless.
+          chargeType: { in: ["rent", "letting_commission", "security_deposit", "utility_deposit"] },
           status: { notIn: ["void", "credited"] },
         },
         select: {
@@ -4610,7 +4641,7 @@ export async function getGridService(
     const issued = charge.invoice?.status != null && charge.invoice.status !== "draft";
     const lineState: "saved" | "billed-unpaid" | "paid" = paid ? "paid" : issued ? "billed-unpaid" : "saved";
     const rank = { saved: 0, "billed-unpaid": 1, paid: 2 } as const;
-    if (charge.chargeType === "rent") {
+    if (charge.chargeType === "rent" || charge.chargeType === "letting_commission") {
       const previous = rentalStatesByTenancy.get(charge.tenancyId);
       const state = previous && rank[previous] < rank[lineState] ? previous : lineState;
       rentalStatesByTenancy.set(charge.tenancyId, state);
@@ -4621,6 +4652,57 @@ export async function getGridService(
     // Mixed legs use the least-complete state: the cell only turns cyan when both are paid.
     const state = previous && rank[previous.state] < rank[lineState] ? previous.state : lineState;
     depositsByTenancy.set(charge.tenancyId, { amount, state });
+  }
+
+  // Tenancy agreement fees are created by the tenancy workflow rather than by
+  // UnitBillsGridEntry. Join them by listing so this operational grid still shows
+  // the exact tenant charge, payment state and month in which it is due.
+  const agreementFeeCharges = allListingIds.length
+    ? await prisma.charge.findMany({
+        where: {
+          organizationId: session.orgId,
+          unitId: { in: allListingIds },
+          billingMonth: periods[0],
+          chargeType: { in: ["tenancy_agreement_fee", "renewal_fee"] },
+          status: { notIn: ["void", "credited"] },
+        },
+        select: {
+          unitId: true,
+          chargeType: true,
+          amount: true,
+          outstandingAmount: true,
+          status: true,
+          invoice: { select: { status: true } },
+        },
+      })
+    : [];
+  type AgreementFeeState = "none" | "saved" | "billed-unpaid" | "paid";
+  type AgreementFeeLine = { amount: number; outstanding: number; state: AgreementFeeState };
+  type AgreementFeePair = { new: AgreementFeeLine; renewal: AgreementFeeLine };
+  const emptyAgreementLine = (): AgreementFeeLine => ({ amount: 0, outstanding: 0, state: "none" });
+  const agreementFeesByApt = new Map<string, AgreementFeePair>();
+  const apartmentIdByListing = new Map(apartments.flatMap((apt) => apt.listings.map((listing) => [listing.id, apt.id] as const)));
+  const agreementRank: Record<AgreementFeeState, number> = { none: 0, paid: 1, "billed-unpaid": 2, saved: 3 };
+  for (const charge of agreementFeeCharges) {
+    if (!charge.unitId) continue;
+    const apartmentId = apartmentIdByListing.get(charge.unitId);
+    if (!apartmentId) continue;
+    const pair = agreementFeesByApt.get(apartmentId) ?? { new: emptyAgreementLine(), renewal: emptyAgreementLine() };
+    const key = charge.chargeType === "renewal_fee" ? "renewal" : "new";
+    const issued = charge.invoice?.status != null && charge.invoice.status !== "draft";
+    // A deliberately saved RM0 TA charge is still an unbilled action, not a
+    // payment. Zero outstanding alone must not turn it green before an invoice
+    // has actually been issued; otherwise an admin mistake becomes invisible.
+    const paid = issued && (Number(charge.outstandingAmount) <= 0 || charge.status === "paid");
+    const state: AgreementFeeState = !issued ? "saved" : paid ? "paid" : "billed-unpaid";
+    const current = pair[key];
+    pair[key] = {
+      amount: current.amount + Number(charge.amount),
+      outstanding: current.outstanding + Number(charge.outstandingAmount),
+      // A group is only green when every charge is paid; any unissued draft wins.
+      state: agreementRank[state] > agreementRank[current.state] ? state : current.state,
+    };
+    agreementFeesByApt.set(apartmentId, pair);
   }
 
   // P5: build the read path in TWO passes so editor names resolve N+1-FREE.
@@ -4720,6 +4802,8 @@ export async function getGridService(
         partyId: primary?.tenantParty.id ?? null,
         partyName: primary?.tenantParty.displayName ?? null,
         partyPhone: primary?.tenantParty.primaryPhone ?? null,
+        tenancyEndDate: primary?.endDate?.toISOString() ?? null,
+        renewalDecision: (primary?.renewalDecision as "pending" | "contacted" | "renew" | "not_renew" | undefined) ?? null,
         ratePerKwh: rate.ratePerKwh.toFixed(4),
         rateConfigured: rate.configured,
         rental: primary ? rentalTotal.toFixed(2) : null,
@@ -4852,11 +4936,13 @@ export async function getGridService(
     if (!ownerPartyId) continue;
     const eligible = feeConfigs.filter((cfg) =>
       cfg.ownerPartyId === ownerPartyId &&
-      (cfg.propertyId === null || cfg.propertyId === it.apt.propertyId) &&
+      (cfg.apartmentId === it.apt.id ||
+        (cfg.apartmentId === null && (cfg.propertyId === null || cfg.propertyId === it.apt.propertyId))) &&
       (!cfg.effectiveFrom || periods[0] >= cfg.effectiveFrom) &&
       (!cfg.effectiveTo || periods[0] <= cfg.effectiveTo));
-    const cfg = eligible.find((row) => row.propertyId === it.apt.propertyId)
-      ?? eligible.find((row) => row.propertyId === null);
+    const cfg = eligible.find((row) => row.apartmentId === it.apt.id)
+      ?? eligible.find((row) => row.apartmentId === null && row.propertyId === it.apt.propertyId)
+      ?? eligible.find((row) => row.apartmentId === null && row.propertyId === null);
     if (!cfg) continue;
     const monthlyRent = it.rooms.reduce((sum, room) => sum + Number(room.rental ?? 0), 0);
     const inFreePeriod = isInFreePeriod(billingYm, {
@@ -4872,6 +4958,21 @@ export async function getGridService(
     }, monthlyRent.toFixed(2));
     managementFeeByApt.set(it.apt.id, { nonSst: Number(fee.base), sst: Number(fee.sst) });
   }
+
+  const unitMonthMoney = await prisma.unitMonthLedger.findMany({
+    where: {
+      organizationId: session.orgId,
+      periodMonth: periods[0],
+      apartmentId: { in: interim.map((it) => it.apt.id) },
+    },
+    select: { apartmentId: true, netPayoutC: true, ownerTopUpC: true },
+  });
+  const ownerMoneyByApt = new Map(
+    unitMonthMoney.map((row) => [
+      row.apartmentId,
+      { payout: (row.netPayoutC / 100).toFixed(2), topUp: (row.ownerTopUpC / 100).toFixed(2) },
+    ]),
+  );
 
   const rows: GridRowDto[] = [];
   for (const it of interim) {
@@ -4892,6 +4993,14 @@ export async function getGridService(
           const fee = managementFeeByApt.get(it.apt.id) ?? { nonSst: 0, sst: 0 };
           return { nonSst: fee.nonSst.toFixed(2), sst: fee.sst.toFixed(2), total: (fee.nonSst + fee.sst).toFixed(2) };
         })(),
+        (() => {
+          const fees = agreementFeesByApt.get(it.apt.id) ?? { new: emptyAgreementLine(), renewal: emptyAgreementLine() };
+          return {
+            new: { amount: fees.new.amount.toFixed(2), outstanding: fees.new.outstanding.toFixed(2), state: fees.new.state },
+            renewal: { amount: fees.renewal.amount.toFixed(2), outstanding: fees.renewal.outstanding.toFixed(2), state: fees.renewal.state },
+          };
+        })(),
+        ownerMoneyByApt.get(it.apt.id) ?? { payout: "0.00", topUp: "0.00" },
       ),
     );
   }
@@ -5178,11 +5287,12 @@ export async function setBearerConfigService(
       //    "patterns snapshot onto FUTURE periods only" carve-out is retired: it made the
       //    drawer a silent no-op for the very month the admin was looking at.
       //  • only periods >= the current billing month — never a closed/back month.
-      //  • only entries {@link isPeriodSnapshotSyncable} accepts (not billed, not invoiced, not
-      //    owner-statement-frozen) — THE ONE predicate (spec R8) every sync path shares, so a
-      //    billed month's snapshot stays frozen exactly as before. Skipped months are COUNTED
-      //    and returned as `lockedEntries` so the drawer can say so instead of toasting an
-      //    unqualified "Saved.".
+      //  • a billed-but-unpaid month IS syncable here. This matches updateLinesService below:
+      //    changing who bears a charge before money arrives is a normal re-bill workflow. The
+      //    previous use of isPeriodSnapshotSyncable rejected every billed/invoiced month, so the
+      //    drawer saved "Water = Owner" into the unit config while the month on screen silently
+      //    kept its old Tenant snapshot. Only received money or a frozen owner report makes the
+      //    month immutable. Skipped months are counted and surfaced to the drawer.
       //
       // BEARER IS NO LONGER GOVERNANCE-GATED (2026-07-27). A recurring definition fixes the
       // AMOUNT only; who bears the cost stays this drawer's Owner/Tenant control, which remains
@@ -5196,7 +5306,11 @@ export async function setBearerConfigService(
       let syncedEntries = 0;
       let lockedEntries = 0;
       for (const e of openEntries) {
-        if (!(await isPeriodSnapshotSyncable(tx, session.orgId, e))) {
+        const lockedByMoney = await entryHasActivePayment(tx, session.orgId, e.id);
+        const lockedByOwnerReport = await ownerStatementFrozen(
+          tx, session.orgId, e.apartmentId, e.periodMonth,
+        );
+        if (lockedByMoney || lockedByOwnerReport) {
           lockedEntries += 1;
           continue;
         }
@@ -5207,6 +5321,7 @@ export async function setBearerConfigService(
           ...(body.cleaningNature !== undefined ? { cleaningNature: body.cleaningNature } : {}),
           wifiBearer: body.wifiBearer,
           ...(body.wifiNature !== undefined ? { wifiNature: body.wifiNature } : {}),
+          maintenanceFeeBearer: body.maintenanceFeeBearer,
         };
         await tx.unitBillsGridEntry.update({ where: { id: e.id }, data: { ...patch, updatedById: session.userId } });
         syncedEntries += 1;
@@ -5474,7 +5589,13 @@ export async function updateExpenseService(
       const lockedByMoney = isPhase2FlagEnabled("ENABLE_PROFORMA_INVOICES")
         ? await expenseHasActivePayment(tx, session.orgId, exp.id)
         : await entryHasActivePayment(tx, session.orgId, exp.entryId);
-      if (lockedByMoney) return err(409, "ENTRY_LOCKED");
+      // Customer-facing charge truth freezes once money has arrived, but the
+      // internal cost ledger is often completed afterwards (supplier invoice,
+      // bank account and payment date arrive later). A cost-only patch must stay
+      // available or a paid charge can never receive its real margin/cost record.
+      const customerFacingKeys = ["description", "amount", "withSST", "chargeCategoryId", "nature"] as const;
+      const changesCustomerFacingCharge = customerFacingKeys.some((key) => body[key] !== undefined);
+      if (lockedByMoney && changesCustomerFacingCharge) return err(409, "ENTRY_LOCKED");
 
       // Only when TRUTHY: an omitted or explicit-null chargeCategoryId (clearing the
       // category) needs no ownership check — nothing is being attached. Runs BEFORE

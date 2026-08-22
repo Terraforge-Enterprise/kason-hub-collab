@@ -21,6 +21,8 @@ const DEFAULT_TITLE: Record<DocType, string> = {
   owner_statement: "Owner Statement",
   credit_note: "Credit Note",
   refund_note: "Refund Note",
+  tenancy_agreement: "Tenancy Agreement",
+  property_management_agreement: "Property Management Agreement",
 };
 
 // Per-docType title overrides — mirrors lib/document-templates/service.ts.
@@ -105,6 +107,7 @@ export async function listTemplatesService(
         orgEmail: null,
         orgContact: null,
         logoKey: null,
+        bodyTemplate: null,
       });
       out.push(await attachLogoUrl(seeded, orgName));
     }
@@ -118,7 +121,7 @@ export async function updateTemplateService(
   patch: z.infer<typeof updateTemplateBodySchema>,
 ): Promise<DocumentTemplateWithLogoUrl> {
   const orgName = await repo.findOrgName(orgId);
-  const row = await repo.upsertTemplate(orgId, docType, patch);
+  const row = await repo.upsertTemplate(orgId, docType, { ...patch, bodyTemplate: patch.bodyTemplate ?? null });
   return attachLogoUrl(row, orgName);
 }
 

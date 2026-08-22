@@ -18,7 +18,7 @@ describe("bills-grid api client", () => {
     const spy = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       tenantDue: "0.00", tenantOutstanding: "0.00", tenantCollected: "0.00",
       depositsHeld: "0.00", ownerExpenses: "0.00", managementFee: "0.00",
-      ownerPayout: "0.00", ownerPaid: "0.00", status: "safe",
+      ownerPayout: "0.00", ownerTopUpRequired: "0.00", ownerPaid: "0.00", status: "safe",
     }), { status: 200 }));
     vi.stubGlobal("fetch", spy);
     await fetchBillingFundsSummary("2026-08-01");

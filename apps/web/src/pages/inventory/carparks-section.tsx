@@ -98,7 +98,7 @@ export function CarparksSection({
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate">{bay.label}</p>
             <p className="text-xs text-muted-foreground">
-              RM&nbsp;{bay.monthlyRate}/mo ·{" "}
+              RM&nbsp;{bay.monthlyRate}/month ·{" "}
               <span className="italic">{bay.ownerName ?? "No owner"}</span>
             </p>
           </div>

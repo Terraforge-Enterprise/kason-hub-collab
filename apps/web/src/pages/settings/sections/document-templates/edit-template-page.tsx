@@ -19,6 +19,7 @@ import { Callout } from "@/components/ui/callout";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { COMPANY } from "@/lib/company-info";
 import { LetterheadPreview, previewReferenceCode } from "./letterhead-preview";
 
 const DOC_TYPE_LABEL: Record<DocType, string> = {
@@ -29,6 +30,8 @@ const DOC_TYPE_LABEL: Record<DocType, string> = {
   owner_statement: "Owner Statement",
   credit_note: "Credit Note",
   refund_note: "Refund Note",
+  tenancy_agreement: "Tenancy Agreement",
+  property_management_agreement: "Property Management Agreement",
 };
 
 const DOC_TYPE_ICON: Record<DocType, React.ComponentType<{ className?: string }>> = {
@@ -39,6 +42,8 @@ const DOC_TYPE_ICON: Record<DocType, React.ComponentType<{ className?: string }>
   owner_statement: Landmark,
   credit_note: Receipt,
   refund_note: Banknote,
+  tenancy_agreement: ScrollText,
+  property_management_agreement: ScrollText,
 };
 
 // `logoUrl` and `orgName` are server-derived and never sent back on save.
@@ -59,6 +64,7 @@ function toFormState(t: DocumentTemplate): FormState {
     orgEmail: t.orgEmail,
     orgContact: t.orgContact,
     logoKey: t.logoKey,
+    bodyTemplate: t.bodyTemplate ?? null,
   };
 }
 
@@ -470,6 +476,24 @@ export default function EditTemplatePage() {
             )}
           </Section>
 
+          {validDocType === "tenancy_agreement" && (
+            <Section
+              label="Master agreement wording"
+              description="This is the company master template. A separate editable draft is created for every tenancy, so special terms never change the master or another tenant's agreement."
+            >
+              <textarea
+                aria-label="Tenancy agreement master template"
+                value={form.bodyTemplate ?? ""}
+                onChange={(e) => setField("bodyTemplate", e.target.value || null)}
+                className="min-h-[520px] w-full resize-y rounded-xl border border-input bg-background px-4 py-3 font-mono text-sm leading-6 text-foreground outline-none focus:ring-2 focus:ring-[#C9A35C]"
+                placeholder="Leave blank to use KAEN's built-in tenancy agreement template."
+              />
+              <div className="rounded-lg bg-muted/40 p-3 text-xs leading-5 text-muted-foreground">
+                Available placeholders: {"{{tenant_name}}"}, {"{{tenant_id}}"}, {"{{owner_name}}"}, {"{{owner_id}}"}, {"{{property_name}}"}, {"{{unit_number}}"}, {"{{property_address}}"}, {"{{start_date}}"}, {"{{end_date}}"}, {"{{monthly_rent}}"}, {"{{rental_deposit}}"}, {"{{tenancy_code}}"}.
+              </div>
+            </Section>
+          )}
+
           <Section
             label="Reference Number"
             description="The auto-generated reference printed on every issued document."
@@ -527,13 +551,11 @@ export default function EditTemplatePage() {
               <Input
                 id="companyName"
                 aria-label="Company name"
-                value={companyNameDraft}
-                onChange={(e) => setCompanyNameDraft(e.target.value)}
-                placeholder="e.g. KAEN Properties Sdn Bhd"
+                value={COMPANY.legalName}
+                readOnly
               />
               <p className="text-[11px] leading-relaxed text-muted-foreground">
-                Type the name exactly as it should appear — no automatic
-                capitalisation is applied. Shared across all document types.
+                Fixed legal entity name used on every formal document.
               </p>
             </div>
             <FieldRow
@@ -654,16 +676,12 @@ export default function EditTemplatePage() {
             </div>
             <LetterheadPreview
               template={form}
-              orgName={
-                companyNameDraft.trim() ||
-                template.orgName ||
-                "Your Organisation"
-              }
+              orgName={COMPANY.legalName}
               logoUrl={template.logoUrl}
             />
             <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
-              Edit the company name above to update the heading. The logo
-              comes from your global Organisation Settings.
+              The legal company name is fixed. The logo comes from your global
+              Organisation Settings.
             </p>
           </div>
         </aside>

@@ -70,10 +70,15 @@ export async function resolveOwnerPayoutForScope(
     where: { organizationId: ctx.orgId, ownerPartyId, isActive: true },
     select: {
       propertyId: true,
+      apartmentId: true,
       feeType: true,
       feeValue: true,
       capAmount: true,
       sstPercent: true,
+      effectiveFrom: true,
+      effectiveTo: true,
+      freePeriodStart: true,
+      freePeriodEnd: true,
       updatedAt: true,
     },
   });
@@ -124,5 +129,6 @@ export async function resolveOwnerPayoutForScope(
     rows: [...rows, ...receivableRows] as typeof rows,
     feeConfigRows,
     depositCollectedC,
+    statementMonth: monthStart,
   });
 }

@@ -75,8 +75,10 @@ describe("bills-grid export", () => {
     const wb = await buildGridWorkbook([row({ apartmentId: "a1", unitCode: "PV9 A-13-13" })], CURRENT_COLUMNS, ["2026-07-01"]);
     const ws = wb.getWorksheet("Tenant & Owner Billing")!;
     const merges = (ws.model as { merges?: string[] }).merges ?? [];
-    expect(merges.some((m) => m.startsWith("F1:"))).toBe(true); // TNB band spans 5 columns
-    expect(ws.getCell("F1").value).toBe("TNB");
+    const tnbStart = CURRENT_COLUMNS.findIndex((column) => column.id === "tnbOwner") + 1;
+    const tnbCell = `${ws.getColumn(tnbStart).letter}1`;
+    expect(merges.some((m) => m.startsWith(`${tnbCell}:`))).toBe(true);
+    expect(ws.getCell(tnbCell).value).toBe("TNB");
   });
 
   it("month strips: 3 periods → one current band + two compact prior strips", async () => {
@@ -142,8 +144,8 @@ describe("bills-grid export", () => {
       ["2026-07-01"],
     );
     const ws = wb.getWorksheet("Tenant & Owner Billing")!;
-    // Row 3 = current unit row; cleaningOwner follows Unit, Rental and Deposit.
-    expect(ws.getCell(3, 4).value).toBe(100);
+    const cleaningOwner = CURRENT_COLUMNS.findIndex((column) => column.id === "cleaningOwner") + 1;
+    expect(ws.getCell(3, cleaningOwner).value).toBe(100);
   });
 
   it("export mirrors on-screen cleaning: a saved entry.cleaning still wins over the recurring default", async () => {
@@ -160,7 +162,8 @@ describe("bills-grid export", () => {
       ["2026-07-01"],
     );
     const ws = wb.getWorksheet("Tenant & Owner Billing")!;
-    expect(ws.getCell(3, 4).value).toBe(80);
+    const cleaningOwner = CURRENT_COLUMNS.findIndex((column) => column.id === "cleaningOwner") + 1;
+    expect(ws.getCell(3, cleaningOwner).value).toBe(80);
   });
 
   // Review finding 7: the AIR bearer split is the whole point of the export's

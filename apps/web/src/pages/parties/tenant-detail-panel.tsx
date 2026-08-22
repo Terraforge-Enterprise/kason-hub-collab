@@ -156,6 +156,100 @@ export function TenantDetailPanel({
             {/* ── Portal Access ───────────────────────────────────────── */}
             <div className="col-span-2 space-y-2">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                Tenancy history
+              </p>
+              {(data.tenancyHistory ?? []).length === 0 ? (
+                <div className="rounded-lg border border-border/70 bg-background/60 p-3 text-sm text-muted-foreground">
+                  No tenancy history yet.
+                </div>
+              ) : (
+                <div className="overflow-hidden rounded-lg border border-border/70 bg-background/60">
+                  <div className="grid grid-cols-[1.15fr_1.5fr_1fr_1fr] gap-2 bg-[var(--table-header-bg,#DFE9F3)] px-3 py-2 text-xs font-bold text-[var(--text-primary,#082B4F)]">
+                    <span>Tenancy</span><span>Property & unit</span><span>Period</span><span>Status / rent</span>
+                  </div>
+                  {(data.tenancyHistory ?? []).map((item) => (
+                    <div key={item.id} className="grid grid-cols-[1.15fr_1.5fr_1fr_1fr] gap-2 border-t border-border/70 px-3 py-2 text-sm">
+                      <span className="font-semibold text-[var(--text-primary,#082B4F)]">{item.tenancyCode}</span>
+                      <span>{item.propertyName} · {item.unitCode}</span>
+                      <span>{formatDate(item.startDate)} – {item.endDate ? formatDate(item.endDate) : "Present"}</span>
+                      <span><StatusPill tone={getStatusTone(item.status)}>{item.status}</StatusPill><span className="ml-2 font-semibold">{formatRM(parseFloat(item.monthlyRentAmount))}</span></span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ── Deposit Ledger ─────────────────────────────────────── */}
+            <div className="col-span-2 space-y-2">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  Deposit ledger
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Every collected deposit is transferred to the owner for custody. It remains refundable tenant money—not owner income—and KAEN does not retain it.
+                </p>
+              </div>
+              {(data.depositLedger ?? []).length === 0 ? (
+                <div className="rounded-lg border border-border/70 bg-background/60 p-3 text-sm text-muted-foreground">
+                  No deposit charges yet.
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-lg border border-border/70 bg-background/60">
+                  <table className="w-full min-w-[760px] border-collapse text-left text-sm">
+                    <thead className="bg-[var(--table-header-bg,#DFE9F3)] text-xs font-bold text-[var(--text-primary,#082B4F)]">
+                      <tr>
+                        <th className="px-3 py-2">Property & unit</th>
+                        <th className="px-3 py-2">Deposit</th>
+                        <th className="px-3 py-2">Expected</th>
+                        <th className="px-3 py-2">Collected</th>
+                        <th className="px-3 py-2">Outstanding</th>
+                        <th className="px-3 py-2">With owner (custody)</th>
+                        <th className="px-3 py-2">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(data.depositLedger ?? []).map((item) => {
+                        const expected = Number(item.expected);
+                        const collected = Number(item.collected);
+                        const outstanding = Number(item.outstanding);
+                        const ownerTransferred = Number(item.ownerTransferred);
+                        const transferNeedsReview = collected > ownerTransferred + 0.005;
+                        const status = transferNeedsReview
+                          ? "Owner transfer review"
+                          : outstanding > 0 && collected > 0
+                            ? "Partially collected"
+                            : outstanding > 0
+                              ? "Outstanding"
+                              : "With owner for refund";
+                        const tone = transferNeedsReview
+                          ? "rose"
+                          : outstanding > 0
+                            ? "amber"
+                            : "emerald";
+                        return (
+                          <tr key={item.id} className="border-t border-border/70">
+                            <td className="px-3 py-2">
+                              <div className="font-semibold">{item.propertyName} · {item.unitCode}</div>
+                              <div className="text-xs text-muted-foreground">{item.tenancyCode} · {item.chargeNumber}</div>
+                            </td>
+                            <td className="px-3 py-2">{item.type === "rental" ? "Rental deposit" : "Utilities deposit"}</td>
+                            <td className="px-3 py-2 font-semibold tabular-nums">{formatRM(expected)}</td>
+                            <td className="px-3 py-2 font-semibold tabular-nums">{formatRM(collected)}</td>
+                            <td className="px-3 py-2 font-semibold tabular-nums">{formatRM(outstanding)}</td>
+                            <td className="px-3 py-2 font-semibold tabular-nums">{formatRM(ownerTransferred)}</td>
+                            <td className="px-3 py-2"><StatusPill tone={tone}>{status}</StatusPill></td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* ── Portal Access ───────────────────────────────────────── */}
+            <div className="col-span-2 space-y-2">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
                 Portal Access
               </p>
               <PortalAccessSection

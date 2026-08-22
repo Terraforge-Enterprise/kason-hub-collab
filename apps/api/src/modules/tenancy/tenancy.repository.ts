@@ -84,6 +84,12 @@ export async function listTenancies(orgId: string) {
       property: { select: { id: true, name: true } },
       unit: { select: { id: true, apartment: { select: { unitCode: true } } } },
       tenantParty: { select: { id: true, displayName: true } },
+      charges: {
+        where: { chargeType: "renewal_fee", status: { not: "void" } },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: { id: true, amount: true, dueDate: true, status: true, outstandingAmount: true },
+      },
     },
     orderBy: [{ startDate: "desc" }],
   });
@@ -110,6 +116,19 @@ export async function listTenancies(orgId: string) {
     firstMonthIsCommission: row.firstMonthIsCommission,
     commissionSstBearer: row.commissionSstBearer as "owner" | "kaen",
     previousTenancyId: row.previousTenancyId,
+    renewalDecision: row.renewalDecision,
+    renewalDecisionAt: row.renewalDecisionAt?.toISOString() ?? null,
+    renewalContactedAt: row.renewalContactedAt?.toISOString() ?? null,
+    renewalNotes: row.renewalNotes,
+    renewalFeeCharge: row.charges[0]
+      ? {
+          id: row.charges[0].id,
+          amount: toNumber(row.charges[0].amount) ?? 0,
+          outstandingAmount: toNumber(row.charges[0].outstandingAmount) ?? 0,
+          dueDate: row.charges[0].dueDate.toISOString(),
+          status: row.charges[0].status,
+        }
+      : null,
   }));
 }
 
@@ -161,13 +180,30 @@ export async function findTenancy(orgId: string, tenancyId: string) {
   const db = getDb();
   return db.tenancy.findFirst({
     where: { organizationId: orgId, id: tenancyId },
-    select: { id: true, propertyId: true, unitId: true, tenantPartyId: true, status: true, startDate: true, firstMonthIsCommission: true, commissionSstBearer: true },
+    select: {
+      id: true,
+      propertyId: true,
+      unitId: true,
+      tenantPartyId: true,
+      status: true,
+      startDate: true,
+      firstMonthIsCommission: true,
+      commissionSstBearer: true,
+      depositDeductions: true,
+      depositRefundAmount: true,
+    },
   });
 }
 
 export async function updateTenancy(tenancyId: string, data: Record<string, unknown>) {
   const db = getDb();
   await db.tenancy.update({ where: { id: tenancyId }, data });
+}
+
+export function endDateBeforeRenewalStart(newStartDate: Date): Date {
+  const previousEndDate = new Date(newStartDate);
+  previousEndDate.setUTCDate(previousEndDate.getUTCDate() - 1);
+  return previousEndDate;
 }
 
 export async function renewTenancyTx(params: {
@@ -183,9 +219,15 @@ export async function renewTenancyTx(params: {
 }) {
   const db = getDb();
   return db.$transaction(async (tx) => {
+    // Tenancy dates are inclusive. A renewal that starts on 25 August means the
+    // previous agreement ends on 24 August; storing both boundaries as the 25th
+    // charges that calendar day twice when the billing grid aggregates the two
+    // tenancy records (32/31 of a month). Keep the chain adjacent, never
+    // overlapping.
+    const previousEndDate = endDateBeforeRenewalStart(params.newStartDate);
     await tx.tenancy.update({
       where: { id: params.existingTenancyId },
-      data: { status: "expired", endDate: params.newStartDate },
+      data: { status: "expired", endDate: previousEndDate },
     });
 
     return tx.tenancy.create({

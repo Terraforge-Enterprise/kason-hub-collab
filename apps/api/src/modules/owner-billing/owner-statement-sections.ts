@@ -35,19 +35,14 @@ export type IncomeType =
   | "Carpark"
   | "Shared Utility"
   | "Letting Commission"
+  // Historical persisted/test discriminator. New statements intentionally do not
+  // expose tenant-paid expenses to owners.
+  | "Tenant-paid Expense"
   // DERIVED memo, never a ledger row — the partition aircond spread. Like "Letting
   // Commission" it rides isInformational:true and is excluded from every total; unlike
   // it, the money HAS already reached the payout (as Aircond Fee minus the master TNB
   // bill), so its footnote must say "already included", never "retained by KAEN".
-  | "Extra Electricity"
-  // DERIVED memo, never a ledger row — tenant-borne bills-grid expense charges
-  // (GRIDEXP-): fees/recharges the TENANT pays KAEN (tenancy agreement fee, renewal
-  // fee, their SST siblings). The owner neither pays nor receives this money, so it
-  // reaches no total and no payout; it is LISTED (user ask 2026-08-07) because a
-  // statement that omits them reads as if the tenant's RM 600 vanished. Rides
-  // isInformational:true — the "Retained by KAEN — not part of payout" footnote is
-  // literally true here.
-  | "Tenant-paid Expense";
+  | "Extra Electricity";
 
 export interface StatementHeader {
   reportMonth: string;           // "June 2026"
@@ -753,15 +748,21 @@ export type PayoutLedgerRow = {
   includeInPayout: boolean;
   taxCategory: string;
   propertyId: string | null;
+  apartmentId?: string | null;
 };
 
 /** Minimal ManagementFeeConfig shape (per-property fee resolution). */
 export type PayoutFeeConfigRow = {
   propertyId: string | null;
+  apartmentId?: string | null;
   feeType: string;
   feeValue: { toString(): string };
   capAmount: { toString(): string } | null;
   sstPercent: { toString(): string };
+  effectiveFrom?: Date | null;
+  effectiveTo?: Date | null;
+  freePeriodStart?: Date | null;
+  freePeriodEnd?: Date | null;
   updatedAt: Date;
 };
 
@@ -780,6 +781,10 @@ export interface OwnerPayoutBreakdown {
   ownerPaidExpensesC: number;
   netPayoutNoDepositC: number;
   totalPayoutC: number;
+  /** Cash payable now. Never negative; a shortfall is exposed separately. */
+  payableToOwnerC: number;
+  /** Owner must top up this amount when deductible costs exceed available cash. */
+  ownerTopUpRequiredC: number;
   /** Per-income-line fee, aligned 1:1 with rows.filter(r => r.direction === "income"). */
   lineFees: { base: string; sst: string; baseC: number; sstC: number }[];
 }
@@ -788,8 +793,24 @@ export function computeOwnerPayout(args: {
   rows: PayoutLedgerRow[];
   feeConfigRows: PayoutFeeConfigRow[];
   depositCollectedC: number;
+  /** First day of the payout month. Required by production callers so effective
+   * windows and free-management periods are honoured. Optional for legacy pure tests. */
+  statementMonth?: Date;
 }): OwnerPayoutBreakdown {
-  const { rows, feeConfigRows, depositCollectedC } = args;
+  const { rows, depositCollectedC } = args;
+  const statementMonth = args.statementMonth;
+  const feeConfigRows = args.feeConfigRows.filter((config) => {
+    if (!statementMonth) return true;
+    if (config.effectiveFrom && statementMonth < config.effectiveFrom) return false;
+    if (config.effectiveTo && statementMonth > config.effectiveTo) return false;
+    if (
+      config.freePeriodStart &&
+      config.freePeriodEnd &&
+      statementMonth >= config.freePeriodStart &&
+      statementMonth <= config.freePeriodEnd
+    ) return false;
+    return true;
+  });
 
   // grossRental via the shared summariser (folds SST into income lines).
   const ledgerLines: OwnerLedgerLine[] = rows.map((e) => ({
@@ -819,16 +840,24 @@ export function computeOwnerPayout(args: {
     capAmount: row.capAmount == null ? null : row.capAmount.toString(),
     sstPercent: row.sstPercent.toString(),
   });
-  const resolveFeeCfgForProperty = (propertyId: string | null) => {
+  const resolveFeeCfgForUnit = (apartmentId: string | null, propertyId: string | null) => {
+    const unitSpecific =
+      apartmentId != null
+        ? feeConfigsByRecency.find((c) => c.apartmentId === apartmentId)
+        : undefined;
     const specific =
-      propertyId != null ? feeConfigsByRecency.find((c) => c.propertyId === propertyId) : undefined;
-    const allProperties = feeConfigsByRecency.find((c) => c.propertyId == null);
-    const row = specific ?? allProperties;
+      propertyId != null
+        ? feeConfigsByRecency.find((c) => c.apartmentId == null && c.propertyId === propertyId)
+        : undefined;
+    const allProperties = feeConfigsByRecency.find(
+      (c) => c.apartmentId == null && c.propertyId == null,
+    );
+    const row = unitSpecific ?? specific ?? allProperties;
     return row ? toFeeCfg(row) : null;
   };
   const lineFees = incomeRows.map((e) => {
     const feeCfg = FEE_INCOME_CATEGORIES.has(e.category)
-      ? resolveFeeCfgForProperty(e.propertyId ?? null)
+      ? resolveFeeCfgForUnit(e.apartmentId ?? null, e.propertyId ?? null)
       : null;
     if (!feeCfg) return { base: "0.00", sst: "0.00", baseC: 0, sstC: 0 };
     const fee = computeManagementFee(feeCfg, money2dp(e.amount));
@@ -868,6 +897,8 @@ export function computeOwnerPayout(args: {
   const ownerPaidExpensesC = nonFeeAllExpensesC - nonFeeDeductibleC;
   const netPayoutNoDepositC = grossRentalC - deductibleExpensesC;
   const totalPayoutC = grossCashInC - deductibleExpensesC;
+  const payableToOwnerC = Math.max(0, totalPayoutC);
+  const ownerTopUpRequiredC = Math.max(0, -totalPayoutC);
 
   return {
     grossRentalC,
@@ -884,6 +915,8 @@ export function computeOwnerPayout(args: {
     ownerPaidExpensesC,
     netPayoutNoDepositC,
     totalPayoutC,
+    payableToOwnerC,
+    ownerTopUpRequiredC,
     lineFees,
   };
 }
@@ -1203,7 +1236,7 @@ export async function assembleYannieStatementForMonth(
   // wins — Postgres NULLS-FIRST can't express that in one findFirst, so load all).
   const feeConfigRows = await db.managementFeeConfig.findMany({
     where: { organizationId: ctx.orgId, ownerPartyId, isActive: true },
-    select: { propertyId: true, feeType: true, feeValue: true, capAmount: true, sstPercent: true, updatedAt: true },
+    select: { propertyId: true, apartmentId: true, feeType: true, feeValue: true, capAmount: true, sstPercent: true, effectiveFrom: true, effectiveTo: true, freePeriodStart: true, freePeriodEnd: true, updatedAt: true },
   });
 
   // Sum total deposit collected (all units combined).
@@ -1253,6 +1286,7 @@ export async function assembleYannieStatementForMonth(
     // tenant's money; adding them pays the owner RM6,600 that isn't theirs (the
     // "holding a deposit moves NO payout figure" integration test proves it).
     depositCollectedC: depositTotalC,
+    statementMonth: monthStart,
   });
   const {
     grossRentalStr,
@@ -1264,7 +1298,8 @@ export async function assembleYannieStatementForMonth(
     deductibleExpensesC,
     ownerPaidExpensesC,
     netPayoutNoDepositC,
-    totalPayoutC,
+    payableToOwnerC,
+    ownerTopUpRequiredC,
     lineFees,
   } = payout;
   const grossCashIn = centsToString(grossCashInC);
@@ -1309,9 +1344,16 @@ export async function assembleYannieStatementForMonth(
   // gains the deposit so the waterfall reconciles when a deposit is present.
   payoutLines.push({
     label: "Total Payout to Owner",
-    amount: centsToString(totalPayoutC),
+    amount: centsToString(payableToOwnerC),
     isTotal: true,
   });
+  if (ownerTopUpRequiredC > 0) {
+    payoutLines.push({
+      label: "Owner Top-up Required",
+      amount: centsToString(ownerTopUpRequiredC),
+      isNonIncome: true,
+    });
+  }
 
   // ─── Section 4: Income Breakdown ───────────────────────────────────────────
 
@@ -1473,81 +1515,6 @@ export async function assembleYannieStatementForMonth(
   // in incomeLedgerRows (so they must never enter the mapped loop or every fee shifts by
   // one), and they must not perturb either total.
   incomeRows.push(...deriveExtraElectricityRows(ledgerEntries, apartmentById, monthStart));
-
-  // ─── DERIVED: tenant-paid grid expenses (informational, user ask 2026-08-07) ──
-  //
-  // Tenant-borne GridExpense charges (GRIDEXP-, chargeType "expense" billed to the
-  // TENANT) are tenant→KAEN money: the owner neither pays nor receives them, so
-  // they are deliberately absent from the ledger and from every total (only the
-  // OWNER-borne kind reaches the ledger, as a Source-6 deduction). But a statement
-  // that omits them entirely reads as if the tenant's RM 600 of fees vanished —
-  // the owner sees the tenant's utilities and rent, then a hole. Listed here as
-  // informational rows: appended AFTER the totals are summed (cannot perturb
-  // them), zero management fee, "Retained by KAEN — not part of payout" footnote.
-  // Amounts are CN/DN-adjusted on the same basis as everything above.
-  const ownerListingIds = [...unitCodeByListingId.keys()];
-  if (ownerListingIds.length > 0) {
-    const tenantExpenseCharges = await db.charge.findMany({
-      where: {
-        organizationId: ctx.orgId,
-        unitId: { in: ownerListingIds },
-        // Tenant-borne only: the owner-borne twin (partyId === ownerPartyId) is a
-        // real payout deduction booked by owner-ledger Source 6 — listing it here
-        // too would show the same cost twice.
-        partyId: { not: ownerPartyId },
-        chargeType: "expense",
-        sourceGridExpenseId: { not: null },
-        billingMonth: monthStart,
-        status: { notIn: ["draft", "void", "credited"] },
-      },
-      select: {
-        id: true,
-        unitId: true,
-        amount: true,
-        outstandingAmount: true,
-        status: true,
-        description: true,
-      },
-      orderBy: { chargeNumber: "asc" },
-    });
-    if (tenantExpenseCharges.length > 0) {
-      const expAdjSums = await adjustmentSumsByChargeId(
-        db,
-        ctx.orgId,
-        tenantExpenseCharges.map((c) => c.id),
-      );
-      incomeRows.push(
-        ...tenantExpenseCharges.map((c): IncomeBreakdownRow => {
-          const adj = expAdjSums.get(c.id);
-          const debitC = adj?.debitCents ?? 0;
-          const creditC = adj?.creditCents ?? 0;
-          const billedC = Math.max(
-            0,
-            toCents(money2dp(c.amount), "tenantPaidExpenseBilled") + debitC - creditC,
-          );
-          const collectedC = Math.max(
-            0,
-            billedC - toCents(money2dp(c.outstandingAmount), "tenantPaidExpenseOutstanding"),
-          );
-          const note = adjustmentNoteText({ debitCents: debitC, creditCents: creditC });
-          return {
-            unitCode: c.unitId ? (unitCodeByListingId.get(c.unitId) ?? "—") : "—",
-            tenantName: c.unitId ? (tenantNameByListingId.get(c.unitId) ?? null) : null,
-            incomeType: "Tenant-paid Expense" as const,
-            billingPeriod: monthLabel(monthStart),
-            amount: centsToString(collectedC),
-            chargedAmount: centsToString(billedC),
-            mgmtFee: "0.00",
-            mgmtFeeSst: "0.00",
-            paymentStatus: receivableChargePaymentStatus(c.status),
-            detail: appendAdjustmentNote(incomeRowDetail(c.description), note ?? undefined),
-            isPassThrough: false,
-            isInformational: true,
-          };
-        }),
-      );
-    }
-  }
 
   // ─── Section 5: Expense Breakdown ──────────────────────────────────────────
   //

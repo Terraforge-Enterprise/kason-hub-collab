@@ -267,7 +267,7 @@ export default function SalesPipelinePage() {
                             Sold {u.salesDate}
                           </span>
                           <span className="font-medium text-foreground">
-                            {formatRMShort(u.expectedRental)}/mo
+                            {formatRMShort(u.expectedRental)}/month
                           </span>
                         </div>
                         {status === "completed" && u.purpose === "rent" && (
@@ -370,7 +370,7 @@ export default function SalesPipelinePage() {
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Owner expected rental</p>
-                      <p className="font-medium">{formatRMShort(drawerUnit.expectedRental)}/mo</p>
+                      <p className="font-medium">{formatRMShort(drawerUnit.expectedRental)}/month</p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Purchase price</p>
@@ -483,7 +483,7 @@ export default function SalesPipelinePage() {
                   <div className="flex justify-between"><span className="text-muted-foreground">Bedrooms</span><span>{promoteUnit.bedrooms}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Bathrooms</span><span>{promoteUnit.bathrooms}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Parking lots</span><span>{promoteUnit.parkingLots}</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">Rental rate</span><span>{formatRMShort(promoteUnit.expectedRental)}/mo</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Rental rate</span><span>{formatRMShort(promoteUnit.expectedRental)}/month</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Owner</span><span>{promoteUnit.ownerName}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">readyNow</span><Badge variant="emerald">true</Badge></div>
                 </div>

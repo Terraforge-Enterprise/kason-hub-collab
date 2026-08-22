@@ -5,6 +5,7 @@ import {
   BellDot,
   BookOpen,
   Building2,
+  CalendarCheck2,
   CheckSquare,
   ClipboardList,
   CreditCard,
@@ -48,7 +49,7 @@ export type NavSection = {
   collapsible?: boolean;
 };
 
-const ROLE_RANK: Record<string, number> = { editor: 1, manager: 2, admin: 3 };
+const ROLE_RANK: Record<string, number> = { editor: 1, manager: 2, director: 3, admin: 4 };
 
 /** Returns true if `role` meets the minimum for a nav item. */
 export function canSeeNavItem(role: string | undefined, item: NavItem): boolean {
@@ -64,9 +65,13 @@ export function canSeeNavItem(role: string | undefined, item: NavItem): boolean 
  * Other roles: an "accounting"-tagged item is visible to admin/manager only;
  * everything else falls back to the rank gate (canSeeNavItem).
  */
-export function canSeeNavItemFor(role: string | undefined, item: NavItem): boolean {
+export function canSeeNavItemFor(role: string | undefined, item: NavItem, permissions?: readonly string[]): boolean {
+  if (item.href === "/accounting/profitability" && permissions?.includes("profit.view")) return true;
   if (role === "accountant") return item.workspace === "accounting" || item.workspace === "neutral";
-  if (item.workspace === "accounting") return role === "admin" || role === "manager";
+  // Operations Admin participates in bank categorisation but does not gain the
+  // rest of the Accounting workspace (especially profitability and month-end).
+  if (item.href === "/accounting/bank-reconciliation" && role === "editor") return true;
+  if (item.workspace === "accounting") return role === "admin" || role === "director" || role === "manager";
   return canSeeNavItem(role, item);
 }
 
@@ -86,36 +91,23 @@ export const navSections: NavSection[] = [
     label: "Main",
     items: [
       { title: "Overview", href: "/dashboard", icon: LayoutDashboard, workspace: "neutral" },
+      { title: "Action Centre", href: "/action-centre", icon: ListTodo, workspace: "neutral" },
     ],
   },
   {
     label: "Portfolio",
     items: [
       { title: "Inventory",  href: "/inventory",            icon: Building2 },
-      // Source queue moved to its own canonical /source-queue URL (was
-      // duplicated here as /inventory/agent-sourced + under Sales as
-      // /sales/source-queue). Per unified-property-sourcing spec.
-      { title: "Source Queue", href: "/source-queue", icon: CheckSquare, minRole: "manager" },
       // Inventory Settings is now a section inside /settings (left-rail).
       { title: "Tenants & Owners", href: "/parties", icon: Users },
-    ],
-  },
-  {
-    // Organization-scoped concerns collapsed into ONE "Team" sidebar entry whose
-    // surfaces switch via TeamAreaTabs (Staff · Agents · Hierarchy). Staff is the
-    // unified operator-user register that replaced the separate Managers + Admin
-    // tabs (same /api/users entity); Agents + Hierarchy keep their own URLs.
-    label: "Team",
-    items: [
-      // href is the /organization landing (redirects to the Staff tab) so the
-      // sidebar entry stays active across all Team tabs — mirrors /parties.
-      { title: "Team", href: "/organization", icon: Users },
+      { title: "Tenancy Agreements", href: "/tenancy/tenancies", icon: FileSignature },
+      { title: "Management Agreements", href: "/portfolio/property-management-agreements", icon: FileText },
     ],
   },
   // Phase-2 Operations — Tasks board (M7) + Unit Analytics (Spec 2), placed
   // above Tenancy. Section appears when either flag is on; each item is gated
   // by its own flag (routes are gated the same way in router.tsx).
-  ...((isPhase2FlagEnabled("ENABLE_PHASE2_TASKS") || isPhase2FlagEnabled("ENABLE_PHASE2_UNIT_ANALYTICS"))
+  ...(isPhase2FlagEnabled("ENABLE_PHASE2_TASKS")
     ? [
         {
           label: "Operations",
@@ -123,38 +115,10 @@ export const navSections: NavSection[] = [
             ...(isPhase2FlagEnabled("ENABLE_PHASE2_TASKS")
               ? [{ title: "Tasks", href: "/tasks", icon: ListTodo, minRole: "editor" as const }]
               : []),
-            ...(isPhase2FlagEnabled("ENABLE_PHASE2_UNIT_ANALYTICS")
-              ? [{ title: "Unit Analytics", href: "/tenancy/unit-analytics", icon: BarChart3, minRole: "manager" as const }]
-              : []),
           ],
         },
       ]
     : []),
-  {
-    label: "Tenancy",
-    items: [
-      { title: "Reservations",       href: "/admin/reservations",         icon: FileSignature },
-      // Tenant Tracker nav entry REMOVED 2026-08-06 — superseded by the Tenant &
-      // Owner Billing grid. The tenant-tracker API module + flag live on
-      // (Data Import below + bills-grid still use them).
-      // Phase-2 M9 — Data Import (admin only). Still gated by
-      // ENABLE_PHASE2_TENANT_TRACKER (the flag outlived the tracker page);
-      // further restricted to admin role (GET is editor+, but the dry-run CTA
-      // requires admin so the nav entry reflects that).
-      ...(isPhase2FlagEnabled("ENABLE_PHASE2_TENANT_TRACKER")
-        ? [{ title: "Data Import", href: "/tenancy/data-import", icon: FileSpreadsheet, minRole: "admin" as const }]
-        : []),
-      // "Owner Statements" was retired — the Owner Ledger is the single front
-      // door now (it issues the management fee and links through to each
-      // per-month statement).
-      // Phase-2 Owner Billing (M6b) — admin owner-ledger entries. Same flag gate.
-      ...(isPhase2FlagEnabled("ENABLE_PHASE2_OWNER_BILLING")
-        ? [{ title: "Owner Ledger", href: "/tenancy/owner-ledger", icon: BookOpen, minRole: "manager" as const }]
-        : []),
-      // Unit Analytics (Spec 2) moved to the Operations section (above Tenancy).
-      // Landlord Tenancies + Tenancies parked in the Hidden section below.
-    ],
-  },
   // Billing section — exists when Auto-Draft (M5) OR the accounting Documents
   // register OR the Tenant & Owner Billing grid is on. Each item gated by its
   // own flag (routes gated the same way in router.tsx). Draft Approvals:
@@ -212,24 +176,32 @@ export const navSections: NavSection[] = [
   // -from-Invoice recording surfaces. workspace:"accounting" admits admin/manager
   // + the accountant; minRole:"manager" gives non-accountant admin/manager the
   // rank fallback too.
-  ...(isPhase2FlagEnabled("ENABLE_PHASE2_BILLING_DOCS")
+  ...((isPhase2FlagEnabled("ENABLE_PHASE2_BILLING_DOCS") || isPhase2FlagEnabled("ENABLE_PHASE2_OWNER_BILLING"))
     ? [
         {
           label: "Accounting",
           items: [
-            { title: "Invoices", href: "/accounting/invoices", icon: FileText, minRole: "manager" as const, workspace: "accounting" as const },
-            { title: "Receipts", href: "/accounting/receipts", icon: ReceiptText, minRole: "manager" as const, workspace: "accounting" as const },
+            ...(isPhase2FlagEnabled("ENABLE_PHASE2_BILLING_DOCS")
+              ? [
+                  { title: "Bank Reconciliation", href: "/accounting/bank-reconciliation", icon: Landmark, minRole: "editor" as const, workspace: "accounting" as const },
+                  { title: "Invoices", href: "/accounting/invoices", icon: FileText, minRole: "manager" as const, workspace: "accounting" as const },
+                  { title: "Receipts", href: "/accounting/receipts", icon: ReceiptText, minRole: "manager" as const, workspace: "accounting" as const },
+                  { title: "Employee Claims", href: "/accounting/employee-expense-claims", icon: ClipboardList, minRole: "manager" as const, workspace: "accounting" as const },
+                  ...(isPhase2FlagEnabled("ENABLE_PHASE2_OWNER_BILLING")
+                    ? [{ title: "Owner Ledger", href: "/tenancy/owner-ledger", icon: BookOpen, minRole: "manager" as const, workspace: "accounting" as const }]
+                    : []),
+                  { title: "Owner & Tenant Profitability", href: "/accounting/profitability", icon: TrendingUp, minRole: "admin" as const, workspace: "accounting" as const },
+                  { title: "Month-End Control", href: "/accounting/month-end-control", icon: CalendarCheck2, minRole: "admin" as const, workspace: "accounting" as const },
+                ]
+              : [
+                  ...(isPhase2FlagEnabled("ENABLE_PHASE2_OWNER_BILLING")
+                    ? [{ title: "Owner Ledger", href: "/tenancy/owner-ledger", icon: BookOpen, minRole: "manager" as const, workspace: "accounting" as const }]
+                    : []),
+                ]),
           ],
         },
       ]
     : []),
-  {
-    label: "Commissions",
-    items: [
-      { title: "Claims",      href: "/commissions/claims",      icon: ClipboardList },
-      { title: "Performance", href: "/commissions/performance", icon: TrendingUp },
-    ],
-  },
   {
     label: "Audit",
     items: [
@@ -237,10 +209,12 @@ export const navSections: NavSection[] = [
     ],
   },
   {
-    // Settings — single canonical entry. Inside /settings, a left-rail nav
-    // covers Commission & TA, Inventory, Sales & Renovation, Document Templates.
+    // Staff roles and access control belong with system configuration rather
+    // than the day-to-day operating sections. The underlying organization
+    // routes stay intact so existing bookmarks and data flows are unaffected.
     label: "Settings",
     items: [
+      { title: "Roles", href: "/organization/staff", icon: Users, workspace: "neutral" },
       { title: "Settings", href: "/settings", icon: SlidersHorizontal, workspace: "neutral" },
     ],
   },
@@ -250,11 +224,19 @@ export const navSections: NavSection[] = [
     // of the active product flow yet. Kept here (instead of removed) so we
     // don't forget about them. Click "Hidden" in the sidebar to expand.
     // S&R Settings moved out — it's now reachable via /settings/sales-renovation.
-    label: "Hidden",
+    label: "Other Modules",
     collapsible: true,
     items: [
-      { title: "Landlord Tenancies", href: "/tenancy/landlord-tenancies",    icon: Landmark },
-      { title: "Tenancies",          href: "/tenancy/tenancies",             icon: ShieldCheck },
+      { title: "Source Queue", href: "/source-queue", icon: CheckSquare, minRole: "manager" },
+      { title: "Reservations", href: "/admin/reservations", icon: FileSignature },
+      ...(isPhase2FlagEnabled("ENABLE_PHASE2_UNIT_ANALYTICS")
+        ? [{ title: "Unit Analytics", href: "/tenancy/unit-analytics", icon: BarChart3, minRole: "manager" as const }]
+        : []),
+      ...(isPhase2FlagEnabled("ENABLE_PHASE2_TENANT_TRACKER")
+        ? [{ title: "Data Import", href: "/tenancy/data-import", icon: FileSpreadsheet, minRole: "admin" as const }]
+        : []),
+      { title: "Commission Claims", href: "/commissions/claims", icon: ClipboardList },
+      { title: "Commission Performance", href: "/commissions/performance", icon: TrendingUp },
       ...(isPhase2FlagEnabled("ENABLE_PHASE2_BILLING_DOCS")
         ? []
         : [

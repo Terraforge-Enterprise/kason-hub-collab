@@ -71,9 +71,9 @@ export function UnitDocumentsDialog({ row, onClose }: { row: GridRow | null; onC
                       <th className="w-[18%] px-4 py-3 text-left">Document</th>
                       <th className="w-[16%] px-4 py-3 text-left">Tenant</th>
                       <th className="w-[17%] px-4 py-3 text-left">Number</th>
-                      <th className="w-[12%] px-4 py-3 text-left">Status</th>
-                      <th className="w-[12%] px-4 py-3 text-right">Amount</th>
-                      <th className="w-[12%] px-4 py-3 text-center">Actions</th>
+                      <th className="w-[15%] px-3 py-3 text-center">Status</th>
+                      <th className="w-[13%] px-3 py-3 text-right">Amount</th>
+                      <th className="w-[10%] px-3 py-3 text-center">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -85,9 +85,9 @@ export function UnitDocumentsDialog({ row, onClose }: { row: GridRow | null; onC
                           <td className="px-4 py-4 font-semibold">{doc.docType === "receipt" ? <ReceiptText className="mr-2 inline h-5 w-5 text-emerald-700" /> : <FileText className="mr-2 inline h-5 w-5 text-[var(--gold)]" />}{documentKindLabel(doc.docType, doc.documentNumber)}</td>
                           <td className="break-words px-4 py-4 font-semibold text-[var(--navy)]">{doc.partyName}</td>
                           <td className="break-words px-4 py-4 font-mono">{doc.documentNumber}</td>
-                          <td className="px-4 py-4"><span className="rounded-full border border-[var(--border)] bg-[var(--page-bg)] px-2.5 py-1 text-sm font-semibold">{status}</span></td>
-                          <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[var(--navy)]">{formatRM(Number(doc.total))}</td>
-                          <td className="px-4 py-4"><div className="flex justify-center gap-1">
+                          <td className="px-3 py-4 text-center"><span className="inline-flex max-w-full whitespace-nowrap rounded-full border border-[var(--border)] bg-[var(--page-bg)] px-2.5 py-1 text-sm font-semibold leading-none">{status}</span></td>
+                          <td className="whitespace-nowrap px-3 py-4 text-right align-middle font-bold tabular-nums text-[var(--navy)]">{formatRM(Number(doc.total))}</td>
+                          <td className="px-3 py-4 align-middle"><div className="flex items-center justify-center gap-1 whitespace-nowrap">
                             <Button type="button" variant="ghost" size="icon-lg" title="View details" aria-label={`View ${doc.documentNumber}`} onClick={() => setSelectedDoc(doc)}><Eye className="h-5 w-5" /></Button>
                             <Button type="button" variant="ghost" size="icon-lg" title="Download PDF" aria-label={`Download ${doc.documentNumber}`} disabled={downloadingId === doc.id} onClick={() => { void download(doc); }}>{downloadingId === doc.id ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}</Button>
                           </div></td>

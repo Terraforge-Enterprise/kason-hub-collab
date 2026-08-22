@@ -127,7 +127,7 @@ export function SidebarNav({ collapsed = false }: { collapsed?: boolean }) {
   return (
     <nav className="flex w-full flex-col gap-5">
       {navSections.map((section) => {
-        const visibleItems = section.items.filter((item) => canSeeNavItemFor(role, item));
+        const visibleItems = section.items.filter((item) => canSeeNavItemFor(role, item, user?.permissions));
         if (visibleItems.length === 0) return null;
         if (section.collapsible) {
           return (
@@ -166,7 +166,7 @@ export function MobileNav() {
   const { pathname } = useLocation();
   const { user } = useAuth();
   const role = user?.role;
-  const visibleItems = allNavItems.filter((item) => canSeeNavItemFor(role, item));
+  const visibleItems = allNavItems.filter((item) => canSeeNavItemFor(role, item, user?.permissions));
 
   return (
     <div className="relative">

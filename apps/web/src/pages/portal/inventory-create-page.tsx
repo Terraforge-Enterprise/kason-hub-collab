@@ -843,7 +843,7 @@ export default function PortalInventoryCreatePage() {
                     </label>
                     <label className="block">
                       <span className="text-xs text-muted-foreground">
-                        Rent (RM/mo)
+                        Rent (RM/month)
                       </span>
                       <Input
                         type="number"
@@ -913,8 +913,13 @@ export default function PortalInventoryCreatePage() {
                       Inheriting from Room 1
                     </div>
                     <div>
-                      Rental deposit: {room1.depositMonths ?? "—"} mo · Utilities:{" "}
-                      {room1.utilitiesDepositMonths ?? "—"} mo · Access cards:{" "}
+                      Rental deposit:{" "}
+                      {room1.depositMonths == null
+                        ? "—"
+                        : `${room1.depositMonths} ${room1.depositMonths > 1 ? "months" : "month"}`} · Utilities:{" "}
+                      {room1.utilitiesDepositMonths == null
+                        ? "—"
+                        : `${room1.utilitiesDepositMonths} ${room1.utilitiesDepositMonths > 1 ? "months" : "month"}`} · Access cards:{" "}
                       {room1.accessCardQuantity ?? 0} pc(s)
                     </div>
                     <div>

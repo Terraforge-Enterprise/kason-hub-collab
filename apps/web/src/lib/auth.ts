@@ -7,6 +7,7 @@ export interface User {
   role: string;
   orgId: string;
   userType?: string;
+  permissions?: string[];
 }
 
 export interface AuthContextType {

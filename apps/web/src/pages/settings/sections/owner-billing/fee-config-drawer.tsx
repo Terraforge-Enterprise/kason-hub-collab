@@ -21,6 +21,7 @@ import {
 
 export type OwnerOption = { id: string; displayName: string };
 export type PropertyOption = { id: string; name: string };
+export type UnitOption = { apartmentId: string; unitCode: string; propertyName: string };
 
 export type FeeConfigDrawerProps = {
   open: boolean;
@@ -29,6 +30,7 @@ export type FeeConfigDrawerProps = {
   config?: FeeConfigRow;
   owners: OwnerOption[];
   properties: PropertyOption[];
+  units?: UnitOption[];
   /** When set (owner-detail context), the owner is fixed: the select is replaced
    * by read-only text and the form's ownerPartyId is forced to this owner. */
   lockedOwner?: OwnerOption;
@@ -37,6 +39,7 @@ export type FeeConfigDrawerProps = {
 type FormState = {
   ownerPartyId: string;
   propertyId: string; // "" = All properties
+  apartmentId: string; // "" = property/owner scope
   feeType: FeeType;
   feeValue: string;
   capAmount: string;
@@ -55,6 +58,7 @@ function blankForm(): FormState {
   return {
     ownerPartyId: "",
     propertyId: "",
+    apartmentId: "",
     feeType: "percent",
     feeValue: "",
     capAmount: "",
@@ -68,6 +72,7 @@ function formFromConfig(c: FeeConfigRow): FormState {
   return {
     ownerPartyId: c.ownerPartyId,
     propertyId: c.propertyId ?? "",
+    apartmentId: c.apartmentId ?? "",
     feeType: c.feeType,
     feeValue: c.feeValue,
     capAmount: c.capAmount ?? "",
@@ -93,6 +98,7 @@ export function FeeConfigDrawer({
   config,
   owners,
   properties,
+  units = [],
   lockedOwner,
 }: FeeConfigDrawerProps) {
   const createConfig = useCreateFeeConfig();
@@ -164,12 +170,14 @@ export function FeeConfigDrawer({
     const freePeriodStart = form.freePeriodStart ? toIsoFromDateInput(form.freePeriodStart) : null;
     const freePeriodEnd = form.freePeriodEnd ? toIsoFromDateInput(form.freePeriodEnd) : null;
     const propertyId = form.propertyId || null;
+    const apartmentId = form.apartmentId || null;
 
     if (mode === "create") {
       createConfig.mutate(
         {
           ownerPartyId: form.ownerPartyId,
           propertyId,
+          apartmentId,
           feeType: form.feeType,
           feeValue: form.feeValue,
           capAmount,
@@ -197,6 +205,7 @@ export function FeeConfigDrawer({
         expectedUpdatedAt: config.updatedAt,
         ownerPartyId: form.ownerPartyId,
         propertyId,
+        apartmentId,
         feeType: form.feeType,
         feeValue: form.feeValue,
         capAmount,
@@ -261,6 +270,27 @@ export function FeeConfigDrawer({
         </Field>
 
         <Field
+          label="Unit scope"
+          hint="Choose a unit for its own fee. Unit settings override property and owner defaults."
+        >
+          <SelectInput
+            value={form.apartmentId}
+            onChange={(e) => {
+              set("apartmentId", e.target.value);
+              if (e.target.value) set("propertyId", "");
+            }}
+            aria-label="Unit scope"
+          >
+            <option value="">No unit override</option>
+            {units.map((u) => (
+              <option key={u.apartmentId} value={u.apartmentId}>
+                {u.propertyName} {u.unitCode}
+              </option>
+            ))}
+          </SelectInput>
+        </Field>
+
+        <Field
           label="Property scope"
           hint="Leave as All properties to apply the fee to every property this owner holds."
         >
@@ -268,6 +298,7 @@ export function FeeConfigDrawer({
             value={form.propertyId}
             onChange={(e) => set("propertyId", e.target.value)}
             aria-label="Property scope"
+            disabled={Boolean(form.apartmentId)}
           >
             <option value="">All properties</option>
             {properties.map((p) => (

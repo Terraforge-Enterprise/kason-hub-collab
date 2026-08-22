@@ -133,10 +133,11 @@ export function gridUnitColumnValue(row: GridRow, columnId: ColumnId): string | 
       return toNumberOrNull(row.expenses.owner.withSstTotal);
     case "ownerExpNonSst":
       return subtractMoney(row.expenses.owner.total, row.expenses.owner.withSstTotal);
-    case "managementFeeNonSst":
-      return toNumberOrNull(row.managementFee?.nonSst ?? null);
+    case "agreementFee":
+      return (toNumberOrNull(row.agreementFees?.new.amount ?? null) ?? 0)
+        + (toNumberOrNull(row.agreementFees?.renewal.amount ?? null) ?? 0);
     case "managementFeeSst":
-      return toNumberOrNull(row.managementFee?.sst ?? null);
+      return toNumberOrNull(row.managementFee?.total ?? null);
     // Recurring-charges (R9): CUSTOM recurring totals — export mirrors the on-screen read-only cell.
     case "ownerRecurring":
       return toNumberOrNull(row.recurring?.owner.total ?? null);

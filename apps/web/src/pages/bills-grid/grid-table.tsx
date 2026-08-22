@@ -327,10 +327,20 @@ function readOnlyValue(row: GridRow, columnId: ColumnId): string {
       return row.expenses.owner.withSstTotal;
     case "ownerExpNonSst":
       return subtractMoney(row.expenses.owner.total, row.expenses.owner.withSstTotal);
-    case "managementFeeNonSst":
-      return row.managementFee?.nonSst ?? "0.00";
+    case "agreementFee":
+      // A genuine zero-value TA charge is operationally different from no TA
+      // charge at all. Keep the zero visible so an admin can spot/correct it;
+      // use a dash only when this apartment-month has no TA record.
+      if (
+        (row.agreementFees?.new.state ?? "none") === "none"
+        && (row.agreementFees?.renewal.state ?? "none") === "none"
+      ) return "—";
+      return (
+        Number(row.agreementFees?.new.amount ?? 0)
+        + Number(row.agreementFees?.renewal.amount ?? 0)
+      ).toFixed(2);
     case "managementFeeSst":
-      return row.managementFee?.sst ?? "0.00";
+      return row.managementFee?.total ?? "0.00";
     case "ownerRecurring":
       return row.recurring?.owner.total ?? "0.00";
     case "tenantRecurring":
@@ -345,18 +355,14 @@ function readOnlyValue(row: GridRow, columnId: ColumnId): string {
 // ── editable input cell ──────────────────────────────────────────────────────
 
 /**
- * The "this line has been paid" marker: a green tick pinned to the cell's
- * bottom-right. Rendered INSIDE the <td> (which gains `relative`), so it rides
- * the cell box without touching layout — no extra column, no reflow, and the
- * value stays copyable/selectable exactly as before.
- *
- * `aria-hidden` on the glyph with a visually-hidden label alongside: a bare "✓"
- * announces as nothing useful, and the state must reach a screen reader as
- * words. `pointer-events-none` keeps the marker out of the cell's
- * click/drag/selection gestures — it is decoration over a live grid surface.
+ * Partially-paid cells keep a small non-colour marker so they remain distinct
+ * from unpaid cells. Fully-paid cells rely on their existing full-cell colour;
+ * their former bottom-right green tick was redundant and visually noisy.
  */
 function SettlementMarker({ state }: { state: PaintedSettlement }) {
   const paint = SETTLEMENT_PAINT[state];
+  if (state === "paid") return <span className="sr-only">{paint.label}</span>;
+
   return (
     <span
       className={cn("pointer-events-none absolute bottom-0.5 right-0.5 leading-none", paint.tick)}
@@ -425,8 +431,8 @@ type PaintedSettlement = Extract<SettlementState, "partial" | "paid">;
  * cannot silently fall through to "renders like unpaid" — the union widens and this
  * table stops compiling until the new state is answered.
  *
- * Colour is NOT the only channel: paid is "✓" and partial is "◐", so the two states
- * remain distinguishable without colour vision. Both carry an sr-only word too.
+ * Partial payment keeps a visible "◐" marker. Paid cells keep an sr-only word
+ * while their full-cell green state supplies the visible indication.
  */
 const SETTLEMENT_PAINT: Record<
   PaintedSettlement,
@@ -463,23 +469,33 @@ function preferredColumnWidth(columnId: ColumnId): number {
   switch (columnId) {
     case "previousKwh":
     case "currentKwh":
-      return 126;
+      return 116;
     case "ownerPayout":
-      return 142;
+      return 124;
     case "tenantExpNonSst":
     case "tenantExpWithSst":
     case "ownerExpNonSst":
     case "ownerExpWithSst":
-      return 108;
+      // These cells also carry the document/cost affordances, so they need a little
+      // more room than a plain amount but no longer inherit the old oversized width.
+      return 96;
     case "rental":
     case "deposit":
+      return 86;
+    case "agreementFee":
+      // The visible heading is intentionally just "TA". Giving it the same 102px
+      // as Deposit created almost as much blank space as content.
+      return 72;
     case "amount":
+      return 88;
     case "maintenanceFee":
-    case "managementFeeNonSst":
+      return 88;
     case "managementFeeSst":
-      return 102;
+      return 92;
     default:
-      return 90;
+      // Plain Owner/Tenant money cells: enough for RM-style values and the input
+      // border, without the repeated empty gutters that made the matrix very long.
+      return 82;
   }
 }
 
@@ -504,6 +520,13 @@ function hasBillableDisplay(value: string): boolean {
   return Number.isFinite(numeric) ? numeric !== 0 : true;
 }
 
+/** TA is the deliberate exception to the usual "zero means no data" rule:
+ * a saved RM0 TA charge must remain visible in its billing/re-billing state. */
+function hasVisibleBillingState(columnId: ColumnId, value: string): boolean {
+  if (columnId === "agreementFee") return !isDashDisplay(value) && value.trim() !== "";
+  return hasBillableDisplay(value);
+}
+
 /** Shared by the renderer and the page-level colour filter so both surfaces use
  * exactly the same automatic billing-state rules. */
 export function billingStateForCell(
@@ -512,6 +535,16 @@ export function billingStateForCell(
   columnId: ColumnId,
   isPendingRebill?: (cellKey: string, columnId: ColumnId) => boolean,
 ): BillingCellState | undefined {
+  if (columnId === "agreementFee") {
+    const states = [row.agreementFees?.new.state, row.agreementFees?.renewal.state]
+      .filter((state): state is "saved" | "billed-unpaid" | "paid" => !!state && state !== "none");
+    // One TA cell represents either a new agreement or a renewal. It only turns
+    // green when every charge in that cell is fully paid.
+    if (states.includes("saved")) return "saved";
+    if (states.includes("billed-unpaid")) return "billed-unpaid";
+    if (states.includes("paid")) return "paid";
+    return undefined;
+  }
   if (columnId === "deposit") {
     const subRow = row.subRows.find((candidate) => candidate.listingId === cellKey) ?? row.subRows[0];
     return subRow?.depositBillingState ?? undefined;
@@ -566,18 +599,18 @@ export function rowHasBillingState(
       ? scalarGeneratedAmount(row, col.id as GovernableScalarColumn)
       : "";
     const value = generated || seedValue(row, col.id) || readOnlyValue(row, col.id);
-    if (hasBillableDisplay(value) && billingStateForCell(row, row.apartmentId, col.id, isPendingRebill) === target) return true;
+    if (hasVisibleBillingState(col.id, value) && billingStateForCell(row, row.apartmentId, col.id, isPendingRebill) === target) return true;
   }
   return false;
 }
 
 const CATEGORY_START_COLUMNS = new Set<ColumnId>([
   "rental", "cleaningOwner", "tnbOwner", "airOwner", "wifiOwner",
-  "maintenanceFee", "ownerRecurring", "tenantExpNonSst", "ownerExpNonSst", "managementFeeNonSst",
-  "ownerPayout",
+  "maintenanceFee", "ownerRecurring", "tenantExpNonSst", "ownerExpNonSst",
+  "managementFeeSst", "ownerPayout",
 ]);
 const CATEGORY_END_COLUMNS = new Set<ColumnId>([
-  "deposit", "cleaningTenant", "amount", "airTenant", "wifiTenant",
+  "agreementFee", "cleaningTenant", "amount", "airTenant", "wifiTenant",
   "maintenanceFee", "tenantRecurring", "tenantExpWithSst", "ownerExpWithSst", "managementFeeSst",
   "ownerPayout",
 ]);
@@ -591,8 +624,8 @@ function categoryDividerClass(columnId: ColumnId): string {
   );
 }
 
-function billingStateStyle(state: BillingCellState | undefined, value: string): React.CSSProperties | undefined {
-  return state && hasBillableDisplay(value)
+function billingStateStyle(state: BillingCellState | undefined, value: string, columnId?: ColumnId): React.CSSProperties | undefined {
+  return state && (columnId ? hasVisibleBillingState(columnId, value) : hasBillableDisplay(value))
     ? { backgroundColor: BILLING_STATE_COLOUR[state], color: "#082B4F" }
     : undefined;
 }
@@ -924,7 +957,7 @@ function LockedCell({
       data-active={active ? "true" : undefined}
       data-selected={selected ? "true" : undefined}
       data-copy-value={display}
-      data-billing-state={hasBillableDisplay(display) ? billingState : undefined}
+      data-billing-state={hasVisibleBillingState(columnId, display) ? billingState : undefined}
       style={Object.assign({}, billingStateStyle(billingState, display), selectionOutlineStyle(selectionEdges))}
       aria-readonly="true"
       tabIndex={registerCell ? -1 : undefined}
@@ -957,6 +990,7 @@ function ReadOnlyCell({
   badgeCount,
   costActionRequired = false,
   costMargin,
+  warningText,
   active,
   selected,
   selectionEdges,
@@ -984,6 +1018,7 @@ function ReadOnlyCell({
   costActionRequired?: boolean;
   /** Completed charged amount minus actual cost for this exact SST cell. */
   costMargin?: number | null;
+  warningText?: string;
   // P4 Task 3: active-cell nav for the read-only expense totals. All optional
   // — absent ⇒ parity. The <td> is the registered/focused node; the inner
   // eye-Button (onView) keeps its own onClick and stops propagation so
@@ -1028,13 +1063,13 @@ function ReadOnlyCell({
       data-active={active ? "true" : undefined}
       data-selected={selected ? "true" : undefined}
       data-copy-value={display}
-      data-billing-state={hasBillableDisplay(display) ? billingState : undefined}
+      data-billing-state={hasVisibleBillingState(columnId, display) ? billingState : undefined}
       style={Object.assign(
         {},
         ownerReportStatus ? {
           backgroundColor: ownerReportStatus === "draft" ? "#FF8C00" : ownerReportStatus === "first_checked" ? "#FFFF00" : "#00FF00",
           color: "#082B4F",
-        } : billingStateStyle(billingState, display),
+        } : billingStateStyle(billingState, display, columnId),
         selectionOutlineStyle(selectionEdges),
       )}
       tabIndex={registerCell ? -1 : undefined}
@@ -1104,6 +1139,11 @@ function ReadOnlyCell({
         </div>
       ) : (
         display
+      )}
+      {warningText && (
+        <span className="mx-auto mt-1 block w-fit max-w-full overflow-hidden text-ellipsis whitespace-nowrap rounded border border-red-500 bg-red-50 px-1.5 py-0.5 text-[11px] font-extrabold leading-tight text-red-800">
+          {warningText}
+        </span>
       )}
       {settlement && !dashOnly && <SettlementMarker state={settlement} />}
       <CellDocumentMarks counts={documentCounts} />
@@ -1232,6 +1272,12 @@ export function GridTable({
   function columnTotal(columnId: ColumnId): string {
     // Meter readings are snapshots, not money; adding meter positions would be misleading.
     if (columnId === "previousKwh" || columnId === "currentKwh") return "—";
+    if (
+      columnId === "agreementFee"
+      && !rows.some((row) =>
+        (row.agreementFees?.new.state ?? "none") !== "none"
+        || (row.agreementFees?.renewal.state ?? "none") !== "none")
+    ) return "—";
     if (columnId === "ownerPayout") {
       return rows.reduce((sum, row) => sum + projectedOwnerPayout(row), 0).toFixed(2);
     }
@@ -1260,7 +1306,7 @@ export function GridTable({
         }
         continue;
       }
-      if (["tenantExpNonSst", "tenantExpWithSst", "ownerExpNonSst", "ownerExpWithSst", "managementFeeNonSst", "managementFeeSst", "ownerRecurring", "tenantRecurring"].includes(columnId)) {
+      if (["tenantExpNonSst", "tenantExpWithSst", "ownerExpNonSst", "ownerExpWithSst", "agreementFee", "managementFeeSst", "ownerRecurring", "tenantRecurring"].includes(columnId)) {
         add(readOnlyValue(row, columnId));
         continue;
       }
@@ -1315,7 +1361,7 @@ export function GridTable({
           "billing-matrix w-full table-fixed",
           displayMode === "easy-read"
             ? "text-[18px]"
-            : "min-w-[1680px] text-[15px] [&_td]:text-[15px] [&_th]:text-[15px] [&_input]:text-[15px]",
+            : "text-[15px] [&_td]:text-[15px] [&_th]:text-[15px] [&_input]:text-[15px]",
         )}
         {...(displayMode === "easy-read" ? { style: { minWidth: `${300 + preferredDataWidth}px` } } : {})}
       >
@@ -1362,7 +1408,7 @@ export function GridTable({
                 onClick={onSelectColumns ? (e) => { if (!hasNativeTextSelection()) onSelectColumns(g.columns.map((c) => c.id), resolveClickMods(e)); } : undefined}
                 title={onSelectColumns ? `Select all ${g.band} columns` : undefined}
                 className={cn(
-                  "sticky top-0 z-20 h-10 select-text whitespace-nowrap border-x-2 border-x-[var(--navy)] bg-[var(--page-bg)] px-2 py-1 text-center text-[18px] font-bold leading-none tracking-normal align-middle",
+                  "sticky top-0 z-20 h-10 select-text whitespace-nowrap border-x-2 border-b-2 border-x-[var(--navy)] border-b-[var(--navy)] bg-[var(--page-bg)] px-2 py-1 text-center text-[18px] font-bold leading-none tracking-normal align-middle",
                   onSelectColumns && "cursor-pointer transition hover:bg-[var(--primary)]/10",
                 )}
               >
@@ -1456,6 +1502,28 @@ export function GridTable({
 }
 
 // ── one apartment's row(s): unit row + optional nested tenant sub-rows + prior strip ──
+
+export function renewalSignalForRow(row: GridRow, now = new Date()): { tenancyId: string; label: string; urgent: boolean } | null {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const candidate = row.subRows
+    .filter((sub): sub is GridSubRow & { tenancyId: string; tenancyEndDate: string } => !!sub.tenancyId && !!sub.tenancyEndDate)
+    .map((sub) => ({ sub, days: Math.ceil((new Date(`${sub.tenancyEndDate.slice(0, 10)}T00:00:00`).getTime() - today) / 86_400_000) }))
+    .filter(({ days }) => days <= 60)
+    .sort((a, b) => a.days - b.days)[0];
+  if (!candidate) return null;
+
+  const decision = candidate.sub.renewalDecision ?? "pending";
+  const suffix = candidate.days >= 0 ? `${candidate.days}d left` : `${Math.abs(candidate.days)}d overdue`;
+  if (decision === "not_renew") return { tenancyId: candidate.sub.tenancyId, label: `Move-out planned · ${suffix}`, urgent: false };
+  if (decision === "contacted") return { tenancyId: candidate.sub.tenancyId, label: `Renewal answer pending · ${suffix}`, urgent: candidate.days <= 30 };
+  if (decision === "renew") {
+    // RM0 is still an explicit TA fee decision and is deliberately visible for
+    // correction; only the absence of a charge means Operations has not added it.
+    const feeCreated = (row.agreementFees?.renewal.state ?? "none") !== "none";
+    return { tenancyId: candidate.sub.tenancyId, label: feeCreated ? "Renewal ready to complete" : "Renewal · add TA fee", urgent: !feeCreated };
+  }
+  return { tenancyId: candidate.sub.tenancyId, label: `Ask tenant about renewal · ${suffix}`, urgent: true };
+}
 
 function GridUnitRowGroup({
   row,
@@ -1605,6 +1673,7 @@ function GridUnitRowGroup({
   // exclusive below — a re-Billed row shows Re-Billed only, never both.
   const hasLiveBill = row.billed ?? row.billedAt != null;
   const needsBill = row.entryId != null && (!hasLiveBill || row.hasUnbilledChanges === true);
+  const renewalSignal = renewalSignalForRow(row);
 
   function cellBillingState(cellKey: string, columnId: ColumnId): BillingCellState | undefined {
     return billingStateForCell(row, cellKey, columnId, isCellPendingRebill);
@@ -1775,6 +1844,21 @@ function GridUnitRowGroup({
               <Badge variant="amber" data-testid="needs-bill-badge">
                 {hasLiveBill ? "Needs Re-Bill" : "Needs Bill"}
               </Badge>
+            )}
+            {renewalSignal && (
+              <a
+                href={`/tenancy/tenancies?renewal=${encodeURIComponent(renewalSignal.tenancyId)}`}
+                className={cn(
+                  "inline-flex h-7 items-center rounded-full border px-2.5 text-xs font-extrabold shadow-sm transition hover:-translate-y-px hover:shadow-md",
+                  renewalSignal.urgent
+                    ? "animate-pulse border-red-500 bg-red-100 text-red-800"
+                    : "border-amber-400 bg-amber-100 text-amber-900",
+                )}
+                title="Open the tenant renewal workflow"
+                data-testid="renewal-signal"
+              >
+                {renewalSignal.label}
+              </a>
             )}
             {/* R13 — money settled against a proforma line whose tax invoice never got
                 minted. The MONEY IS CORRECT; only the document is missing, which is why
@@ -1991,6 +2075,7 @@ function GridUnitRowGroup({
                   viewKind="report"
                   onSecondary={onDownloadOwnerReport && row.ownerPartyId ? () => onDownloadOwnerReport(row) : undefined}
                   ownerReportStatus={row.ownerPartyId ? (row.ownerPayoutStatus ?? "draft") : undefined}
+                  warningText={Number(row.ownerTopUpRequired ?? 0) > 0 ? `Top-up RM ${Number(row.ownerTopUpRequired).toFixed(2)}` : undefined}
                   {...readOnlyCellProps(row.apartmentId, col.id)}
                 />
               );
@@ -2081,16 +2166,19 @@ function GridUnitRowGroup({
                 viewTestId={bearer === "tenant" ? "view-expenses-tenant" : "view-expenses-owner"}
                 viewKind={isExpense ? "expense" : "view"}
                 badgeCount={(() => {
+                  if (!isExpense) return 0;
                   const counts = bearer === "tenant" ? row.expenses.tenant : row.expenses.owner;
                   return expenseWithSst
                     ? (counts.withSstCount ?? counts.count)
                     : (counts.nonSstCount ?? Math.max(0, counts.count - (counts.withSstCount ?? 0)));
                 })()}
                 costActionRequired={(() => {
+                  if (!isExpense) return false;
                   const counts = bearer === "tenant" ? row.expenses.tenant : row.expenses.owner;
                   return (expenseWithSst ? (counts.withSstActionRequiredCount ?? 0) : (counts.nonSstActionRequiredCount ?? 0)) > 0;
                 })()}
                 costMargin={(() => {
+                  if (!isExpense) return null;
                   const counts = bearer === "tenant" ? row.expenses.tenant : row.expenses.owner;
                   const raw = expenseWithSst ? counts.withSstGrossMargin : counts.nonSstGrossMargin;
                   if (raw == null) return null;

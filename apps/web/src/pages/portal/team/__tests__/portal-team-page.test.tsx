@@ -11,7 +11,7 @@ vi.mock("@/lib/portal-api", () => ({
     if (path === "/team/upline-chain") {
       return {
         data: {
-          organization: { id: "org-1", name: "Kaen Properties Sdn Bhd" },
+          organization: { id: "org-1", name: "KAEN PROPERTIES MANAGEMENT SDN BHD" },
           // Farah reports straight to the org → self-only chain (isAtTop).
           chain: [
             {

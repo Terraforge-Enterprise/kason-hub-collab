@@ -14,6 +14,7 @@ function money(value: string | null | undefined): number {
  * borne charges never reduce the owner's payout and owner-borne charges do.
  */
 export function projectedOwnerPayout(row: GridRow): number {
+  if (row.ownerPayout != null) return Math.max(0, money(row.ownerPayout));
   const income = row.subRows.reduce(
     (sum, subRow) => sum + money(subRow.rental) + money(subRow.deposit),
     0,
@@ -39,6 +40,5 @@ export function projectedOwnerPayout(row: GridRow): number {
     money(row.managementFee?.nonSst) +
     money(row.managementFee?.sst);
 
-  return income - deductions;
+  return Math.max(0, income - deductions);
 }
-

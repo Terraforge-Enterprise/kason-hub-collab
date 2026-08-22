@@ -146,6 +146,8 @@ const unitWritableFields = {
   // the service layer -- not zod -- is the one that rejects <= 0 with a clean
   // OCCUPANCY_RENT_REQUIRED error. Flag off: ignored.
   monthlyRent: z.coerce.number().nonnegative().optional(),
+  tenancyAgreementFeeAmount: z.coerce.number().nonnegative().optional(),
+  tenancyAgreementFeeDueDate: z.string().date().optional(),
   // First-month-rent-as-KAEN-commission (Phase 1, display-only). Same shape as
   // createTenancySchema (tenancy.ts:111-112); optional so a PATCH touching only
   // e.g. rentalRate need not resend them. Persisted onto the Tenancy that
@@ -287,6 +289,8 @@ const createUnitObjectSchema = z.object({
   // ENABLE_PHASE2_RESERVATION_GATED_TENANCY is on. No refiner here by design:
   // packages/shared reads no env, so it cannot flag-gate the requirement.
   monthlyRent: unitWritableFields.monthlyRent,
+  tenancyAgreementFeeAmount: unitWritableFields.tenancyAgreementFeeAmount,
+  tenancyAgreementFeeDueDate: unitWritableFields.tenancyAgreementFeeDueDate,
   // Commission toggles — createUnitObjectSchema picks fields explicitly (no
   // spread of unitWritableFields), so reuse the same field defs here.
   firstMonthIsCommission: unitWritableFields.firstMonthIsCommission,
@@ -465,6 +469,8 @@ const adminBatchRoomFields = batchRoomObjectFields
     moveInDate: unitWritableFields.moveInDate,
     moveOutDate: unitWritableFields.moveOutDate,
     monthlyRent: unitWritableFields.monthlyRent,
+    tenancyAgreementFeeAmount: unitWritableFields.tenancyAgreementFeeAmount,
+    tenancyAgreementFeeDueDate: unitWritableFields.tenancyAgreementFeeDueDate,
     // Commission toggles per room — adminBatchRoomFields is .strict(), so the
     // keys must be declared here or the batch payload is rejected.
     firstMonthIsCommission: unitWritableFields.firstMonthIsCommission,

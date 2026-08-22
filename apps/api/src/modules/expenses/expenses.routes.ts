@@ -6,21 +6,14 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { supplierExpenseInput } from "@kason/shared";
+import { z } from "zod";
 import type { SessionPayload } from "../../lib/auth";
-import { isPhase2FlagEnabled } from "../../lib/feature-flags";
 import { formatZodError } from "../../lib/zod-error-mapper";
 import { requireRole } from "../../middleware/require-role";
 import { getActorHeaders } from "../../lib/actor-ctx";
-import { createSupplierExpenseService, ExpenseError, type ExpenseActorCtx } from "./expenses.service";
+import { approveEmployeeClaimService, assignSharedCostService, createSupplierExpenseService, ExpenseError, listSupplierExpensesService, type ExpenseActorCtx } from "./expenses.service";
 
 const expensesRoutes = new Hono<{ Variables: { session: SessionPayload } }>();
-
-// Flag gate FIRST: every /api/expenses route 404s while ENABLE_SUPPLIER_EXPENSES
-// is dark, BEFORE any auth/role check runs (owner-remittance.routes.ts precedent).
-expensesRoutes.use("*", async (c, next) => {
-  if (!isPhase2FlagEnabled("ENABLE_SUPPLIER_EXPENSES")) return c.json({ error: "not_found" }, 404);
-  await next();
-});
 
 type ExpensesCtx = Context<{ Variables: { session: SessionPayload } }>;
 
@@ -29,6 +22,8 @@ function actor(c: ExpensesCtx): ExpenseActorCtx {
   const { ip, userAgent } = getActorHeaders(c);
   return { orgId: session.orgId, actorUserId: session.userId, actorRole: session.role, ip, userAgent };
 }
+
+expensesRoutes.get("/", requireRole("manager"), async (c) => c.json({ data: await listSupplierExpensesService(actor(c)) }));
 
 expensesRoutes.post("/", requireRole("editor"), async (c) => {
   const body = await c.req.json().catch(() => null);
@@ -45,6 +40,19 @@ expensesRoutes.post("/", requireRole("editor"), async (c) => {
     if (e instanceof ExpenseError) return c.json({ error: e.code }, e.status as 400 | 500);
     throw e;
   }
+});
+
+expensesRoutes.post("/:id/approve", requireRole("admin"), async (c) => {
+  try { return c.json({ data: await approveEmployeeClaimService(actor(c), c.req.param("id")) }); }
+  catch (e) { if (e instanceof ExpenseError) return c.json({ error: e.code }, e.status as 404 | 409); throw e; }
+});
+
+const assignmentInput = z.object({ apartmentId: z.string().uuid(), gridExpenseId: z.string().uuid().nullable().optional(), amount: z.string().regex(/^\d+(\.\d{1,2})?$/).refine((value) => Number(value) > 0), description: z.string().max(500).nullable().optional() });
+expensesRoutes.post("/:id/assignments", requireRole("manager"), async (c) => {
+  const parsed = assignmentInput.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "invalid_assignment", details: parsed.error.flatten() }, 400);
+  try { return c.json({ data: await assignSharedCostService(actor(c), c.req.param("id"), parsed.data) }, 201); }
+  catch (e) { if (e instanceof ExpenseError) return c.json({ error: e.code }, e.status as 404 | 409); throw e; }
 });
 
 export { expensesRoutes };

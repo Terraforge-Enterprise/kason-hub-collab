@@ -139,7 +139,12 @@ export default defineConfig({
     },
   },
   server: {
+    // Bind the exact address used by the local testing links. On Windows,
+    // Vite's default `localhost` binding can resolve to IPv6 only, while the
+    // saved browser link uses 127.0.0.1 and then receives ERR_CONNECTION_REFUSED.
+    host: "127.0.0.1",
     port: 5173,
+    strictPort: true,
     // Kept in sync with PROXY_PREFIXES above, which gates these paths on the
     // API actually being up.
     proxy: {

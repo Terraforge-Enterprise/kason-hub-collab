@@ -205,8 +205,8 @@ describe("ApartmentCard — drift", () => {
   });
 });
 
-describe("ApartmentCard — expand/collapse", () => {
-  it("starts collapsed by default — rooms are not visible", () => {
+describe("ApartmentCard — rooms are always visible", () => {
+  it("shows rooms by default", () => {
     render(
       wrap(
         <ApartmentCard
@@ -215,8 +215,8 @@ describe("ApartmentCard — expand/collapse", () => {
         />,
       ),
     );
-    expect(screen.queryByText("Master")).not.toBeInTheDocument();
-    expect(screen.queryByText("Medium")).not.toBeInTheDocument();
+    expect(screen.getByText("Master")).toBeInTheDocument();
+    expect(screen.getByText("Medium")).toBeInTheDocument();
   });
 
   it("expands when initiallyExpanded is true — rooms become visible", () => {
@@ -235,24 +235,21 @@ describe("ApartmentCard — expand/collapse", () => {
 
 });
 
-describe("ApartmentCard — click-to-expand (whole card)", () => {
-  it("toggles when the card body is clicked", async () => {
+describe("ApartmentCard — no second-level collapse", () => {
+  it("keeps rooms visible when the card body and unit code are clicked", async () => {
     const user = userEvent.setup();
     render(wrap(<ApartmentCard apartment={makeApartment()} editApartmentTrigger={<button>Edit</button>} />));
-    // "3 BR" sits in the summary line, OUTSIDE the old inner toggle-button —
-    // this is the actual delta Task 2 introduces (whole card reacts, not
-    // just the old chevron/unit-code button).
     await user.click(screen.getByText("3 BR"));
     expect(screen.queryByText("Master")).not.toBeNull();
     await user.click(screen.getByText("C-12-34"));
-    expect(screen.queryByText("Master")).toBeNull();
+    expect(screen.queryByText("Master")).not.toBeNull();
   });
 
-  it("does not toggle when the Edit trigger is clicked", async () => {
+  it("keeps rooms visible when the Edit trigger is clicked", async () => {
     const user = userEvent.setup();
     render(wrap(<ApartmentCard apartment={makeApartment()} editApartmentTrigger={<button>Edit</button>} />));
     await user.click(screen.getByRole("button", { name: "Edit" }));
-    expect(screen.queryByText("Master")).toBeNull(); // stayed collapsed
+    expect(screen.queryByText("Master")).not.toBeNull();
   });
 
   it("does not collapse when a room link is clicked", async () => {
@@ -262,13 +259,10 @@ describe("ApartmentCard — click-to-expand (whole card)", () => {
     expect(screen.queryByText("Master")).not.toBeNull(); // stayed expanded
   });
 
-  it("toggles on keyboard Enter when the card is focused", async () => {
-    const user = userEvent.setup();
+  it("is no longer exposed as an accordion button", () => {
     render(wrap(<ApartmentCard apartment={makeApartment()} editApartmentTrigger={<button>Edit</button>} />));
-    const card = screen.getByRole("button", { name: /Expand apartment C-12-34/i });
-    card.focus();
-    await user.keyboard("{Enter}");
-    expect(screen.queryByText("Master")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: /apartment C-12-34/i })).toBeNull();
+    expect(screen.getByText("Master")).toBeInTheDocument();
   });
 });
 
@@ -562,6 +556,19 @@ describe("ApartmentCard badge — billing model", () => {
 });
 
 describe("ApartmentCard — owner & tenant names", () => {
+  it("links known owner, tenant, and unit records directly to their detail context", () => {
+    const apt = makeApartment({
+      ownerPartyId: "owner-1",
+      ownerName: "Brian Lee",
+      listingMode: "WHOLE",
+      rooms: [{ id: "unit-1", unitType: "Whole Unit", rentalRate: 3000, occupancyStatus: "occupied", listingStatus: "active", inChargePartyId: null, tenantPartyId: "tenant-1", tenantName: "Noelle Tan" }],
+    });
+    render(wrap(<ApartmentCard apartment={apt} editApartmentTrigger={<button>Edit</button>} />));
+    expect(screen.getByRole("link", { name: "Brian Lee" })).toHaveAttribute("href", "/parties/owners?partyId=owner-1");
+    expect(screen.getAllByRole("link", { name: /Noelle Tan/ })[0]).toHaveAttribute("href", "/parties/tenants?partyId=tenant-1");
+    expect(screen.getByRole("link", { name: "C-12-34" })).toHaveAttribute("href", "/inventory/units/unit-1");
+  });
+
   it("renders the owner name when present", () => {
     render(wrap(<ApartmentCard apartment={makeApartment({ ownerName: "Alice Tan" })} editApartmentTrigger={<button>Edit</button>} />));
     expect(screen.queryByText(/Alice Tan/)).not.toBeNull();
@@ -601,7 +608,7 @@ describe("ApartmentCard — owner & tenant names", () => {
       rooms: [{ id: "u-w", unitType: "Whole Unit", rentalRate: 2200, occupancyStatus: "occupied", listingStatus: "active", inChargePartyId: null, tenantName: "Carol Ng" }],
     });
     render(wrap(<ApartmentCard apartment={apt} editApartmentTrigger={<button>Edit</button>} />));
-    expect(screen.queryByText(/Carol Ng/)).not.toBeNull();
+    expect(screen.getAllByText(/Carol Ng/).length).toBeGreaterThan(0);
   });
 
   it("shows no tenant label for a room without a tenantName", () => {

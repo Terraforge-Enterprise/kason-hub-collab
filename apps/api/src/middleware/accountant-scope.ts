@@ -23,6 +23,17 @@ export const ACCOUNTING_ALLOW: Rule[] = [
   // P3: the invoice-create form's series/category dropdowns.
   exact("GET", "/api/charge-categories/series"),
   prefix("GET", "/api/dashboard"),
+  // Finance owns import/final reconciliation. These routes still pass through
+  // their own capability middleware; this wall only allows them to reach it.
+  prefix("GET", "/api/bank-reconciliation"),
+  prefix("GET", "/api/profitability"),
+  exact("POST", "/api/bank-reconciliation/accounts"),
+  exact("POST", "/api/bank-reconciliation/imports"),
+  exact("POST", "/api/bank-reconciliation/imports/preview"),
+  { method: "PATCH", test: (p: string) => /^\/api\/bank-reconciliation\/transactions\/[^/]+\/categorize$/.test(p) },
+  // Read-only filing export: documents, charges, payments, expenses, owner ledger
+  // and bank movements. The route itself is accounting-workspace gated.
+  exact("GET", "/api/accounting-export/all-transactions.xlsx"),
   // P3 record-and-allocate (Transfer-from-Invoice). EXACT — a bare /api/payments
   // prefix would leak reverse/status/post/fpx-cancel.
   exact("POST", "/api/payments/record-and-allocate"),

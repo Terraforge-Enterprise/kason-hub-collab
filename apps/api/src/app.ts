@@ -38,6 +38,9 @@ import { ownerRemittanceRoutes, ownerReceivableOffsetRoutes } from "./modules/ow
 import { reconciliationRoutes } from "./modules/owner-ledger/reconciliation/reconciliation.routes";
 import { billingDocumentsRoutes } from "./modules/billing-documents";
 import { expensesRoutes } from "./modules/expenses";
+import { bankReconciliationRoutes } from "./modules/bank-reconciliation/routes";
+import { accountingExportRoutes } from "./modules/accounting-export/routes";
+import { profitabilityRoutes } from "./modules/profitability/routes";
 import { ownerFundingRequestsRoutes } from "./modules/owner-funding-requests";
 import { usersRoutes } from "./modules/users";
 import { organizationCardSettingsRoutes } from "./modules/organization-card-settings";
@@ -140,6 +143,9 @@ app.route("/api/charge-categories", chargeCategoriesRoutes);
 // Internal Expense (EXP-) — accounting-doc redesign P3. Mounted UNCONDITIONALLY;
 // the router's first middleware 404s every request while ENABLE_SUPPLIER_EXPENSES is dark.
 app.route("/api/expenses", expensesRoutes);
+app.route("/api/bank-reconciliation", bankReconciliationRoutes);
+app.route("/api/accounting-export", accountingExportRoutes);
+app.route("/api/profitability", profitabilityRoutes);
 // Owner Funding Request — accounting-doc redesign P7 (reshaped). Mounted
 // UNCONDITIONALLY; the router's first middleware 404s every request while
 // ENABLE_OWNER_FUNDING_REQUEST is dark. NOT a BillingDocument/invoice route.

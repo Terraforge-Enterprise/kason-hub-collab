@@ -77,7 +77,6 @@ export * from "./constants/bill-outcomes";
 export * from "./schemas/billing-documents";
 export * from "./schemas/bills-grid";
 export * from "./schemas/manual-invoice";
-export * from "./finance/owner-remittance";
 export * from "./schemas/owner-remittance";
 export * from "./schemas/closed-period";
 export * from "./schemas/owner-funding-request";

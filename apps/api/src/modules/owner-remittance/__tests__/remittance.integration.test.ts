@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { Hono } from "hono";
 import { getDb } from "@kason/db";
 import type { Prisma } from "@kason/db";
-import { computeRequestFingerprint } from "@kason/shared";
+import { computeRequestFingerprint } from "@kason/shared/owner-remittance";
 import type { SessionPayload } from "../../../lib/auth";
 import { ownerRemittanceRoutes } from "../owner-remittance.routes";
 import { computeAvailableOwnerPayableC, periodRemainingPayableC } from "../owner-remittance.repository";

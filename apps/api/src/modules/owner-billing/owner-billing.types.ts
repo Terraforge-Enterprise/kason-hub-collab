@@ -30,6 +30,7 @@ export type ManagementFeeConfigRow = {
   id: string;
   ownerPartyId: string;
   propertyId: string | null;
+  apartmentId?: string | null;
   feeType: string;
   feeValue: string;
   capAmount: string | null;
@@ -144,6 +145,22 @@ export type OwnerStatementSendResult = {
   statement: OwnerStatementRow;
   /** Short-lived signed download URL for the statement PDF (createSignedDownloadUrl). */
   downloadUrl: string;
+};
+
+export type OwnerPayoutSafetyCheck = {
+  code: string;
+  label: string;
+  status: "pass" | "warning" | "block";
+  detail: string;
+  blocks: "first_check" | "approve" | "both" | null;
+};
+
+export type OwnerPayoutApprovalPreflight = {
+  statementId: string;
+  canFirstCheck: boolean;
+  canApprove: boolean;
+  netPayoutToOwner: string;
+  checks: OwnerPayoutSafetyCheck[];
 };
 
 /**

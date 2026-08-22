@@ -169,7 +169,10 @@ export async function listTenants(orgId: string) {
       // Org-scoped (defence-in-depth) + active-only (current occupancy only).
       tenancies: {
         where: { organizationId: orgId, status: "active" },
+        orderBy: { startDate: "desc" },
         select: {
+          startDate: true,
+          endDate: true,
           property: { select: { name: true } },
           unit: { select: { apartment: { select: { unitCode: true } } } },
         },
@@ -300,6 +303,126 @@ export async function findTenantDetail(orgId: string, partyId: string) {
       createdAt: true,
     },
   });
+}
+
+export async function findTenantTenancyHistory(orgId: string, partyId: string) {
+  return getDb().tenancy.findMany({
+    where: { organizationId: orgId, tenantPartyId: partyId },
+    orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
+    select: {
+      id: true,
+      tenancyCode: true,
+      status: true,
+      billingStatus: true,
+      startDate: true,
+      endDate: true,
+      monthlyRentAmount: true,
+      property: { select: { name: true } },
+      unit: { select: { apartment: { select: { unitCode: true } } } },
+    },
+  });
+}
+
+/**
+ * Tenant deposit ledger. Deposits are never retained by KAEN: every posted
+ * collection is projected as `released_to_owner`, including partial payments.
+ */
+export async function findTenantDepositLedger(orgId: string, partyId: string) {
+  const db = getDb();
+  const [charges, transfers] = await Promise.all([
+    db.charge.findMany({
+      where: {
+        organizationId: orgId,
+        partyId,
+        chargeType: { in: ["security_deposit", "utility_deposit"] },
+        status: { notIn: ["void", "credited"] },
+      },
+      orderBy: [{ dueDate: "desc" }, { createdAt: "desc" }],
+      select: {
+        id: true,
+        chargeNumber: true,
+        chargeType: true,
+        amount: true,
+        outstandingAmount: true,
+        dueDate: true,
+        tenancyId: true,
+        tenancy: {
+          select: {
+            tenancyCode: true,
+            property: { select: { name: true } },
+            unit: { select: { apartment: { select: { unitCode: true } } } },
+          },
+        },
+      },
+    }),
+    db.deposit.groupBy({
+      by: ["tenancyId", "type"],
+      where: {
+        organizationId: orgId,
+        partyId,
+        status: "released_to_owner",
+      },
+      _sum: { amount: true },
+    }),
+  ]);
+
+  const transferredByLeg = new Map(
+    transfers.map((row) => [
+      `${row.tenancyId}:${row.type}`,
+      Number(row._sum.amount?.toString() ?? 0),
+    ]),
+  );
+
+  const ledger = new Map<string, {
+    id: string;
+    chargeNumber: string;
+    type: "rental" | "utilities";
+    expected: number;
+    collected: number;
+    outstanding: number;
+    ownerTransferred: number;
+    dueDate: Date;
+    tenancyCode: string;
+    propertyName: string;
+    unitCode: string;
+  }>();
+
+  for (const charge of charges) {
+    const type = charge.chargeType === "security_deposit" ? "rental" : "utilities";
+    const expected = Number(charge.amount.toString());
+    const outstanding = Number(charge.outstandingAmount.toString());
+    const collected = Math.max(0, expected - outstanding);
+    const key = `${charge.tenancyId ?? charge.id}:${type}`;
+    const current = ledger.get(key);
+    if (current) {
+      current.expected += expected;
+      current.collected += collected;
+      current.outstanding += outstanding;
+      current.chargeNumber = `${current.chargeNumber}, ${charge.chargeNumber}`;
+      if (charge.dueDate > current.dueDate) current.dueDate = charge.dueDate;
+      continue;
+    }
+    ledger.set(key, {
+      id: key,
+      chargeNumber: charge.chargeNumber,
+      type,
+      expected,
+      collected,
+      outstanding,
+      ownerTransferred: charge.tenancyId
+        ? Math.max(0, transferredByLeg.get(`${charge.tenancyId}:${type}`) ?? 0)
+        : 0,
+      dueDate: charge.dueDate,
+      tenancyCode: charge.tenancy?.tenancyCode ?? "—",
+      propertyName: charge.tenancy?.property.name ?? "—",
+      unitCode: charge.tenancy?.unit.apartment.unitCode ?? "—",
+    });
+  }
+
+  return [...ledger.values()].map((item) => ({
+    ...item,
+    ownerTransferred: Math.min(item.ownerTransferred, item.collected),
+  }));
 }
 
 /**
@@ -480,7 +603,15 @@ export async function createOwner(orgId: string, data: Record<string, unknown>) 
         emergencyContactRelation: (data.emergencyContactRelation as string) || null,
         status: "active",
       },
-      select: { id: true },
+      // Inline-create consumers (Create Unit / Add Owner) immediately render a
+      // confirmation card from this response. Returning only the id left that
+      // card blank until the operator removed and searched for the owner again.
+      select: {
+        id: true,
+        displayName: true,
+        primaryPhone: true,
+        primaryEmail: true,
+      },
     });
     await tx.partyRole.create({ data: { organizationId: orgId, partyId: party.id, roleType: "owner", status: "active" } });
     return party;
@@ -523,7 +654,16 @@ export async function createTenantTx(
       emergencyContactRelation: (data.emergencyContactRelation as string) || null,
       status: "active",
     },
-    select: { id: true },
+    // The unit create/edit dialog immediately displays the newly-created
+    // tenant without doing a second fetch. Return the same small identity
+    // shape that the picker uses; returning only `id` left the selected tenant
+    // visibly blank until the page was reloaded.
+    select: {
+      id: true,
+      displayName: true,
+      primaryPhone: true,
+      idType: true,
+    },
   });
   await tx.partyRole.create({ data: { organizationId: orgId, partyId: party.id, roleType: "tenant", status: "active" } });
   return party;

@@ -11,12 +11,14 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Callout } from "@/components/ui/callout";
+import { Button } from "@/components/ui/button";
 import { ActionButton, Field, SelectInput, TextInput } from "@/components/form-ui";
 import { getApartmentsByProperty } from "@/api/inventory-units-batch";
 import type { PropertyListItem } from "@/pages/inventory/property-row";
 import type { FirstMonthPreview, CommissionPreview } from "@kason/shared";
 import { isPhase2FlagEnabled } from "@/lib/feature-flags";
 import { FirstMonthPreviewCard } from "@/pages/tenancy/first-month-preview";
+import { tenancyEndDate } from "@/pages/inventory/occupancy-fields";
 
 // Server validation shape from formatZodError (apps/api/src/lib/zod-error-mapper.ts):
 // { error: string, fieldErrors: Record<string,string> }. ApiError.data carries the
@@ -321,7 +323,7 @@ export function AssignTenantToUnitDialog({
                     {t.propertyName} · {t.unitCode}
                   </span>
                   <span className="mx-2 opacity-60">—</span>
-                  <span>{money(t.monthlyRentAmount)}/mo</span>
+                  <span>{money(t.monthlyRentAmount)}/month</span>
                   {t.firstMonthIsCommission !== undefined && (
                     <span className="mx-2 opacity-60">·</span>
                   )}
@@ -431,6 +433,24 @@ export function AssignTenantToUnitDialog({
               onChange={(e) => setEndDate(e.target.value)}
             />
           </Field>
+          <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
+            <span className="text-sm font-medium text-[var(--text-primary)]">Set tenancy:</span>
+            {([1, 2] as const).map((years) => (
+              <Button
+                key={years}
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!startDate}
+                onClick={() => setEndDate(tenancyEndDate(startDate, years))}
+              >
+                {years} Year{years === 1 ? "" : "s"}
+              </Button>
+            ))}
+            {!startDate && (
+              <span className="text-xs text-[var(--text-muted)]">Choose the start date first.</span>
+            )}
+          </div>
 
           {commissionFlagOn && (
             <div className="space-y-2">

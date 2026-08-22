@@ -4,6 +4,7 @@ export {
   addStatementLineService,
   approveStatementService,
   firstCheckStatementService,
+  getStatementApprovalPreflightService,
   createFeeConfigService,
   generateStatementService,
   getFeeConfigService,

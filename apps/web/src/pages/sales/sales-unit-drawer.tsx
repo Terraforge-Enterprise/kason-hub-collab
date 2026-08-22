@@ -430,7 +430,7 @@ function DrawerBody({
                     />
                   </label>
                   <label className="block">
-                    <span className="text-xs text-muted-foreground">Expected rental / mo (RM)</span>
+                    <span className="text-xs text-muted-foreground">Expected rental / month (RM)</span>
                     <input
                       type="number"
                       min={0}

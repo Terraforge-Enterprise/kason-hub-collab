@@ -405,6 +405,7 @@ function EditApartmentForm({
           </p>
           {form.ownerPartyId ? (
             <OwnerConfirmCard
+              ownerId={form.ownerPartyId}
               ownerName={form.ownerName}
               ownerPhone={form.ownerPhone}
               onChange={() => setForm((prev) => ({ ...prev, ownerPartyId: null, ownerName: "", ownerPhone: null }))}

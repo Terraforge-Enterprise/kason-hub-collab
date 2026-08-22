@@ -119,7 +119,7 @@ describe("row payment badge", () => {
 });
 
 describe("per-cell paid affordance", () => {
-  it("greys the paid column and marks it with a tick; leaves the unpaid one alone", () => {
+  it("colours the paid column without a redundant corner tick; leaves the unpaid one alone", () => {
     render(
       <GridTable
         rows={[makeRow({
@@ -131,7 +131,8 @@ describe("per-cell paid affordance", () => {
     );
     const paidCell = screen.getByTestId("cell-airOwner");
     expect(paidCell).toHaveAttribute("data-settled", "true");
-    expect(within(paidCell).getByTestId("settled-tick")).toBeInTheDocument();
+    expect(within(paidCell).queryByTestId("settled-tick")).not.toBeInTheDocument();
+    expect(within(paidCell).getByText("Paid")).toBeInTheDocument();
 
     const unpaidCell = screen.getByTestId("cell-maintenanceFee");
     expect(unpaidCell).not.toHaveAttribute("data-settled");

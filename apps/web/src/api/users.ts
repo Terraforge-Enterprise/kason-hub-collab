@@ -1,11 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api-client";
+import type { PermissionOverrides } from "@/lib/permissions";
 
 export type OperatorUser = {
   id: string;
   email: string;
   fullName: string;
   role: string;
+  permissionOverrides: PermissionOverrides;
   status: string;
   lastLoginAt: string | null;
   createdAt: string;
@@ -26,20 +28,22 @@ export type OperatorUser = {
 export type CreateUserInput = {
   email: string;
   fullName: string;
-  role: "manager" | "editor" | "viewer";
+  role: "director" | "accountant" | "manager" | "editor" | "viewer";
   password: string;
+  permissionOverrides?: PermissionOverrides;
 };
 
 export type UpdateUserInput = {
   fullName?: string;
-  role?: "manager" | "editor" | "viewer";
+  role?: "director" | "accountant" | "manager" | "editor" | "viewer";
+  permissionOverrides?: PermissionOverrides;
 };
 
 export type ResetPasswordInput = {
   password: string;
 };
 
-type UserRole = "admin" | "manager" | "editor" | "viewer";
+type UserRole = "admin" | "director" | "accountant" | "manager" | "editor" | "viewer";
 
 const USERS_KEY_BASE = ["users"] as const;
 

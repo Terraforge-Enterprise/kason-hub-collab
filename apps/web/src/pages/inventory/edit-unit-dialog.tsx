@@ -227,6 +227,9 @@ export function detailToFormState(u: FetchedUnitDetail): UnitFormState {
       u.accessCardQuantity != null ? String(u.accessCardQuantity) : "",
     parkingQuantity: u.parkingQuantity != null ? String(u.parkingQuantity) : "",
     parkingNumbers: u.parkingNumbers ?? [],
+    // Standalone Carpark rates are managed by CarparksSection. The legacy
+    // listing payload has labels only, so no rate can be hydrated here.
+    parkingMonthlyRates: [],
     ownerPartyId: u.ownerPartyId ?? null,
     ownerName: u.ownerName ?? "",
     ownerPhone: u.ownerPhone ?? null,
@@ -257,6 +260,8 @@ export function detailToFormState(u: FetchedUnitDetail): UnitFormState {
         : u.rentalRate != null
           ? String(u.rentalRate)
           : "",
+    tenancyAgreementFeeAmount: "",
+    tenancyAgreementFeeDueDate: "",
     // Seed from the stored tenancy so a save doesn't wipe a stored `true`.
     firstMonthIsCommission: u.activeTenancy?.firstMonthIsCommission ?? false,
     commissionSstBearer: u.activeTenancy?.commissionSstBearer ?? "owner",

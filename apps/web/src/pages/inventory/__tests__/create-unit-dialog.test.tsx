@@ -140,7 +140,7 @@ function setupApi(
         // exactly as every existing caller already relies on.
         const ids =
           opts.batchIds ?? (parsed.rooms ?? []).map((_, i) => `room-${i + 1}`);
-        return Promise.resolve({ data: { ids, updatedIds: [] } });
+        return Promise.resolve({ data: { ids, updatedIds: [], apartmentId: "apt-batch-1" } });
       }
       if (url.startsWith("/inventory/amenities")) return Promise.resolve({ data: [] });
       if (url.startsWith("/inventory/apartments/by-property/")) {
@@ -185,7 +185,11 @@ function setupApi(
         });
       }
       if (url === "/inventory/units" && init?.method === "POST") {
-        if (post.ok) return Promise.resolve(post.noId ? {} : { id: "unit-1" });
+        if (post.ok) {
+          return Promise.resolve(
+            post.noId ? {} : { id: "unit-1", apartmentId: "apt-created-1" },
+          );
+        }
         const { message, code } = extractApiError(post.body, post.status);
         return Promise.reject(new ApiError(message, post.status, code, post.body));
       }
@@ -209,6 +213,16 @@ function postedBodies(): Record<string, unknown>[] {
     .filter(
       ([url, init]) =>
         url === "/inventory/units" &&
+        (init as { method?: string } | undefined)?.method === "POST",
+    )
+    .map(([, init]) => JSON.parse((init as { body: string }).body));
+}
+
+function postedFeeConfigBodies(): Record<string, unknown>[] {
+  return apiFetchMock.mock.calls
+    .filter(
+      ([url, init]) =>
+        url === "/owner-billing/fee-configs" &&
         (init as { method?: string } | undefined)?.method === "POST",
     )
     .map(([, init]) => JSON.parse((init as { body: string }).body));
@@ -336,6 +350,29 @@ describe("CreateUnitDialog — owner + billing model", () => {
     expect(postedBodies()[0]).toMatchObject({
       ownerPartyId: "owner-9",
       partitionBillingMode: "SUBSIDY",
+    });
+  });
+
+  it("creates the unit-scoped management fee config after the unit is created", async () => {
+    const user = userEvent.setup();
+    await openDialog(user);
+    await fillRequired(user, "MF-01");
+    await pickOwner(user);
+
+    const feeSection = screen.getByText("Management fee setup").closest("section");
+    expect(feeSection).not.toBeNull();
+    await user.clear(within(feeSection!).getByLabelText("Fee (%)"));
+    await user.type(within(feeSection!).getByLabelText("Fee (%)"), "12.5");
+    await submit(user);
+
+    await waitFor(() => expect(postedFeeConfigBodies()).toHaveLength(1));
+    expect(postedFeeConfigBodies()[0]).toMatchObject({
+      ownerPartyId: "owner-9",
+      propertyId: "p1",
+      apartmentId: "apt-created-1",
+      feeType: "percent",
+      feeValue: "12.5",
+      sstPercent: "8",
     });
   });
 
@@ -747,7 +784,7 @@ describe("CreateUnitDialog — Partition routes to the batch endpoint", () => {
 
     await user.selectOptions(roomTypeSelect(), "Master");
     await fillActiveRoomDeposits(user);
-    await user.type(roomField("Rent (RM/mo)"), "1800");
+    await user.type(roomField("Rent (RM/month)"), "1800");
     await makeActiveRoomOccupied(user);
     await pickOwner(user);
     await submit(user);
@@ -982,7 +1019,7 @@ describe("CreateUnitDialog — Partition routes to the batch endpoint", () => {
     await fillActiveRoomDeposits(user);
     // Room 2: rent entered but type forgotten — must NOT be silently dropped.
     await user.click(screen.getByRole("button", { name: /new room/i }));
-    await user.type(roomField("Rent (RM/mo)"), "900");
+    await user.type(roomField("Rent (RM/month)"), "900");
     await pickOwner(user);
     await submit(user);
 

@@ -25,6 +25,7 @@ export type BillingDocumentPdfModel = {
   issuedAt: string; // YYYY-MM-DD
   billingMonth: string | null; // "July 2026"
   counterpartyName: string;
+  propertyName?: string | null;
   unitCode: string | null;
   reason: string | null;
   originalDocumentNumber: string | null;
@@ -33,6 +34,7 @@ export type BillingDocumentPdfModel = {
   // header reads "—" and only the line can say which unit it bills. Null when
   // the line has no unit (charge-less line, or a charge without a unitId).
   lines: {
+    categoryCode?: string | null;
     description: string;
     amount: string;
     sstRate: string;
@@ -79,14 +81,82 @@ export const DOC_TITLE: Record<BillingDocumentPdfModel["docType"], string> = {
  * (redesign P2/P4). Matched on the series segment before the first "-", so "RBX-"/"IVRENX-"/"EBX-" do
  * NOT match. */
 const SERIES_DOC_TITLE: Record<string, string> = {
-  RB: "RENTAL BILL",
-  IVREN: "RENTAL BILL", // legacy alias: pre-rename docs keep their immutable IVREN- numbers → still "RENTAL BILL"
-  EB: "EXPENSE BILL",
+  RB: "RENTAL PAYMENT REQUEST",
+  IVREN: "RENTAL PAYMENT REQUEST",
+  EB: "EXPENSE PAYMENT REQUEST",
   OEA: "OWNER EXPENSE ADVICE",
   // Move-in deposits. Its OWN series precisely so this title cannot leak onto the
   // utility/aircond debit notes that share DEP (see seed-categories.ts).
-  DEPO: "RENTAL DEPOSITS",
+  DEPO: "DEPOSIT REQUEST",
+  DEP: "PAYMENT REQUEST",
+  PI: "PAYMENT REQUEST",
 };
+
+const PASS_THROUGH_CATEGORY_CODES = new Set([
+  "electricity_tenant", "electricity_owner", "water_tenant", "water_owner",
+  "sewerage_tenant", "sewerage_owner", "wifi_tenant", "wifi_owner",
+  "utility_tnb", "utility_water", "utility_wifi", "utility_indah_water",
+]);
+const DEPOSIT_CATEGORY_CODES = new Set([
+  "security_deposit", "utility_deposit", "tenancy_rental_deposit",
+  "tenancy_utility_deposit", "carpark_deposit", "access_card_deposit",
+]);
+
+export function resolveEconomicDocTitle(
+  docType: BillingDocumentPdfModel["docType"],
+  documentNumber: string,
+  categoryCodes: readonly (string | null | undefined)[],
+): string {
+  if (["credit_note", "refund_note", "receipt", "owner_expense_advice"].includes(docType)) {
+    return resolveDocTitle(docType, documentNumber);
+  }
+  const prefix = documentNumber.split("-", 1)[0];
+  if (SERIES_DOC_TITLE[prefix]) return SERIES_DOC_TITLE[prefix];
+  const codes = [...new Set(categoryCodes.filter((code): code is string => Boolean(code)))];
+  if (codes.length === 0) return resolveDocTitle(docType, documentNumber);
+  if (codes.every((code) => DEPOSIT_CATEGORY_CODES.has(code))) return "DEPOSIT REQUEST";
+  if (codes.every((code) => PASS_THROUGH_CATEGORY_CODES.has(code))) return "UTILITY PAYMENT REQUEST";
+  if (codes.some((code) => PASS_THROUGH_CATEGORY_CODES.has(code))) return "MONTHLY BILLING STATEMENT";
+  return resolveDocTitle(docType, documentNumber);
+}
+
+const DESCRIPTION_LABELS: Record<string, string> = {
+  management_fee: "Property Management Fee",
+  letting_commission: "Rental Commission",
+  letting_commission_sst: "Rental Commission SST",
+  rental: "Monthly Rental",
+  carpark: "Carpark Rental",
+  tenancy_rental_deposit: "Rental Deposit",
+  tenancy_utility_deposit: "Utilities Deposit",
+  security_deposit: "Security Deposit",
+  utility_deposit: "Utilities Deposit",
+  electricity_tenant: "Electricity",
+  electricity_owner: "Electricity",
+  water_tenant: "Water",
+  water_owner: "Water",
+  wifi_tenant: "WiFi",
+  wifi_owner: "WiFi",
+};
+
+function safeFilenamePart(value: string): string {
+  return value.replace(/[<>:"/\\|?*\u0000-\u001F]/g, " ").replace(/\s+/g, " ").trim();
+}
+function titleCase(value: string): string {
+  return value.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+export function billingDocumentFilename(model: BillingDocumentPdfModel): string {
+  const categoryCodes = [...new Set(model.lines.map((line) => line.categoryCode).filter((code): code is string => Boolean(code)))];
+  const labels = [...new Set(categoryCodes.map((code) => DESCRIPTION_LABELS[code]).filter((label): label is string => Boolean(label)))];
+  const description = labels.length === 1
+    ? labels[0]
+    : model.lines.length === 1
+      ? titleCase(model.lines[0].description.replace(/\([^)]*\)/g, "").trim())
+      : "Multiple Charges";
+  const parts = [titleCase(model.title), description, model.propertyName, model.unitCode]
+    .filter((part): part is string => Boolean(part && part.trim()))
+    .map(safeFilenamePart);
+  return `${parts.join(" ")}.pdf`;
+}
 
 /** Customer-facing document title. A series with its own identity (SERIES_DOC_TITLE) wins over
  * the internal docType; every other doc uses the docType title map. */
@@ -283,7 +353,10 @@ export async function buildBillingDocumentPdfModel(orgId: string, documentId: st
   if (!doc) return null;
   const party = await db.party.findFirst({ where: { id: doc.partyId, organizationId: orgId }, select: { displayName: true } });
   const apartment = doc.apartmentId
-    ? await db.apartment.findFirst({ where: { id: doc.apartmentId, organizationId: orgId }, select: { unitCode: true } })
+    ? await db.apartment.findFirst({
+        where: { id: doc.apartmentId, organizationId: orgId },
+        select: { unitCode: true, property: { select: { name: true } } },
+      })
     : null;
   const original = doc.originalDocumentId
     ? await db.billingDocument.findFirst({ where: { id: doc.originalDocumentId, organizationId: orgId }, select: { documentNumber: true } })
@@ -373,18 +446,21 @@ export async function buildBillingDocumentPdfModel(orgId: string, documentId: st
   // Tax sibling → the base charge it taxes. Selected on the query that ALREADY runs
   // for unit identity, so folding the SST line out of the PDF costs no round-trip.
   const parentChargeIdByCharge = new Map<string, string | null>();
+  const categoryCodeByCharge = new Map<string, string | null>();
   if (docChargeIds.length) {
     const unitCharges = await db.charge.findMany({
       where: { organizationId: orgId, id: { in: docChargeIds } },
       select: {
         id: true,
         parentChargeId: true,
+        category: { select: { code: true } },
         unit: { select: { listingType: true, apartment: { select: { unitCode: true, listingMode: true } } } },
       },
     });
     for (const c of unitCharges) {
       unitCodeByCharge.set(c.id, formatLineUnitLabel(c.unit));
       parentChargeIdByCharge.set(c.id, c.parentChargeId);
+      categoryCodeByCharge.set(c.id, c.category?.code ?? null);
     }
   }
 
@@ -447,24 +523,27 @@ export async function buildBillingDocumentPdfModel(orgId: string, documentId: st
   );
 
   const docType = doc.docType as BillingDocumentPdfModel["docType"];
+  const renderedLines = visibleLines.map((l) => ({
+    categoryCode: l.chargeId ? (categoryCodeByCharge.get(l.chargeId) ?? null) : null,
+    description: l.description,
+    amount: money2dp(l.amount),
+    sstRate: l.sstRate.toString(),
+    sstAmount: money2dp(l.sstAmount),
+    attachmentFilenames: filenamesByLine.get(l.id) ?? [],
+    unitCode: l.chargeId ? (unitCodeByCharge.get(l.chargeId) ?? null) : null,
+  }));
   return {
     docType,
-    title: resolveDocTitle(docType, doc.documentNumber),
+    title: resolveEconomicDocTitle(docType, doc.documentNumber, renderedLines.map((line) => line.categoryCode)),
     documentNumber: doc.documentNumber,
     issuedAt: doc.issuedAt.toISOString().slice(0, 10),
     billingMonth: doc.billingMonth ? monthLabel(doc.billingMonth) : null,
     counterpartyName: party?.displayName ?? "—",
+    propertyName: apartment?.property.name ?? null,
     unitCode: apartment?.unitCode ?? null,
     reason: doc.reason,
     originalDocumentNumber: original?.documentNumber ?? null,
-    lines: visibleLines.map((l) => ({
-      description: l.description,
-      amount: money2dp(l.amount),
-      sstRate: l.sstRate.toString(),
-      sstAmount: money2dp(l.sstAmount),
-      attachmentFilenames: filenamesByLine.get(l.id) ?? [],
-      unitCode: l.chargeId ? (unitCodeByCharge.get(l.chargeId) ?? null) : null,
-    })),
+    lines: renderedLines,
     totals: { subtotal: money2dp(doc.subtotal), sst: money2dp(doc.sstAmount), total: money2dp(doc.total) },
     adjustments,
     adjustedTotal,
@@ -514,18 +593,28 @@ async function appendBillsOrDocumentAlone(
  * Signed URL for the document PDF; renders + persists pdfKey on first call.
  * Returns null when the document is not in this org.
  */
-export async function getBillingDocumentPdfUrl(orgId: string, documentId: string): Promise<{ url: string } | null> {
+export async function getBillingDocumentPdfUrl(orgId: string, documentId: string): Promise<{ url: string; filename?: string } | null> {
   const db = getDb();
   const doc = await db.billingDocument.findFirst({
     where: { id: documentId, organizationId: orgId },
     select: { id: true, pdfKey: true, docType: true },
   });
   if (!doc) return null;
-  if (doc.pdfKey) {
-    return { url: await createSignedDownloadUrl(doc.pdfKey) };
-  }
   const model = await buildBillingDocumentPdfModel(orgId, documentId);
   if (!model) return null;
+  const filename = billingDocumentFilename(model);
+  // Local development deliberately has no Supabase credentials. PDF rendering
+  // itself is fully local, so do not make a storage account a prerequisite for
+  // testing or downloading accounting documents. The companion route streams
+  // the exact same rendered bytes directly from this API process.
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.SUPABASE_STORAGE_BUCKET) {
+    return { url: `/api/billing-documents/${documentId}/pdf-file`, filename };
+  }
+  // Old cached PDFs predate the economic document titles. Regenerate them once so
+  // an existing Rental/Utility/Deposit document does not keep printing "INVOICE".
+  if (doc.pdfKey?.includes("/economic-title-v1/")) {
+    return { url: await createSignedDownloadUrl(doc.pdfKey, { filename }), filename };
+  }
   let template: ResolvedTemplate | null = null;
   try {
     template = await getTemplateForOrgDocType(orgId, LETTERHEAD_DOC_TYPE[model.docType]);
@@ -552,7 +641,7 @@ export async function getBillingDocumentPdfUrl(orgId: string, documentId: string
     doc.id,
   );
 
-  const pdfKey = `billing-documents/${orgId}/${doc.id}.pdf`;
+  const pdfKey = `billing-documents/${orgId}/economic-title-v1/${doc.id}.pdf`;
   await putObject(pdfKey, Buffer.from(withBills), "application/pdf");
 
   // A DEGRADED render is served but never cached. Persisting pdfKey here would
@@ -566,7 +655,7 @@ export async function getBillingDocumentPdfUrl(orgId: string, documentId: string
   // Leaving pdfKey null costs one re-render on the next download, which is an
   // already-supported path (that invalidator nulls pdfKey routinely). Cheap
   // insurance against silently serving incomplete evidence for a payout.
-  if (degraded) return { url: await createSignedDownloadUrl(pdfKey) };
+  if (degraded) return { url: await createSignedDownloadUrl(pdfKey, { filename }), filename };
 
   // Immutable content — pdfKey is a cache, not a money field. Two GETs can
   // race on an un-rendered doc and both render + try to persist; a plain
@@ -577,7 +666,7 @@ export async function getBillingDocumentPdfUrl(orgId: string, documentId: string
   // object at our own deterministic key was simply written twice with
   // near-identical content — harmless, we just discard our own key.
   const written = await db.billingDocument.updateMany({
-    where: { id: doc.id, pdfKey: null },
+    where: { id: doc.id, pdfKey: doc.pdfKey },
     data: { pdfKey },
   });
   if (written.count === 0) {
@@ -586,8 +675,27 @@ export async function getBillingDocumentPdfUrl(orgId: string, documentId: string
       select: { pdfKey: true },
     });
     if (winner?.pdfKey) {
-      return { url: await createSignedDownloadUrl(winner.pdfKey) };
+      return { url: await createSignedDownloadUrl(winner.pdfKey, { filename }), filename };
     }
   }
-  return { url: await createSignedDownloadUrl(pdfKey) };
+  return { url: await createSignedDownloadUrl(pdfKey, { filename }), filename };
+}
+
+/** Render-and-stream fallback used when object storage is unavailable locally. */
+export async function renderBillingDocumentPdfFile(
+  orgId: string,
+  documentId: string,
+): Promise<{ bytes: Buffer; filename: string } | null> {
+  const model = await buildBillingDocumentPdfModel(orgId, documentId);
+  if (!model) return null;
+  let template: ResolvedTemplate | null = null;
+  try {
+    template = await getTemplateForOrgDocType(orgId, LETTERHEAD_DOC_TYPE[model.docType]);
+  } catch {
+    // A missing letterhead must not prevent the accountant from obtaining the
+    // underlying document. The body remains complete and clearly titled.
+  }
+  const rendered = Buffer.from(await htmlToPdf(renderBillingDocumentHtml(model, template)));
+  const { bytes } = await appendBillsOrDocumentAlone(rendered, model.attachments, documentId);
+  return { bytes: Buffer.from(bytes), filename: billingDocumentFilename(model) };
 }

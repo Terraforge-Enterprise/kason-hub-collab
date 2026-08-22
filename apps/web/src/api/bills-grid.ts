@@ -114,6 +114,10 @@ export interface GridSubRow {
   /** Tenant's primaryPhone (display + search); null for a vacant room. Optional so
    * existing fixtures compile unchanged (server always sends it). */
   partyPhone?: string | null;
+  /** Renewal control for the active occupant. Used only to show the 60-day
+   * operational reminder and deep-link to the tenancy workflow. */
+  tenancyEndDate?: string | null;
+  renewalDecision?: "pending" | "contacted" | "renew" | "not_renew" | null;
   previousKwh: string | null;
   currentKwh: string | null;
   amount: string | null;
@@ -212,6 +216,17 @@ export interface GridManagementFeeDto {
   total: string;
 }
 
+export interface GridAgreementFeeLineDto {
+  amount: string;
+  outstanding: string;
+  state: "none" | "saved" | "billed-unpaid" | "paid";
+}
+
+export interface GridAgreementFeesDto {
+  new: GridAgreementFeeLineDto;
+  renewal: GridAgreementFeeLineDto;
+}
+
 export interface GridAttachmentBrief {
   id: string;
   filename: string;
@@ -285,6 +300,11 @@ export interface GridRow {
   expenses: GridExpensesDto;
   /** Base fee and government SST are deliberately separate. */
   managementFee?: GridManagementFeeDto;
+  /** Tenant-facing agreement charges created by the tenancy workflow. */
+  agreementFees?: GridAgreementFeesDto;
+  /** Authoritative cash-basis owner money. Never negative. */
+  ownerPayout?: string;
+  ownerTopUpRequired?: string;
   /** Recurring-charges (R9): CUSTOM recurring-line totals (cleaning/WiFi excluded). Optional so
    * older web fixtures compile unchanged; the server always sends it flag-on. */
   recurring?: GridRecurringDto;
@@ -340,6 +360,7 @@ export interface BillingFundsSummary {
   deposit: { due: string; collected: string; outstanding: string };
   tenantBreakdown: Array<{ key: string; label: string; due: string; collected: string; outstanding: string }>;
   ownerPayout: string;
+  ownerTopUpRequired: string;
   ownerPaid: string;
   status: "safe" | "attention" | "shortfall";
 }

@@ -2,8 +2,6 @@ import { Prisma } from "@kason/db";
 import { rentChargeNumber } from "./auto-draft.repository";
 import { computeProratedRent, pickBaseRent } from "../../lib/rent-math";
 import { assertPeriodOpen } from "../owner-ledger/assert-period-open";
-import { monthlyChargeType } from "../../lib/commission-month";
-import { isLettingCommissionEnabled } from "../../lib/feature-flags";
 
 /**
  * Unified rent posting (spec §10b.1 + §12 "Unified rent (Q5)").
@@ -171,32 +169,7 @@ export async function postMonthlyRentForTenancy(
   // revenue billed to the tenant on IVTEN (an Invoice), NOT the owner's rent (RB Rental Bill).
   // Flag off, non-commission month, or firstMonthIsCommission unset → ordinary "rent" (unchanged).
   // Shared decision so poster / auto-draft / tenancy preview never disagree.
-  let chargeType = monthlyChargeType(
-    { startDate: tenancy.startDate, endDate: tenancy.endDate, firstMonthIsCommission: tenancy.firstMonthIsCommission },
-    month,
-    isLettingCommissionEnabled(),
-  );
-
-  // Invariant: AT MOST ONE letting_commission charge per tenancy, ever. resolveCommissionMonth keys
-  // on startDate, which an admin can edit AFTER the commission was billed — a dates-only occupancy
-  // edit (occupancy-tenancy-sync.ts) rewrites startDate in place and SKIPS the commission-field
-  // write-lock, shifting the first-full-month to a new month. Without this guard that new month
-  // would mint a SECOND commission charge (KAEN double-commission; owner loses rent for BOTH months —
-  // the RENT-YYYYMM dedup key does not span months). If this tenancy already carries a non-void
-  // commission charge in ANOTHER month, this month is ordinary rent (the commission was already taken).
-  if (chargeType === "letting_commission") {
-    const priorCommission = await tx.charge.findFirst({
-      where: {
-        organizationId: orgId,
-        tenancyId,
-        chargeType: "letting_commission",
-        status: { notIn: ["void", "credited"] },
-        chargeNumber: { not: chargeNumber },
-      },
-      select: { id: true },
-    });
-    if (priorCommission) chargeType = "rent";
-  }
+  const chargeType = "rent" as const;
 
   // R1 (closed-period integrity): the rent charge created just below is owner INCOME
   // for this unit's owner (attributed per-unit via Listing.ownerPartyId) in billingMonth,
@@ -211,12 +184,10 @@ export async function postMonthlyRentForTenancy(
   // reached solely via meter/service.ts, which already calls assertPeriodOpen at the
   // apartment level BEFORE this helper — so that path is covered upstream and is left
   // untouched to keep the hot idempotent-replay path free of an extra owner lookup.
-  // Only "rent" is owner INCOME (surfaced in the owner-ledger sync, so a frozen owner month would
-  // silently drop it). A commission charge is KAEN revenue — it never touches the owner ledger, so
-  // it neither needs this guard nor should be blocked by an owner freeze (blocking would halt tenant
-  // billing for no owner-protection reason). Skip the guard for the commission path.
+  // Tenant rent is always owner income. A first-month letting commission is a
+  // separate owner-side deduction and never changes the tenant charge's nature.
   const ownerPartyId = tenancy.unit.ownerPartyId;
-  if (chargeType === "rent" && ownerPartyId) {
+  if (ownerPartyId) {
     await assertPeriodOpen(tx, orgId, ownerPartyId, billingMonth);
   }
 
@@ -234,7 +205,7 @@ export async function postMonthlyRentForTenancy(
       chargeType,
       status: "posted",
       postedAt: new Date(),
-      description: chargeType === "letting_commission" ? "First-month letting commission" : "Monthly rent",
+      description: "Monthly rent",
       // Due within the billing month so the owner-ledger sync surfaces it
       // (it filters rent by dueDate ∈ [monthStart, monthEnd]).
       dueDate: billingMonth,

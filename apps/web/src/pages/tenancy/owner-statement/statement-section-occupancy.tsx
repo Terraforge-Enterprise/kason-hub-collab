@@ -88,7 +88,7 @@ export function StatementSectionOccupancy({ data }: Props) {
                   </td>
                   <td className="px-4 py-3.5 text-sm text-right tabular-nums text-muted-foreground">
                     {Number(row.depositAmount) > 0
-                      ? `${formatRM(Number(row.depositAmount))}${row.depositMonths ? ` (${row.depositMonths}mo)` : ""}`
+                      ? `${formatRM(Number(row.depositAmount))}${row.depositMonths ? ` (${row.depositMonths} ${row.depositMonths > 1 ? "months" : "month"})` : ""}`
                       : "—"}
                   </td>
                 </tr>

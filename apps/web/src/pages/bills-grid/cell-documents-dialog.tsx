@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText, ReceiptText, UploadCloud } from "lucide-react";
 import { toast } from "sonner";
@@ -39,6 +39,13 @@ export function CellDocumentsDialog({ target, onClose, onRecordPayment }: {
   const visibleItems = items.filter((item) => item.documentKind === kind);
   const invoiceCount = items.filter((item) => item.documentKind === "invoice").length;
   const receiptCount = items.filter((item) => item.documentKind === "receipt").length;
+
+  // The dialog stays mounted while `target` changes. useState's initializer only
+  // runs once, so opening the right-click "Upload Receipt" action after an invoice
+  // session used to reopen the Invoice tab. Follow the newly opened target instead.
+  useEffect(() => {
+    if (target) setKind(target.initialKind ?? "invoice");
+  }, [target]);
 
   const upload = useMutation({
     mutationFn: (files: File[]) => uploadAttachments(target!.apartmentId, target!.periodMonth, files, {

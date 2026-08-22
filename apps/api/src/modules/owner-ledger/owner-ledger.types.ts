@@ -34,7 +34,7 @@ export type DbOwnerLedgerEntry = Prisma.OwnerLedgerEntryGetPayload<Record<string
 export interface OwnerLedgerActorCtx {
   orgId: string;
   actorUserId: string;
-  actorRole: "admin" | "manager" | "editor" | "owner";
+  actorRole: "admin" | "director" | "manager" | "editor" | "owner";
   ip?: string;
   userAgent?: string;
 }

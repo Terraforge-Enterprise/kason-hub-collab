@@ -86,7 +86,7 @@ describe("organization-card-settings service", () => {
       const result = await updateOrgCardSettings(ORG_ID, {
         agencyName: "EUM Realty Sdn Bhd",
         agencyLicense: "E(1) 1708",
-        addressLine1: "Kaen Properties Sdn Bhd (1466670-H)",
+        addressLine1: "KAEN PROPERTIES MANAGEMENT SDN BHD (1610050-V)",
       });
 
       expect(result.isConfigured).toBe(true);
@@ -97,7 +97,7 @@ describe("organization-card-settings service", () => {
           data: expect.objectContaining({
             agencyName: "EUM Realty Sdn Bhd",
             agencyLicense: "E(1) 1708",
-            addressLine1: "Kaen Properties Sdn Bhd (1466670-H)",
+            addressLine1: "KAEN PROPERTIES MANAGEMENT SDN BHD (1610050-V)",
             isConfigured: true,
           }),
         }),
@@ -113,7 +113,7 @@ describe("organization-card-settings service", () => {
 
       const result = await updateOrgCardSettings(ORG_ID, {
         agencyLicense: "E(1) 1708",
-        addressLine1: "Kaen Properties Sdn Bhd (1466670-H)",
+        addressLine1: "KAEN PROPERTIES MANAGEMENT SDN BHD (1610050-V)",
       });
 
       expect(result.isConfigured).toBe(false);
@@ -134,7 +134,7 @@ describe("organization-card-settings service", () => {
       const result = await updateOrgCardSettings(ORG_ID, {
         agencyName: "   ",
         agencyLicense: "E(1) 1708",
-        addressLine1: "Kaen Properties Sdn Bhd (1466670-H)",
+        addressLine1: "KAEN PROPERTIES MANAGEMENT SDN BHD (1610050-V)",
       });
 
       expect(result.isConfigured).toBe(false);
@@ -152,7 +152,7 @@ describe("organization-card-settings service", () => {
       }));
 
       const result = await updateOrgCardSettings(ORG_ID, {
-        addressLine1: "Kaen Properties Sdn Bhd (1466670-H)",
+        addressLine1: "KAEN PROPERTIES MANAGEMENT SDN BHD (1610050-V)",
       });
 
       expect(result.isConfigured).toBe(true);

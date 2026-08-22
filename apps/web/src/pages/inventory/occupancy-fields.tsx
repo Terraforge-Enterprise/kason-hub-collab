@@ -28,6 +28,19 @@ const RENT_REQUIRED_MESSAGE =
   "Enter the monthly rent before marking this unit occupied.";
 
 /**
+ * A tenancy stated as "1 year" ends on the day before its anniversary.
+ * Keeping the calculation in UTC avoids a browser timezone moving the date
+ * backwards when the ISO value is written into a date input.
+ */
+export function tenancyEndDate(startDate: string, years: 1 | 2): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return "";
+  const [year, month, day] = startDate.split("-").map(Number);
+  const anniversary = new Date(Date.UTC(year + years, month - 1, day));
+  anniversary.setUTCDate(anniversary.getUTCDate() - 1);
+  return anniversary.toISOString().slice(0, 10);
+}
+
+/**
  * How hard the occupied-unit rent rule bites. The create and update paths do
  * NOT share a server rule, so they must not share a client one:
  *
@@ -129,6 +142,8 @@ export function OccupancyFields(props: {
   // off: field hidden, unit.rentalRate continues to be the silent default
   // server-side.
   monthlyRent: string;
+  tenancyAgreementFeeAmount?: string;
+  tenancyAgreementFeeDueDate?: string;
   // Optional "Start Rental Invoice on" value (Task 1 Tenancy column). The
   // first-month preview is POSTER-FAITHFUL: the auto-draft cron
   // (resolveMonthlyRentAmount -> computeProratedRent) prorates from the move-in
@@ -163,6 +178,7 @@ export function OccupancyFields(props: {
   commissionSstBearer?: "owner" | "kaen";
   onFirstMonthIsCommissionChange?: (next: boolean) => void;
   onCommissionSstBearerChange?: (next: "owner" | "kaen") => void;
+  onAgreementFeeChange?: (patch: { tenancyAgreementFeeAmount?: string; tenancyAgreementFeeDueDate?: string }) => void;
   onSelectTenant: (t: SlimTenant) => void;
   onClearTenant: () => void;
   onChange: (patch: Partial<{ moveInDate: string; moveOutDate: string; monthlyRent: string }>) => void;
@@ -297,6 +313,26 @@ export function OccupancyFields(props: {
           <FieldError text={props.errors.moveOutDate} />
         </label>
       </div>
+      <div className="flex flex-wrap items-center gap-2" aria-label="Tenancy duration shortcuts">
+        <span className="text-sm font-medium text-slate-700">Set tenancy:</span>
+        {([1, 2] as const).map((years) => (
+          <Button
+            key={years}
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={!props.moveInDate}
+            onClick={() =>
+              props.onChange({ moveOutDate: tenancyEndDate(props.moveInDate, years) })
+            }
+          >
+            {years} Year{years === 1 ? "" : "s"}
+          </Button>
+        ))}
+        {!props.moveInDate && (
+          <span className="text-xs text-slate-500">Choose the move-in date first.</span>
+        )}
+      </div>
 
       {(props.showRent || reservationGatingOn) && (
         <label className="block">
@@ -324,6 +360,30 @@ export function OccupancyFields(props: {
           ) : null}
           <FieldError text={props.errors.monthlyRent} />
         </label>
+      )}
+
+      {props.occupancyStatus === "occupied" && !isSameTenantInPlaceEdit && (
+        <div className="grid gap-3 sm:grid-cols-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <label className="block">
+            <span className="block text-sm font-medium text-slate-700">Tenant agreement fee (RM)</span>
+            <TextInput
+              type="number" min={0} step="0.01"
+              value={props.tenancyAgreementFeeAmount ?? ""}
+              onChange={(e) => props.onAgreementFeeChange?.({ tenancyAgreementFeeAmount: e.target.value })}
+              placeholder="0.00"
+            />
+            <p className="mt-1 text-xs text-slate-500">Separate tenant invoice; not part of the booking rent.</p>
+          </label>
+          <label className="block">
+            <span className="block text-sm font-medium text-slate-700">Agreement fee due date</span>
+            <TextInput
+              type="date"
+              value={props.tenancyAgreementFeeDueDate ?? ""}
+              onChange={(e) => props.onAgreementFeeChange?.({ tenancyAgreementFeeDueDate: e.target.value })}
+            />
+            <p className="mt-1 text-xs text-slate-500">Blank uses the move-in date.</p>
+          </label>
+        </div>
       )}
 
       {reservationGatingOn && (

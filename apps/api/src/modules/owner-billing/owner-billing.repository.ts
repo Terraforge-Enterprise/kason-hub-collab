@@ -8,6 +8,7 @@ import { computeProratedRent, pickBaseRent } from "../../lib/rent-math";
 // hand-rolled `status:"active"` snapshot (see the ⚠️ MONEY note below).
 import { primaryTenancyForPeriod, tenancyPeriodWhere } from "../../lib/tenancy-period";
 import { centsToString, toCents } from "@kason/shared";
+import { isCommissionMonth } from "../../lib/commission-month";
 
 export type DbManagementFeeConfig = Prisma.ManagementFeeConfigGetPayload<Record<string, never>>;
 
@@ -421,27 +422,56 @@ export interface OwnerBorneUtilityComponent {
 /** Phase 3: owner-borne (commissionSstBearer="owner") letting_commission charges for these units
  * in the month — the SST base. Returns unitId + the charge amount so the statement bills 8% of what
  * was ACTUALLY billed to the tenant (M-F2). "kaen" bearer + non-commission months yield nothing. */
-export async function findOwnerBorneCommissionSstCharges(
+export async function findCommissionRentCharges(
   orgId: string,
   unitIds: string[],
   firstOfMonth: Date,
-): Promise<{ unitId: string; amount: string }[]> {
+): Promise<{ unitId: string; amount: string; sstBearer: string }[]> {
   if (unitIds.length === 0) return [];
   const rows = await getDb().charge.findMany({
     where: {
       organizationId: orgId,
       unitId: { in: unitIds },
-      chargeType: "letting_commission",
+      // The tenant-facing rail always remains rent. The tenancy agreement tells
+      // us whether this particular month's owner rent is retained by KAEN.
+      chargeType: "rent",
       billingMonth: firstOfMonth,
       status: { notIn: ["void", "credited"] },
     },
-    select: { unitId: true, amount: true, tenancy: { select: { commissionSstBearer: true } } },
+    select: {
+      unitId: true,
+      amount: true,
+      tenancy: {
+        select: {
+          startDate: true,
+          endDate: true,
+          firstMonthIsCommission: true,
+          commissionSstBearer: true,
+        },
+      },
+    },
   });
   return rows.flatMap((r) =>
-    r.unitId !== null && r.tenancy?.commissionSstBearer === "owner"
-      ? [{ unitId: r.unitId, amount: r.amount.toString() }]
+    r.unitId !== null && r.tenancy?.firstMonthIsCommission === true &&
+      isCommissionMonth({
+        startDate: r.tenancy.startDate,
+        endDate: r.tenancy.endDate,
+        firstMonthIsCommission: r.tenancy.firstMonthIsCommission,
+      }, firstOfMonth)
+      ? [{ unitId: r.unitId, amount: r.amount.toString(), sstBearer: r.tenancy.commissionSstBearer }]
       : [],
   );
+}
+
+export async function findOwnerBorneCommissionSstCharges(
+  orgId: string,
+  unitIds: string[],
+  firstOfMonth: Date,
+): Promise<{ unitId: string; amount: string }[]> {
+  const rows = await findCommissionRentCharges(orgId, unitIds, firstOfMonth);
+  return rows
+    .filter((row) => row.sstBearer === "owner")
+    .map(({ unitId, amount }) => ({ unitId, amount }));
 }
 
 export async function findOwnerBorneUtilityComponents(
@@ -511,8 +541,7 @@ export async function findOwnerBorneUtilityComponents(
 
 /**
  * All management-fee configs for an owner in this org (org-scoped). The service
- * resolves per-unit precedence in memory: a config whose propertyId === the
- * unit's propertyId overrides one with propertyId === null (all-properties).
+ * resolves per-unit precedence in memory: unit > property > owner default.
  */
 export async function findFeeConfigsForOwner(
   orgId: string,
@@ -526,8 +555,8 @@ export async function findFeeConfigsForOwner(
 
 /**
  * Resolve the management-fee config that applies to one unit. A config whose
- * propertyId === the unit's propertyId OVERRIDES one with propertyId === null
- * (all-properties). Only `isActive` configs whose effective window (if set)
+ * apartmentId === the unit's apartmentId overrides its property config, which
+ * overrides the all-properties default. Only `isActive` configs whose effective window (if set)
  * covers the first-of-month are eligible. Returns null when none applies → that
  * unit gets no auto mgmt-fee / cleaning lines.
  *
@@ -546,15 +575,37 @@ export function resolveConfigForUnit(
     if (!c.isActive) return false;
     if (c.effectiveFrom && firstOfMonth < c.effectiveFrom) return false;
     if (c.effectiveTo && firstOfMonth > c.effectiveTo) return false;
-    return c.propertyId === null || c.propertyId === unit.propertyId;
+    return (
+      c.apartmentId === unit.apartmentId ||
+      (c.apartmentId == null && (c.propertyId === null || c.propertyId === unit.propertyId))
+    );
   });
   if (eligible.length === 0) return null;
-  // Property-specific override beats the all-properties default.
+  // Unit-specific override beats property-specific, then the owner default.
   return (
-    eligible.find((c) => c.propertyId === unit.propertyId) ??
-    eligible.find((c) => c.propertyId === null) ??
+    eligible.find((c) => c.apartmentId === unit.apartmentId) ??
+    eligible.find((c) => c.apartmentId == null && c.propertyId === unit.propertyId) ??
+    eligible.find((c) => c.apartmentId == null && c.propertyId === null) ??
     null
   );
+}
+
+/** Validate a unit-scoped fee config without trusting a client-supplied owner/property. */
+export async function findApartmentOwnedByOwner(
+  orgId: string,
+  ownerPartyId: string,
+  apartmentId: string,
+): Promise<{ id: string; propertyId: string } | null> {
+  const db = getDb();
+  const apartment = await db.apartment.findFirst({
+    where: {
+      id: apartmentId,
+      organizationId: orgId,
+      listings: { some: { organizationId: orgId, ownerPartyId, listingStatus: { not: "archived" } } },
+    },
+    select: { id: true, propertyId: true },
+  });
+  return apartment;
 }
 
 /**
@@ -1097,14 +1148,10 @@ export function depositWindowEndOfMonth(monthAnchor: Date): Date {
  *
  * Returns one entry per row: { unitId, type, amount (2dp string) }.
  *
- * Counts ONLY deposits actually RELEASED to the owner (status =
- * "released_to_owner"). KAEN holds tenancy deposits (operator decision
- * 2026-08-18): a `held` row is the tenant's money, refundable at move-out, and
- * must never inflate an owner payout — and this result flows straight into
- * `depositCollectedC` → `grossCashInC` → the payout. The predicate used to be
- * `status != "refunded"`, which was harmless only for as long as nothing wrote
- * Deposit rows at all; deposit-held-on-payment.hook.ts now does, so widening this
- * back would begin paying every owner their tenants' deposits.
+ * Counts ONLY deposit cash released/payable to the owner (status =
+ * "released_to_owner"). The payment projection writes each partial collection
+ * as an append-only delta, so instalments contribute in the month received and
+ * reversals contribute a negative correction in the month reversed.
  *
  * For what KAEN is holding (a balance, not a month's cash-in), use
  * `findDepositsHeldForUnits` — that figure is display-only and enters no total.

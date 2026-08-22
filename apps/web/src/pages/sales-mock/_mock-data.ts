@@ -347,7 +347,7 @@ export const MOCK_RENOVATION_CLAIMS: MockRenovationClaim[] = [
     status: "approved",
     submittedAt: "2026-04-04",
     submittedBy: "Ahmad Rizal",
-    notes: "Balance to be offset after tenant secured — RM1,500/mo over 50 months.",
+    notes: "Balance to be offset after tenant secured — RM1,500/month over 50 months.",
     documents: [
       { kind: "quotation", filename: "skyline-b2301-pp-quote.pdf" },
       { kind: "invoice", filename: "skyline-b2301-final-invoice.pdf" },

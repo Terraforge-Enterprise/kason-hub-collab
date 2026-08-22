@@ -41,6 +41,7 @@ import { DashboardLayout } from "@/layouts/dashboard-layout";
 
 // Admin pages (lazy)
 const DashboardPage = lazy(() => import("@/pages/dashboard"));
+const ActionCentrePage = lazy(() => import("@/pages/action-centre"));
 const InventoryPage = lazy(() => import("@/pages/inventory/inventory-page"));
 const InventorySettingsPage = lazy(() => import("@/pages/settings/sections/inventory-section"));
 const UnitDetailPage = lazy(() => import("@/pages/inventory/unit-detail-page"));
@@ -88,6 +89,10 @@ const BillingDocumentsPage = lazy(() => import("@/pages/billing/documents-page")
 // recording. Same flag gate as Documents.
 const AccountingInvoicesPage = lazy(() => import("@/pages/accounting/invoices-page"));
 const AccountingReceiptsPage = lazy(() => import("@/pages/accounting/receipts-page"));
+const BankReconciliationPage = lazy(() => import("@/pages/accounting/bank-reconciliation-page"));
+const ProfitabilityPage = lazy(() => import("@/pages/accounting/profitability-page"));
+const MonthEndControlPage = lazy(() => import("@/pages/accounting/month-end-control-page"));
+const EmployeeExpenseClaimsPage = lazy(() => import("@/pages/accounting/employee-expense-claims-page"));
 const NotificationsPage = lazy(() => import("@/pages/communications/notifications-page"));
 const AgentsPage = lazy(() => import("@/pages/parties/agents-page"));
 const AgentDetailPage = lazy(() => import("@/pages/parties/agent-detail-page"));
@@ -223,8 +228,12 @@ const PortalOwnerPropertyPage = lazy(() => import("@/pages/portal/owner-property
 const PortalOwnerStatementPage = lazy(() => import("@/pages/portal/owner-statement"));
 
 function SuspenseWrapper({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
   return (
-    <ChunkErrorBoundary>
+    // A route-specific key resets a failed boundary when the user navigates.
+    // One broken page must never leave otherwise healthy pages stuck on the
+    // same fallback screen.
+    <ChunkErrorBoundary key={location.pathname}>
       <Suspense
         fallback={
           <div className="flex h-full items-center justify-center">
@@ -287,6 +296,7 @@ export const router = createBrowserRouter([
     ),
     children: [
       { path: "/dashboard", element: <SuspenseWrapper><DashboardPage /></SuspenseWrapper> },
+      { path: "/action-centre", element: <SuspenseWrapper><ActionCentrePage /></SuspenseWrapper> },
       { path: "/inventory", element: <SuspenseWrapper><InventoryPage /></SuspenseWrapper> },
       { path: "/inventory/properties", element: <Navigate to="/inventory" replace /> },
       { path: "/inventory/listings", element: <Navigate to="/inventory" replace /> },
@@ -303,6 +313,7 @@ export const router = createBrowserRouter([
       { path: "/leasing/*", element: <LeasingToTenancyRedirect /> },
       { path: "/tenancy/tenancies", element: <SuspenseWrapper><TenanciesPage /></SuspenseWrapper> },
       { path: "/tenancy/landlord-tenancies", element: <SuspenseWrapper><LandlordTenanciesPage /></SuspenseWrapper> },
+      { path: "/portfolio/property-management-agreements", element: <SuspenseWrapper><LandlordTenanciesPage /></SuspenseWrapper> },
       // The Tenant Tracker (`/tenancy/tenant-tracker`), its Bill-this-unit
       // workspace, and the old /tenancy/meter redirect were REMOVED 2026-08-06 —
       // superseded by the Tenant & Owner Billing grid. Old links fall through to
@@ -362,6 +373,10 @@ export const router = createBrowserRouter([
         ? [
             { path: "/accounting/invoices", element: <SuspenseWrapper><AccountingInvoicesPage /></SuspenseWrapper> },
             { path: "/accounting/receipts", element: <SuspenseWrapper><AccountingReceiptsPage /></SuspenseWrapper> },
+            { path: "/accounting/bank-reconciliation", element: <SuspenseWrapper><BankReconciliationPage /></SuspenseWrapper> },
+            { path: "/accounting/profitability", element: <SuspenseWrapper><ProfitabilityPage /></SuspenseWrapper> },
+            { path: "/accounting/month-end-control", element: <SuspenseWrapper><MonthEndControlPage /></SuspenseWrapper> },
+            { path: "/accounting/employee-expense-claims", element: <SuspenseWrapper><EmployeeExpenseClaimsPage /></SuspenseWrapper> },
           ]
         : []),
       // Phase-2 Auto-Draft Invoices (M5) — draft-approvals queue.

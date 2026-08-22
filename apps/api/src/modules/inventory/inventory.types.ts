@@ -88,6 +88,17 @@ export type UnitDetail = {
     // dialog can prefill it instead of the unit's asking rentalRate.
     monthlyRentAmount: number;
   } | null;
+  tenancyHistory: Array<{
+    id: string;
+    tenancyCode: string;
+    tenantPartyId: string;
+    tenantName: string;
+    listingLabel: string;
+    status: string;
+    startDate: string;
+    endDate: string | null;
+    monthlyRentAmount: number;
+  }>;
   currentTenancyStartDate: string | null;
   currentTenancyEndDate: string | null;
 };

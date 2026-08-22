@@ -2,13 +2,13 @@
  * Move-in DEPOSIT documents — rental deposit + utilities deposit, drafted ONCE per
  * tenancy (post-commit hook).
  *
- * A deposit is not rent. It is refundable money HELD on the landlord's behalf, so it
+ * A deposit is not rent. It is refundable tenant money transferred to the owner, so it
  * bills on the `pay_back_landlord` rail (categories `security_deposit` /
  * `utility_deposit`, DEP series) and is deliberately absent from every owner-ledger
  * chargeType allow-list — `owner-ledger.sync.ts` selects by explicit chargeType
  * (`"rent"`, `{ in: ["utility","aircond"] }`, …) and never sweeps, so a deposit can
- * never become owner rental income or be remitted in that month's payout. That is a
- * property of the design, not a filter someone has to remember to add.
+ * never become owner rental income. Payment settlement separately projects each
+ * collected amount as payable to the owner; KAEN never retains the deposit.
  *
  * ── The four gates, all FAIL CLOSED ──────────────────────────────────────────────
  *  1. FLAG        — ENABLE_TENANCY_DEPOSIT_DOCS off ⇒ hard no-op.
@@ -167,8 +167,8 @@ export async function createTenancyDepositsForTenancy(
       return { created: false, reason: "not_billable_status" };
     }
 
-    // A RENEWAL is a new Tenancy row for a tenant who is already sitting on a deposit
-    // KAEN holds. `previousTenancyId` is the renewal chain's own link, so this holds
+    // A RENEWAL is a new Tenancy row for a tenant whose deposit is already with the
+    // owner. `previousTenancyId` is the renewal chain's own link, so this holds
     // wherever the hook is called from — renewTenancyService is deliberately not wired
     // to it today, and this makes wiring it later harmless rather than a second charge.
     // "Once per tenancy" is the mechanism; "once per tenant relationship" is the intent.
@@ -176,11 +176,10 @@ export async function createTenancyDepositsForTenancy(
       return { created: false, reason: "is_renewal" };
     }
 
-    // GATE 2 — the move-in must be THIS month, in the ORG's local calendar.
-    //
-    // Equality, not `>=`: a move-in dated NEXT month is as out-of-scope as one dated
-    // last month. Its deposit belongs to the month it actually starts, and drafting it
-    // early would place a charge in a period the tenancy does not yet occupy.
+    // GATE 2 — allow the org-local current month and exactly the next month. This is
+    // the same advance-billing window as Tenant & Owner Billing: an admin can prepare
+    // a September move-in while working in August, but cannot accidentally raise
+    // distant-future deposits.
     const org = await db.organization.findUnique({
       where: { id: ctx.orgId },
       select: { timezone: true },
@@ -191,7 +190,9 @@ export async function createTenancyDepositsForTenancy(
       return { created: false, reason: "move_in_not_current_month" };
     }
     const currentMonth = currentBillingMonthUTC(org.timezone);
-    if (firstOfMonthOf(tenancy.startDate).getTime() !== currentMonth.getTime()) {
+    const moveInMonth = firstOfMonthOf(tenancy.startDate);
+    const nextMonth = new Date(Date.UTC(currentMonth.getUTCFullYear(), currentMonth.getUTCMonth() + 1, 1));
+    if (moveInMonth.getTime() !== currentMonth.getTime() && moveInMonth.getTime() !== nextMonth.getTime()) {
       return { created: false, reason: "move_in_not_current_month" };
     }
 
@@ -239,29 +240,36 @@ export async function createTenancyDepositsForTenancy(
     await ensureChargeCategorySeeds(ctx.orgId);
 
     const idemKey = `deposit:${tenancy.id}`;
-    const billingMonth = currentMonth;
+    // The document belongs to the tenancy's actual move-in period even when raised
+    // one month early; otherwise it disappears when the admin opens next month's grid.
+    const billingMonth = moveInMonth;
 
     return await db.$transaction(async (tx) => {
-      // Once-ever guard, check-first. The unique on (organizationId, chargeNumber)
-      // is the real enforcement; this turns a replay into an ordinary skip instead of
-      // a P2002 that aborts an interactive transaction (the same lesson
-      // draftRentInvoiceForTenancy learned for its rent chargeNumber).
-      //
-      // ALL-OR-NOTHING across the two legs, deliberately. If a tenancy was assigned with
-      // `utilitiesDepositMonths` still blank, only the rental leg was raised — and filling
-      // that field in later does NOT top the tenancy up with a second deposit charge. Two
-      // reasons: the deposit invoice may already be approved and issued (you cannot add a
-      // line to a document the tenant holds), and money appearing on a tenant's account as
-      // a side effect of editing a LISTING field is exactly the kind of silent billing this
-      // codebase avoids. The late leg is an explicit manual charge, by a human who meant it.
-      const existing = await tx.charge.findFirst({
-        where: {
-          organizationId: ctx.orgId,
-          chargeNumber: { in: legs.map((l) => depositChargeNumber(l.chargeNumberPrefix, tenancy.id)) },
-        },
-        select: { id: true },
+      // A tenancy edit may correct a missing/incorrect deposit after the initial
+      // assignment. Keep an UNISSUED draft in sync, but never mutate a document
+      // that was approved/sent to the tenant. This gives admins the expected
+      // "fix the unit, then review and bill" workflow without silently rewriting
+      // an accounting document somebody may already hold.
+      const existingInvoice = await tx.invoice.findFirst({
+        where: { organizationId: ctx.orgId, idempotencyKey: idemKey },
+        select: { id: true, status: true },
       });
-      if (existing) return { created: false as const, reason: "already_created" as const };
+      if (existingInvoice && existingInvoice.status !== "draft") {
+        return { created: false as const, reason: "already_created" as const };
+      }
+
+      const allDepositNumbers = DEPOSIT_LEGS.map((leg) =>
+        depositChargeNumber(leg.chargeNumberPrefix, tenancy.id),
+      );
+      const existingCharges = await tx.charge.findMany({
+        where: { organizationId: ctx.orgId, chargeNumber: { in: allDepositNumbers } },
+        select: { id: true, chargeNumber: true, status: true },
+      });
+      // A charge without our draft invoice is historical/issued data. Do not
+      // adopt or rewrite it merely because the listing was edited.
+      if (!existingInvoice && existingCharges.length > 0) {
+        return { created: false as const, reason: "already_created" as const };
+      }
 
       const categories = await tx.chargeCategory.findMany({
         where: { organizationId: ctx.orgId, code: { in: legs.map((l) => l.categoryCode) } },
@@ -269,28 +277,41 @@ export async function createTenancyDepositsForTenancy(
       });
       const categoryIdByCode = new Map(categories.map((c) => [c.code, c.id]));
 
-      const invoice = await createInvoiceTx(tx, {
-        orgId: ctx.orgId,
-        // FULL tenancy id, not an 8-char slice: the rent path's
-        // `TR-{YYYYMM}-{tenancyId.slice(0,8)}` is a documented 32-bit collision key,
-        // and a deposit has no month to disambiguate a collision with.
-        invoiceNumber: `TD-${tenancy.id}`,
-        partyId: tenancy.tenantPartyId,
-        tenancyId: tenancy.id,
-        propertyId: tenancy.propertyId,
-        invoiceType: "tenant_deposit",
-        invoiceDate: now,
-        // Deposits fall due at move-in, not on the rent cycle.
-        dueDate: tenancy.startDate,
-        periodMonth: billingMonth,
-        idempotencyKey: idemKey,
-      });
+      const invoice = existingInvoice ?? await createInvoiceTx(tx, {
+          orgId: ctx.orgId,
+          // FULL tenancy id, not an 8-char slice: the rent path's
+          // `TR-{YYYYMM}-{tenancyId.slice(0,8)}` is a documented 32-bit collision key,
+          // and a deposit has no month to disambiguate a collision with.
+          invoiceNumber: `TD-${tenancy.id}`,
+          partyId: tenancy.tenantPartyId,
+          tenancyId: tenancy.id,
+          propertyId: tenancy.propertyId,
+          invoiceType: "tenant_deposit",
+          invoiceDate: now,
+          // Deposits fall due at move-in, not on the rent cycle.
+          dueDate: tenancy.startDate,
+          periodMonth: billingMonth,
+          idempotencyKey: idemKey,
+        });
 
       const chargeNumbers: string[] = [];
       for (const leg of legs) {
         const chargeNumber = depositChargeNumber(leg.chargeNumberPrefix, tenancy.id);
         const amount = (leg.amountCents / 100).toFixed(2);
-        const charge = await tx.charge.create({
+        const prior = existingCharges.find((row) => row.chargeNumber === chargeNumber);
+        const charge = prior ? await tx.charge.update({
+          where: { id: prior.id, organizationId: ctx.orgId },
+          data: {
+            status: "draft",
+            description: `${leg.description} (${leg.months} × RM${basisRate.toFixed(2)})`,
+            dueDate: tenancy.startDate,
+            amount,
+            outstandingAmount: amount,
+            billingMonth,
+            invoiceId: invoice.id,
+          },
+          select: { id: true },
+        }) : await tx.charge.create({
           data: {
             organizationId: ctx.orgId,
             chargeNumber,
@@ -328,10 +349,33 @@ export async function createTenancyDepositsForTenancy(
             eventType: "draft.created",
             eventAt: now,
             actorUserId: ctx.userId,
-            payloadJson: { invoiceId: invoice.id, source: TENANCY_DEPOSIT_TRIGGERED_BY, leg: leg.key },
+            payloadJson: { invoiceId: invoice.id, source: TENANCY_DEPOSIT_TRIGGERED_BY, leg: leg.key, synchronised: Boolean(prior) },
           },
         });
         chargeNumbers.push(chargeNumber);
+      }
+
+      // If an unissued leg was removed, retire it from the draft total. Keeping
+      // the row as void preserves its audit trail and also allows a later edit
+      // to restore it through the update path above.
+      const desiredNumbers = new Set(chargeNumbers);
+      for (const prior of existingCharges) {
+        if (!desiredNumbers.has(prior.chargeNumber) && prior.status !== "void") {
+          await tx.charge.update({
+            where: { id: prior.id, organizationId: ctx.orgId },
+            data: { status: "void", outstandingAmount: "0.00" },
+          });
+          await tx.chargeEvent.create({
+            data: {
+              organizationId: ctx.orgId,
+              chargeId: prior.id,
+              eventType: "draft.synchronised",
+              eventAt: now,
+              actorUserId: ctx.userId,
+              payloadJson: { invoiceId: invoice.id, source: TENANCY_DEPOSIT_TRIGGERED_BY, removed: true },
+            },
+          });
+        }
       }
 
       await recomputeInvoiceTotalTx(tx, ctx.orgId, invoice.id);

@@ -109,6 +109,8 @@ export const createTenancySchema = z
     endDate: z.string().optional(),
     monthlyRentAmount: z.string().min(1).optional(),
     depositAmount: z.string().optional(),
+    tenancyAgreementFeeAmount: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+    tenancyAgreementFeeDueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     billingStatus: z.string().optional(),
     // Nullable: the DB column is nullable and "" is rejected by the calendar-day
     // refiner, so `null` is the canonical "no scheduled invoice-start / clear".
@@ -145,6 +147,10 @@ export const updateTenancySchema = z
     firstMonthRentNote: z.string().optional(),
     firstMonthIsCommission: z.boolean().optional(),
     commissionSstBearer: z.enum(COMMISSION_SST_BEARER).optional(),
+    depositDeductionAmount: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+    depositRefundedAmount: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+    depositRefundDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+    depositSettlementNotes: z.string().trim().max(2000).optional(),
   })
   // Same calendar-day format guard as create. The payload carries no startDate,
   // so the invoice-start >= move-in cross-field check is skipped here (the
@@ -182,4 +188,31 @@ export const renewTenancySchema = z.object({
   newStartDate: z.string().min(1),
   newEndDate: z.string().optional(),
   monthlyRentAmount: z.string().min(1),
+  // Explicitly asked during renewal. Zero/omitted means the manager confirmed
+  // that no renewal service fee should be raised.
+  renewalFeeAmount: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+  renewalFeeDueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
+export const cancelRenewalSchema = z.object({
+  tenancyId: z.string().uuid(),
+  reason: z.string().trim().min(5, "Please explain why the renewal is being cancelled").max(2000),
+});
+
+export const moveOutTenancySchema = z.object({
+  tenancyId: z.string().uuid(),
+  moveOutDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  moveOutNotes: z.string().trim().max(2000).optional(),
+  // Deposits are already payable/transferred to the owner as they are
+  // collected. Move-out records what the OWNER must return to the tenant.
+  depositDeductionAmount: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+  depositRefundedAmount: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+  depositRefundDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  depositSettlementNotes: z.string().trim().max(2000).optional(),
+});
+
+export const updateRenewalReviewSchema = z.object({
+  tenancyId: z.string().uuid(),
+  decision: z.enum(["pending", "contacted", "renew", "not_renew"]),
+  notes: z.string().trim().max(2000).optional(),
 });

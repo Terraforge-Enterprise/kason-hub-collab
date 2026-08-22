@@ -41,7 +41,7 @@ async function main() {
   const org = await prisma.organization.create({
     data: {
       id: orgId,
-      name: "Kaen Properties Sdn Bhd",
+      name: "KAEN Properties Management Sdn Bhd",
       slug: "kaen-uat",
       status: "active",
       defaultCurrency: "MYR",

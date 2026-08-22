@@ -21,3 +21,8 @@ it("editor does not see accounting-only items", () => {
   expect(canSeeNavItemFor("editor", accounting)).toBe(false);
   expect(canSeeNavItemFor("editor", operational)).toBe(true);
 });
+
+test("Operations Admin can access Bank Reconciliation without seeing all accounting pages", () => {
+  expect(canSeeNavItemFor("editor", { ...accounting, href: "/accounting/bank-reconciliation" })).toBe(true);
+  expect(canSeeNavItemFor("editor", { ...accounting, href: "/accounting/profitability" })).toBe(false);
+});

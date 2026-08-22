@@ -58,7 +58,22 @@ export type TenantListItem = {
    * always includes it (possibly empty). Feeds the search haystack + sub-line.
    */
   units?: { propertyName: string; unitCode: string }[];
+  activeTenancies?: {
+    propertyName: string;
+    unitCode: string;
+    startDate: string;
+    endDate: string | null;
+  }[];
 };
+
+function formatTenancyDate(value: string): string {
+  const [year, month, day] = value.slice(0, 10).split("-");
+  return year && month && day ? `${day}/${month}/${year}` : value;
+}
+
+function formatTenancyPeriod(startDate: string, endDate: string | null): string {
+  return `${formatTenancyDate(startDate)} – ${endDate ? formatTenancyDate(endDate) : "Present"}`;
+}
 
 type StatusFilter = "all" | "active" | "inactive";
 
@@ -146,24 +161,36 @@ export function TenantTable({ tenants, focusedPartyId = null }: { tenants: Tenan
 
       {/* Table */}
       <div className="overflow-x-auto">
-        <table className="min-w-full border-collapse text-left text-sm">
+        <table className="w-full table-fixed border-collapse text-left text-sm">
+          <colgroup>
+            <col className="w-9" />
+            <col className="w-[13%]" />
+            <col className="w-[15%]" />
+            <col className="w-[17%]" />
+            <col className="w-[14%]" />
+            <col className="w-[13%]" />
+            <col className="w-[10%]" />
+            <col className="w-[10%]" />
+            <col className="w-16" />
+          </colgroup>
           <thead className="border-b border-[var(--border)] bg-[var(--page-bg)] text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
             <tr>
-              <th className="w-8 px-2 py-3" aria-label="Expand" />
-              <th className="px-4 py-3 font-semibold">Name</th>
-              <th className="px-4 py-3 font-semibold">Email</th>
-              <th className="px-4 py-3 font-semibold">Phone</th>
-              <th className="px-4 py-3 font-semibold">Occupation</th>
-              <th className="px-4 py-3 font-semibold">Status</th>
-              <th className="px-4 py-3 font-semibold">Blacklisted</th>
-              <th className="px-4 py-3 text-right font-semibold">Actions</th>
+              <th className="px-2 py-3" aria-label="Expand" />
+              <th className="px-3 py-3 font-semibold" style={{ textAlign: "left" }}>Name</th>
+              <th className="px-3 py-3 text-left font-semibold">Tenancy Period</th>
+              <th className="px-3 py-3 text-left font-semibold">Email</th>
+              <th className="px-3 py-3 text-left font-semibold">Phone</th>
+              <th className="px-3 py-3 text-left font-semibold">Occupation</th>
+              <th className="px-3 py-3 text-left font-semibold">Status</th>
+              <th className="px-3 py-3 text-left font-semibold">Blacklisted</th>
+              <th className="px-3 py-3 text-left font-semibold">Actions</th>
             </tr>
           </thead>
           <tbody>
             {n === 0 ? (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={9}
                   className="px-4 py-10 text-center text-sm text-[var(--text-muted)]"
                 >
                   {anyFilterActive
@@ -213,7 +240,7 @@ function TenantRow({ tenant, initiallyExpanded = false }: { tenant: TenantListIt
         className="cursor-pointer border-b border-[var(--border)] transition hover:bg-[var(--page-bg)]"
       >
         {/* Leading chevron — toggles the expand panel */}
-        <td className="px-2 py-3.5 text-sm">
+        <td className="align-middle px-2 py-3.5 text-sm">
           <button
             type="button"
             onClick={(e) => {
@@ -232,7 +259,7 @@ function TenantRow({ tenant, initiallyExpanded = false }: { tenant: TenantListIt
           </button>
         </td>
 
-        <td className="px-4 py-3.5 text-sm text-[var(--text-primary)]">
+        <td className="align-middle px-3 py-3.5 text-sm text-[var(--text-primary)]">
           <div className="flex items-center gap-2">
             <span className="font-medium text-[var(--text-primary)]">{tenant.displayName}</span>
             {tenant.hasReservation && <StatusPill tone="sky">Has reservation</StatusPill>}
@@ -243,19 +270,34 @@ function TenantRow({ tenant, initiallyExpanded = false }: { tenant: TenantListIt
               : "(no unit)"}
           </div>
         </td>
-        <td className="px-4 py-3.5 text-sm text-[var(--text-primary)]">
+        <td className="align-middle px-3 py-3.5 text-left text-sm text-[var(--text-primary)]">
+          {tenant.activeTenancies && tenant.activeTenancies.length > 0 ? (
+            <div className="space-y-1">
+              {tenant.activeTenancies.map((tenancy) => (
+                <div key={`${tenancy.propertyName}-${tenancy.unitCode}-${tenancy.startDate}`}>
+                  <div className="whitespace-nowrap font-semibold tabular-nums">
+                    {formatTenancyPeriod(tenancy.startDate, tenancy.endDate)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <span className="text-[var(--text-muted)]">No active tenancy</span>
+          )}
+        </td>
+        <td className="align-middle px-3 py-3.5 text-left text-sm text-[var(--text-primary)]">
           {tenant.primaryEmail ?? "-"}
         </td>
-        <td className="px-4 py-3.5 text-sm text-[var(--text-primary)]">
+        <td className="align-middle px-3 py-3.5 text-left text-sm text-[var(--text-primary)]">
           {tenant.formattedPhone ?? tenant.primaryPhone ?? "-"}
         </td>
-        <td className="px-4 py-3.5 text-sm text-[var(--text-primary)]">
+        <td className="align-middle px-3 py-3.5 text-left text-sm text-[var(--text-primary)]">
           {tenant.occupation ?? "-"}
         </td>
-        <td className="px-4 py-3.5 text-sm text-[var(--text-primary)]">
+        <td className="align-middle px-3 py-3.5 text-left text-sm text-[var(--text-primary)]">
           <StatusPill tone={getStatusTone(tenant.status)}>{tenant.status}</StatusPill>
         </td>
-        <td className="px-4 py-3.5 text-sm text-[var(--text-primary)]">
+        <td className="align-middle px-3 py-3.5 text-left text-sm text-[var(--text-primary)]">
           <StatusPill tone={tenant.isBlacklisted ? "rose" : "emerald"}>
             {tenant.isBlacklisted ? "yes" : "no"}
           </StatusPill>
@@ -264,9 +306,9 @@ function TenantRow({ tenant, initiallyExpanded = false }: { tenant: TenantListIt
             dialogs it triggers) never toggles the row's expand panel. */}
         <td
           onClick={(e) => e.stopPropagation()}
-          className="px-4 py-3.5 text-right text-sm text-[var(--text-primary)]"
+          className="align-middle px-3 py-3.5 text-left text-sm text-[var(--text-primary)]"
         >
-          <div className="flex justify-end">
+          <div className="flex justify-start">
             <DropdownMenu>
               <DropdownMenuTrigger
                 aria-label={`Actions for ${tenant.displayName}`}
@@ -338,7 +380,7 @@ function TenantRow({ tenant, initiallyExpanded = false }: { tenant: TenantListIt
       {expanded && (
         <tr>
           <td
-            colSpan={8}
+            colSpan={9}
             className="border-b border-[var(--border)] bg-[var(--page-bg)] px-4 py-4"
           >
             <TenantDetailPanel partyId={tenant.id} hasReservation={tenant.hasReservation} />

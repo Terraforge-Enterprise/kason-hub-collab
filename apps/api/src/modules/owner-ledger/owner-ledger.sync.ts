@@ -190,6 +190,7 @@ export function gridProviderBillDeducts(args: {
 // ─── chargeType → ledger category map (statement source) ────────────────────
 const STATEMENT_CATEGORY_MAP: Record<string, OwnerLedgerCategory> = {
   management_fee: "management_fee",
+  letting_commission: "letting_commission",
   cleaning: "cleaning",
   tnb: "utilities_tnb",
   water: "water",
@@ -566,6 +567,9 @@ export async function syncMonthService(
           organizationId: actor.orgId,
           unitId: { in: unitIds },
           chargeType: "letting_commission",
+          // Legacy tenant-side commission rows only. New owner-side commission
+          // lines live on the owner statement and are booked by Source 2 below.
+          partyId: { not: ownerPartyId },
           dueDate: { gte: monthStart, lte: monthEnd },
           status: { notIn: ["void", "credited"] },
         },

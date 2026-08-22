@@ -25,6 +25,9 @@ import {
   createLandlordTenancySchema,
   createTenancySchema,
   renewTenancySchema,
+  cancelRenewalSchema,
+  moveOutTenancySchema,
+  updateRenewalReviewSchema,
   updateLandlordTenancyStatusSchema,
   updateTenancySchema,
 } from "./tenancy.validation";
@@ -36,6 +39,79 @@ import { mapTenancyP2002 } from "./tenancy-p2002";
 import { recordAudit } from "../../lib/audit";
 import { draftCatchupForTenancy } from "../billing/draft-catchup.hook";
 import { createTenancyDepositsForTenancy } from "../billing/tenancy-deposits";
+import { ensureChargeCategorySeeds } from "../charge-categories/seed";
+import { createInvoiceTx, recomputeInvoiceTotalTx } from "../billing/auto-draft.repository";
+import { issueDocumentsForChargesTx } from "../billing-documents/issue.service";
+
+async function createTenantAgreementFeeForTenancy(
+  session: TenancySession,
+  tenancyId: string,
+  amountInput: string | undefined,
+  dueDateInput: string | undefined,
+) {
+  // Undefined means no TA decision was supplied. An explicit RM0 is still a
+  // saved decision and must remain visible in the billing grid so an accidental
+  // zero can be found and corrected before billing.
+  if (amountInput === undefined) return;
+  const amount = Number(amountInput);
+  if (!Number.isFinite(amount) || amount < 0) return;
+  await ensureChargeCategorySeeds(session.orgId);
+  const db = getDb();
+  const tenancy = await db.tenancy.findFirst({
+    where: { id: tenancyId, organizationId: session.orgId },
+    select: { id: true, tenantPartyId: true, propertyId: true, unitId: true, startDate: true },
+  });
+  if (!tenancy) return;
+  const dueDate = new Date(`${dueDateInput ?? tenancy.startDate.toISOString().slice(0, 10)}T00:00:00.000Z`);
+  // TA belongs to the tenancy's first month irrespective of a separately chosen
+  // payment due date.
+  const periodMonth = new Date(Date.UTC(tenancy.startDate.getUTCFullYear(), tenancy.startDate.getUTCMonth(), 1));
+  const idempotencyKey = `tenancy-agreement-fee:${tenancy.id}`;
+  await db.$transaction(async (tx) => {
+    if (await tx.invoice.findFirst({ where: { organizationId: session.orgId, idempotencyKey }, select: { id: true } })) return;
+    const category = await tx.chargeCategory.findFirst({
+      where: { organizationId: session.orgId, code: "tenancy_agreement_fee" },
+      select: { id: true },
+    });
+    const invoice = await createInvoiceTx(tx, {
+      orgId: session.orgId,
+      invoiceNumber: `TAF-${tenancy.id}`,
+      partyId: tenancy.tenantPartyId,
+      tenancyId: tenancy.id,
+      propertyId: tenancy.propertyId,
+      invoiceType: "tenant_agreement_fee",
+      invoiceDate: new Date(),
+      dueDate,
+      periodMonth,
+      idempotencyKey,
+    });
+    await tx.charge.create({
+      data: {
+        organizationId: session.orgId,
+        chargeNumber: `TAF-${tenancy.id}`,
+        tenancyId: tenancy.id,
+        unitId: tenancy.unitId,
+        partyId: tenancy.tenantPartyId,
+        categoryId: category?.id ?? null,
+        chargeType: "tenancy_agreement_fee",
+        status: "draft",
+        description: "Tenancy agreement fee",
+        dueDate,
+        amount: amount.toFixed(2),
+        outstandingAmount: amount.toFixed(2),
+        currency: "MYR",
+        billingMonth: periodMonth,
+        attachmentKeys: [],
+        invoiceId: invoice.id,
+        nature: "profit",
+        revenueRecognition: "manager_revenue",
+        settlementRecipient: "manager",
+        commercialPurpose: "SERVICE",
+      },
+    });
+    await recomputeInvoiceTotalTx(tx, session.orgId, invoice.id);
+  });
+}
 
 // Wave-2 review #2: writing the rent-invoice schedule (start date / first-month
 // note) controls WHEN rent invoices fire, so it is money-adjacent and must leave
@@ -53,6 +129,100 @@ function invoiceScheduleAuditMeta(
 
 export async function getLandlordTenanciesService(session: TenancySession) {
   return listLandlordTenancies(session.orgId);
+}
+
+/**
+ * Compatibility bridge for Property Management Agreements.
+ *
+ * Owner/unit truth now lives on Listing.ownerPartyId and the commercial terms
+ * live on ManagementFeeConfig. Older agreement rows still reference
+ * LandlordTenancy, so materialise only the missing owner+property bridge rows
+ * from ACTIVE management-fee configurations. This keeps the technical legacy
+ * record out of the UI and makes the agreement register follow the real unit
+ * setup workflow.
+ */
+export async function syncManagedOwnerAgreementRecordsService(session: TenancySession) {
+  const db = getDb();
+  const configs = await db.managementFeeConfig.findMany({
+    where: { organizationId: session.orgId, isActive: true },
+    select: {
+      ownerPartyId: true,
+      propertyId: true,
+      apartmentId: true,
+      effectiveFrom: true,
+      createdAt: true,
+    },
+  });
+
+  const candidates = new Map<string, { ownerPartyId: string; propertyId: string; startDate: Date }>();
+  for (const config of configs) {
+    let propertyIds = config.propertyId ? [config.propertyId] : [];
+    if (!propertyIds.length && config.apartmentId) {
+      const apartment = await db.apartment.findFirst({
+        where: { id: config.apartmentId, organizationId: session.orgId },
+        select: { propertyId: true },
+      });
+      if (apartment) propertyIds = [apartment.propertyId];
+    }
+    if (!propertyIds.length) {
+      const ownedListings = await db.listing.findMany({
+        where: {
+          organizationId: session.orgId,
+          ownerPartyId: config.ownerPartyId,
+          listingStatus: { not: "archived" },
+        },
+        select: { apartment: { select: { propertyId: true } } },
+      });
+      propertyIds = [...new Set(ownedListings.map((row) => row.apartment.propertyId))];
+    }
+    for (const propertyId of propertyIds) {
+      const key = `${config.ownerPartyId}:${propertyId}`;
+      const startDate = config.effectiveFrom ?? config.createdAt;
+      const current = candidates.get(key);
+      if (!current || startDate < current.startDate) {
+        candidates.set(key, { ownerPartyId: config.ownerPartyId, propertyId, startDate });
+      }
+    }
+  }
+
+  let created = 0;
+  for (const candidate of candidates.values()) {
+    const existing = await db.landlordTenancy.findFirst({
+      where: {
+        organizationId: session.orgId,
+        landlordId: candidate.ownerPartyId,
+        propertyId: candidate.propertyId,
+        status: { not: "ended" },
+      },
+      select: { id: true },
+    });
+    if (existing) continue;
+    const listing = await db.listing.findFirst({
+      where: {
+        organizationId: session.orgId,
+        ownerPartyId: candidate.ownerPartyId,
+        listingStatus: { not: "archived" },
+        apartment: { propertyId: candidate.propertyId },
+      },
+      orderBy: { rentalRate: "desc" },
+      select: { rentalRate: true },
+    });
+    await db.landlordTenancy.create({
+      data: {
+        organizationId: session.orgId,
+        propertyId: candidate.propertyId,
+        landlordId: candidate.ownerPartyId,
+        startDate: candidate.startDate,
+        endDate: null,
+        monthlyRent: listing?.rentalRate ?? 0,
+        depositAmount: null,
+        status: "active",
+        notes: "System-managed bridge for Property Management Agreement",
+      },
+    });
+    created += 1;
+  }
+  return { created };
 }
 
 export async function createLandlordTenancyService(session: TenancySession, input: z.infer<typeof createLandlordTenancySchema>) {
@@ -367,10 +537,11 @@ export async function createTenancyService(session: TenancySession, input: z.inf
       // Post-commit, never-throws: a tenancy created after this period's draft
       // run missed the cohort — draft its rent invoice into the approval queue.
       await draftCatchupForTenancy(session, txResult.data.id);
-      // Separate hook, NOT folded into the one above: rent drafting is gated on
-      // ENABLE_PHASE2_AUTODRAFT + DraftConfig.includeRent, and "this org bills rent
-      // by hand" must not also mean "this org collects no deposits".
+      // Separate hook, NOT folded into the one above: rent drafting follows the
+      // organization's active DraftConfig/includeRent setting, while deposit
+      // creation has its own lifecycle and must remain independently repairable.
       await createTenancyDepositsForTenancy(session, txResult.data.id);
+      await createTenantAgreementFeeForTenancy(session, txResult.data.id, input.tenancyAgreementFeeAmount, input.tenancyAgreementFeeDueDate);
       return txResult;
     } catch (e) {
       const ce = e as { _carparkStatus?: number; message?: string };
@@ -434,6 +605,7 @@ export async function createTenancyService(session: TenancySession, input: z.inf
     // Post-commit, never-throws: see the overwrite branch above.
     if (txResult.ok) await draftCatchupForTenancy(session, txResult.data.id);
     if (txResult.ok) await createTenancyDepositsForTenancy(session, txResult.data.id);
+    if (txResult.ok) await createTenantAgreementFeeForTenancy(session, txResult.data.id, input.tenancyAgreementFeeAmount, input.tenancyAgreementFeeDueDate);
     return txResult;
   }
 
@@ -464,6 +636,7 @@ export async function createTenancyService(session: TenancySession, input: z.inf
     // Post-commit, never-throws: see the overwrite branch above.
     await draftCatchupForTenancy(session, created.id);
     await createTenancyDepositsForTenancy(session, created.id);
+    await createTenantAgreementFeeForTenancy(session, created.id, input.tenancyAgreementFeeAmount, input.tenancyAgreementFeeDueDate);
     return { ok: true as const, status: 201, data: created };
   } catch (e) {
     const mapped = mapTenancyP2002(e);
@@ -497,6 +670,53 @@ export async function updateTenancyService(session: TenancySession, input: z.inf
     }
   }
 
+  const settlementTouched =
+    input.depositDeductionAmount !== undefined ||
+    input.depositRefundedAmount !== undefined ||
+    input.depositRefundDate !== undefined ||
+    input.depositSettlementNotes !== undefined;
+  let depositSettlementData: Prisma.TenancyUpdateInput = {};
+  if (settlementTouched) {
+    if (!new Set(["ended", "terminated", "expired"]).has(existing.status)) {
+      return { ok: false as const, status: 409, error: "Deposit settlement can only be updated after the tenancy has ended" };
+    }
+    const totals = await getDb().deposit.aggregate({
+      where: { organizationId: session.orgId, tenancyId: existing.id, status: "released_to_owner" },
+      _sum: { amount: true },
+    });
+    const ownerHeldAmount = Number(totals._sum.amount?.toString() ?? 0);
+    const previous = existing.depositDeductions && typeof existing.depositDeductions === "object" && !Array.isArray(existing.depositDeductions)
+      ? existing.depositDeductions as Record<string, unknown>
+      : {};
+    const deductionAmount = Number(input.depositDeductionAmount ?? previous.deductionAmount ?? 0);
+    const refundedAmount = Number(input.depositRefundedAmount ?? existing.depositRefundAmount?.toString() ?? 0);
+    const refundDue = Math.max(0, ownerHeldAmount - deductionAmount);
+    if (deductionAmount > ownerHeldAmount) {
+      return { ok: false as const, status: 400, error: "Deposit deductions cannot exceed the amount transferred to the owner" };
+    }
+    if (refundedAmount > refundDue) {
+      return { ok: false as const, status: 400, error: "Owner refund cannot exceed the refundable deposit balance" };
+    }
+    if (refundedAmount > 0 && input.depositRefundDate === null) {
+      return { ok: false as const, status: 400, error: "Refund date is required when the owner has refunded a deposit" };
+    }
+    depositSettlementData = {
+      depositDeductions: {
+        ownerHeldAmount: ownerHeldAmount.toFixed(2),
+        deductionAmount: deductionAmount.toFixed(2),
+        refundDue: refundDue.toFixed(2),
+        basis: "deposit_transferred_to_owner",
+      },
+      depositRefundAmount: refundedAmount.toFixed(2),
+      ...(input.depositRefundDate !== undefined
+        ? { depositRefundDate: input.depositRefundDate ? new Date(`${input.depositRefundDate}T00:00:00.000Z`) : null }
+        : {}),
+      ...(input.depositSettlementNotes !== undefined
+        ? { depositRefundNote: input.depositSettlementNotes.trim() || null }
+        : {}),
+    };
+  }
+
   const data = {
     ...(input.status !== undefined ? { status: input.status } : {}),
     ...(input.billingStatus !== undefined ? { billingStatus: input.billingStatus } : {}),
@@ -510,6 +730,7 @@ export async function updateTenancyService(session: TenancySession, input: z.inf
     ...(input.firstMonthRentNote !== undefined ? { firstMonthRentNote: input.firstMonthRentNote } : {}),
     ...(input.firstMonthIsCommission !== undefined ? { firstMonthIsCommission: input.firstMonthIsCommission } : {}),
     ...(input.commissionSstBearer !== undefined ? { commissionSstBearer: input.commissionSstBearer } : {}),
+    ...depositSettlementData,
   };
 
   // Terminal status → release this tenancy's carpark bays in the SAME transaction,
@@ -608,5 +829,448 @@ export async function renewTenancyService(session: TenancySession, input: z.infe
   // drafted its first month (e.g. renewed on the 26th for next month) would
   // otherwise miss that month's rent draft.
   await draftCatchupForTenancy(session, created.id);
+  const renewalFee = Number(input.renewalFeeAmount ?? 0);
+  // The renewal workflow always asks for this decision. Persist an explicit
+  // zero as a Saved TA line so Operations can see and correct it; only a truly
+  // omitted value means no decision was made through this endpoint.
+  if (input.renewalFeeAmount !== undefined && Number.isFinite(renewalFee) && renewalFee >= 0) {
+    await ensureChargeCategorySeeds(session.orgId);
+    const periodMonth = new Date(Date.UTC(new Date(input.newStartDate).getUTCFullYear(), new Date(input.newStartDate).getUTCMonth(), 1));
+    const idempotencyKey = `renewal-fee:${created.id}`;
+    await getDb().$transaction(async (tx) => {
+      const existingInvoice = await tx.invoice.findFirst({ where: { organizationId: session.orgId, idempotencyKey }, select: { id: true } });
+      if (existingInvoice) return;
+      const category = await tx.chargeCategory.findFirst({ where: { organizationId: session.orgId, code: "renewal_fee" }, select: { id: true } });
+      const invoice = await createInvoiceTx(tx, {
+        orgId: session.orgId, invoiceNumber: `REN-${created.id}`, partyId: existing.tenantPartyId,
+        tenancyId: created.id, propertyId: existing.propertyId, invoiceType: "tenant_renewal",
+        invoiceDate: new Date(), dueDate: new Date(input.renewalFeeDueDate ?? input.newStartDate), periodMonth, idempotencyKey,
+      });
+      await tx.charge.create({
+        data: {
+          organizationId: session.orgId, chargeNumber: `RENEW-${created.id}`, tenancyId: created.id,
+          unitId: existing.unitId, partyId: existing.tenantPartyId, categoryId: category?.id ?? null,
+          chargeType: "renewal_fee", status: "draft", description: "Tenancy renewal fee",
+          dueDate: new Date(input.renewalFeeDueDate ?? input.newStartDate), amount: renewalFee.toFixed(2), outstandingAmount: renewalFee.toFixed(2),
+          currency: "MYR", billingMonth: periodMonth, attachmentKeys: [], invoiceId: invoice.id,
+          nature: "profit", revenueRecognition: "manager_revenue", settlementRecipient: "manager",
+          commercialPurpose: "SERVICE",
+        },
+      });
+      await recomputeInvoiceTotalTx(tx, session.orgId, invoice.id);
+    });
+  }
   return { ok: true as const, status: 201, data: created };
+}
+
+/**
+ * Safely cancel a future renewal without deleting its history.
+ *
+ * Only reversible drafts are voided. Once an agreement was sent/signed, an
+ * invoice was issued, or money was allocated, accounting corrections must use
+ * the normal credit/refund workflow instead of making the evidence disappear.
+ */
+export async function cancelRenewalService(
+  session: TenancySession,
+  input: z.infer<typeof cancelRenewalSchema>,
+) {
+  const db = getDb();
+  const renewed = await db.tenancy.findFirst({
+    where: { id: input.tenancyId, organizationId: session.orgId },
+    select: {
+      id: true,
+      tenancyCode: true,
+      status: true,
+      startDate: true,
+      previousTenancyId: true,
+      agreements: { select: { id: true, status: true } },
+      charges: {
+        select: {
+          id: true,
+          status: true,
+          chargeType: true,
+          allocations: { select: { id: true } },
+        },
+      },
+      invoices: {
+        select: {
+          id: true,
+          status: true,
+        },
+      },
+    },
+  });
+  if (!renewed) return { ok: false as const, status: 404 as const, error: "Renewed tenancy not found" };
+  if (!renewed.previousTenancyId) {
+    return { ok: false as const, status: 409 as const, error: "This is an original tenancy, not a renewal" };
+  }
+  if (renewed.status === "cancelled") {
+    return { ok: false as const, status: 409 as const, error: "This renewal has already been cancelled" };
+  }
+
+  const today = new Date();
+  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  if (renewed.startDate.getTime() <= todayUtc) {
+    return {
+      ok: false as const,
+      status: 409 as const,
+      error: "This renewal has already started. End or adjust the tenancy and use Credit Note / Refund for any financial correction.",
+    };
+  }
+
+  const protectedAgreement = renewed.agreements.find((row) => ["sent_for_signature", "signed"].includes(row.status));
+  if (protectedAgreement) {
+    return {
+      ok: false as const,
+      status: 409 as const,
+      error: "The renewed agreement was already sent or signed. Void it through the controlled agreement workflow before cancelling the renewal.",
+    };
+  }
+  const issuedInvoice = renewed.invoices.find((row) => !["draft", "void"].includes(row.status));
+  const protectedCharge = renewed.charges.find((row) =>
+    row.allocations.length > 0 || !["draft", "void"].includes(row.status),
+  );
+  if (issuedInvoice || protectedCharge) {
+    return {
+      ok: false as const,
+      status: 409 as const,
+      error: "This renewal already has an issued bill or payment. Use Credit Note / Refund so the accounting trail remains correct.",
+    };
+  }
+
+  const reason = input.reason.trim();
+  const draftCharges = renewed.charges.filter((row) => row.status === "draft");
+  const draftInvoiceIds = renewed.invoices.filter((row) => row.status === "draft").map((row) => row.id);
+  await db.$transaction(async (tx) => {
+    for (const charge of draftCharges) {
+      await tx.charge.update({
+        where: { id: charge.id },
+        data: { status: "void", outstandingAmount: 0, cancelledReason: `Renewal cancelled: ${reason}` },
+      });
+      await tx.chargeEvent.create({
+        data: {
+          organizationId: session.orgId,
+          chargeId: charge.id,
+          eventType: "voided_renewal_cancelled",
+          eventAt: new Date(),
+          actorUserId: session.userId,
+          payloadJson: { reason, tenancyId: renewed.id, chargeType: charge.chargeType },
+        },
+      });
+    }
+    if (draftInvoiceIds.length) {
+      await tx.invoice.updateMany({
+        where: { organizationId: session.orgId, id: { in: draftInvoiceIds } },
+        data: { status: "void" },
+      });
+    }
+    await tx.tenancyAgreement.updateMany({
+      where: { organizationId: session.orgId, tenancyId: renewed.id, status: { not: "cancelled" } },
+      data: { status: "cancelled" },
+    });
+    await releaseAssignmentsForTenancyTx(tx, session.orgId, renewed.id, new Date());
+    await tx.tenancy.update({
+      where: { id: renewed.id },
+      data: {
+        status: "cancelled",
+        billingStatus: "closed",
+        renewalDecision: "not_renew",
+        renewalDecisionAt: new Date(),
+        renewalNotes: `Renewal cancelled: ${reason}`,
+        // previousTenancyId is unique. Release the relationship so the original
+        // tenancy can be renewed again later if the tenant changes their mind
+        // once more. The cancelled link remains permanently in the audit meta.
+        previousTenancyId: null,
+      },
+    });
+    const previous = await tx.tenancy.findFirst({
+      where: { id: renewed.previousTenancyId!, organizationId: session.orgId },
+      select: { id: true, endDate: true },
+    });
+    if (!previous) throw new Error("PREVIOUS_TENANCY_NOT_FOUND");
+    const previousStillCurrent = !previous.endDate || previous.endDate.getTime() >= todayUtc;
+    await tx.tenancy.update({
+      where: { id: previous.id },
+      data: {
+        status: previousStillCurrent ? "active" : "expired",
+        billingStatus: previousStillCurrent ? "active" : "closed",
+        renewalDecision: "not_renew",
+        renewalDecisionAt: new Date(),
+        renewalNotes: `Planned renewal ${renewed.tenancyCode} cancelled: ${reason}`,
+      },
+    });
+    await recordAudit(tx, {
+      organizationId: session.orgId,
+      actorUserId: session.userId,
+      actorRole: session.role,
+      action: "tenancy.renewal.cancelled",
+      entityType: "Tenancy",
+      entityId: renewed.id,
+      meta: {
+        reason,
+        previousTenancyId: renewed.previousTenancyId,
+        voidedChargeIds: draftCharges.map((row) => row.id),
+        voidedInvoiceIds: draftInvoiceIds,
+        cancelledAgreementIds: renewed.agreements.map((row) => row.id),
+      },
+    });
+  });
+  dashboardCache.invalidate(`dashboard:${session.orgId}`);
+  return {
+    ok: true as const,
+    status: 200 as const,
+    data: {
+      id: renewed.id,
+      status: "cancelled",
+      restoredTenancyId: renewed.previousTenancyId,
+      voidedCharges: draftCharges.length,
+      voidedInvoices: draftInvoiceIds.length,
+      cancelledAgreements: renewed.agreements.length,
+    },
+  };
+}
+
+export async function updateRenewalReviewService(
+  session: TenancySession,
+  input: z.infer<typeof updateRenewalReviewSchema>,
+) {
+  const db = getDb();
+  const existing = await db.tenancy.findFirst({
+    where: { id: input.tenancyId, organizationId: session.orgId },
+    select: { id: true, status: true },
+  });
+  if (!existing) return { ok: false as const, status: 404 as const, error: "Tenancy not found" };
+  if (existing.status !== "active") {
+    return { ok: false as const, status: 409 as const, error: "Only an active tenancy can be reviewed for renewal" };
+  }
+
+  const now = new Date();
+  await db.$transaction(async (tx) => {
+    await tx.tenancy.update({
+      where: { id: existing.id },
+      data: {
+        renewalDecision: input.decision,
+        renewalContactedAt: input.decision === "pending" ? null : now,
+        renewalDecisionAt: ["renew", "not_renew"].includes(input.decision) ? now : null,
+        renewalNotes: input.notes?.trim() || null,
+      },
+    });
+    await recordAudit(tx, {
+      organizationId: session.orgId,
+      actorUserId: session.userId,
+      actorRole: session.role,
+      action: "tenancy.renewal_review.updated",
+      entityType: "Tenancy",
+      entityId: existing.id,
+      meta: { decision: input.decision, notes: input.notes?.trim() || null },
+    });
+  });
+  dashboardCache.invalidate(`dashboard:${session.orgId}`);
+  return { ok: true as const, status: 200 as const, data: { id: existing.id, decision: input.decision } };
+}
+
+/** Complete an actual move-out across tenancy, unit occupancy and carparks. */
+export async function moveOutTenancyService(
+  session: TenancySession,
+  input: z.infer<typeof moveOutTenancySchema>,
+) {
+  const db = getDb();
+  const existing = await db.tenancy.findFirst({
+    where: { id: input.tenancyId, organizationId: session.orgId },
+    select: {
+      id: true,
+      unitId: true,
+      propertyId: true,
+      tenantPartyId: true,
+      startDate: true,
+      status: true,
+      unit: { select: { ownerPartyId: true, apartmentId: true } },
+    },
+  });
+  if (!existing) return { ok: false as const, status: 404 as const, error: "Tenancy not found" };
+  if (existing.status !== "active") {
+    return { ok: false as const, status: 409 as const, error: "Only an active tenancy can be moved out" };
+  }
+
+  const moveOutDate = new Date(`${input.moveOutDate}T00:00:00.000Z`);
+  if (moveOutDate.getTime() < existing.startDate.getTime()) {
+    return { ok: false as const, status: 400 as const, error: "Move-out date cannot be before move-in date" };
+  }
+  const today = new Date();
+  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  if (moveOutDate.getTime() > todayUtc) {
+    return { ok: false as const, status: 400 as const, error: "This is a future date. Complete Move Out on the actual handover date." };
+  }
+
+  const depositDeductionAmount = Number(input.depositDeductionAmount ?? 0);
+  const depositRefundedAmount = Number(input.depositRefundedAmount ?? 0);
+  const collectedDeposits = await db.deposit.aggregate({
+    where: { organizationId: session.orgId, tenancyId: existing.id, status: "released_to_owner" },
+    _sum: { amount: true },
+  });
+  const ownerHeldAmount = Number(collectedDeposits._sum.amount?.toString() ?? 0);
+  if (depositDeductionAmount > ownerHeldAmount) {
+    return { ok: false as const, status: 400 as const, error: "Deposit deductions cannot exceed the amount transferred to the owner" };
+  }
+  const ownerRefundDue = Math.max(0, ownerHeldAmount - depositDeductionAmount);
+  if (depositRefundedAmount > ownerRefundDue) {
+    return { ok: false as const, status: 400 as const, error: "Owner refund cannot exceed the refundable deposit balance" };
+  }
+  if (depositRefundedAmount > 0 && !input.depositRefundDate) {
+    return { ok: false as const, status: 400 as const, error: "Refund date is required when the owner has refunded a deposit" };
+  }
+
+  if (depositDeductionAmount > 0 && !existing.unit.ownerPartyId) {
+    return { ok: false as const, status: 409 as const, error: "Assign an owner before recording a deposit deduction" };
+  }
+  if (depositDeductionAmount > 0) await ensureChargeCategorySeeds(session.orgId);
+  const deductionCategory = depositDeductionAmount > 0
+    ? await db.chargeCategory.findFirst({
+        where: { organizationId: session.orgId, code: "other_expense_tenant", active: true },
+        select: { id: true },
+      })
+    : null;
+  if (depositDeductionAmount > 0 && !deductionCategory) {
+    return { ok: false as const, status: 409 as const, error: "Tenant expense category is not configured" };
+  }
+
+  await db.$transaction(async (tx) => {
+    let deductionChargeId: string | null = null;
+    if (depositDeductionAmount > 0 && deductionCategory && existing.unit.ownerPartyId) {
+      const statementMonth = new Date(Date.UTC(moveOutDate.getUTCFullYear(), moveOutDate.getUTCMonth(), 1));
+      const chargeNumber = `DEPDED-${existing.id}`;
+      const charge = await tx.charge.upsert({
+        where: { organizationId_chargeNumber: { organizationId: session.orgId, chargeNumber } },
+        create: {
+          organizationId: session.orgId,
+          chargeNumber,
+          tenancyId: existing.id,
+          unitId: existing.unitId,
+          categoryId: deductionCategory.id,
+          partyId: existing.tenantPartyId,
+          chargeType: "tenant_expense",
+          status: "paid",
+          description: "Move-out deposit deduction",
+          dueDate: moveOutDate,
+          postedAt: moveOutDate,
+          amount: depositDeductionAmount.toFixed(2),
+          currency: "MYR",
+          outstandingAmount: "0.00",
+          attachmentKeys: [],
+          billingMonth: statementMonth,
+          commercialPurpose: "SERVICE",
+          fundedBy: "tenant_funded",
+          revenueRecognition: "manager_revenue",
+          settlementRecipient: "manager",
+          nature: "profit",
+          provenanceType: "deposit_deduction",
+          provenanceId: existing.id,
+          actualCost: "0.00",
+          markupAmount: depositDeductionAmount.toFixed(2),
+          taxTreatment: "pending_review",
+        },
+        update: {},
+        select: { id: true },
+      });
+      deductionChargeId = charge.id;
+
+      const existingDeductionLedger = await tx.ownerLedgerEntry.findFirst({
+        where: {
+          organizationId: session.orgId,
+          sourceType: "deposit_deduction_to_kaen",
+          sourceChargeId: charge.id,
+          status: "active",
+        },
+        select: { id: true },
+      });
+      if (!existingDeductionLedger) {
+        await tx.ownerLedgerEntry.create({ data: {
+          organizationId: session.orgId,
+          ownerPartyId: existing.unit.ownerPartyId,
+          propertyId: existing.propertyId,
+          apartmentId: existing.unit.apartmentId,
+          listingId: existing.unitId,
+          tenancyId: existing.id,
+          statementMonth,
+          transactionDate: moveOutDate,
+          direction: "expense",
+          category: "other_expense",
+          description: "Move-out deposit deduction payable to KAEN",
+          remarks: "Tenant expense settled from deposit held by owner",
+          amount: depositDeductionAmount.toFixed(2),
+          paidBy: "kaen",
+          paymentStatus: "paid",
+          taxCategory: "check_with_tax_agent",
+          includeInPayout: true,
+          sourceType: "deposit_deduction_to_kaen",
+          sourceChargeId: charge.id,
+          createdById: session.userId,
+          updatedById: session.userId,
+        } });
+      }
+      await issueDocumentsForChargesTx(tx, [charge.id], session.userId);
+    }
+    await tx.tenancy.update({
+      where: { id: existing.id },
+      data: {
+        status: "ended",
+        billingStatus: "closed",
+        endDate: moveOutDate,
+        moveOutNotes: input.moveOutNotes?.trim() || null,
+        depositDeductions: {
+          ownerHeldAmount: ownerHeldAmount.toFixed(2),
+          deductionAmount: depositDeductionAmount.toFixed(2),
+          refundDue: ownerRefundDue.toFixed(2),
+          basis: "deposit_transferred_to_owner",
+        },
+        depositRefundAmount: depositRefundedAmount.toFixed(2),
+        depositRefundDate: input.depositRefundDate
+          ? new Date(`${input.depositRefundDate}T00:00:00.000Z`)
+          : null,
+        depositRefundNote: input.depositSettlementNotes?.trim() || null,
+      },
+    });
+    await tx.listing.updateMany({
+      where: { id: existing.unitId, organizationId: session.orgId },
+      data: { occupancyStatus: "vacant", readyNow: true },
+    });
+    await releaseAssignmentsForTenancyTx(tx, session.orgId, existing.id, moveOutDate);
+    await recordAudit(tx, {
+      organizationId: session.orgId,
+      actorUserId: session.userId,
+      actorRole: session.role,
+      action: "tenancy.move_out.completed",
+      entityType: "Tenancy",
+      entityId: existing.id,
+      meta: {
+        moveOutDate: input.moveOutDate,
+        moveOutNotes: input.moveOutNotes?.trim() || null,
+        depositOwnerHeldAmount: ownerHeldAmount.toFixed(2),
+        depositDeductionAmount: depositDeductionAmount.toFixed(2),
+        depositRefundDue: ownerRefundDue.toFixed(2),
+        depositRefundedAmount: depositRefundedAmount.toFixed(2),
+        depositRefundDate: input.depositRefundDate || null,
+        depositSettlementNotes: input.depositSettlementNotes?.trim() || null,
+        deductionChargeId,
+      },
+    });
+  });
+
+  dashboardCache.invalidate(`dashboard:${session.orgId}`);
+  await draftCatchupForTenancy(session, existing.id);
+  return {
+    ok: true as const,
+    status: 200 as const,
+    data: {
+      id: existing.id,
+      unitId: existing.unitId,
+      depositSettlement: {
+        ownerHeldAmount: ownerHeldAmount.toFixed(2),
+        deductionAmount: depositDeductionAmount.toFixed(2),
+        refundDue: ownerRefundDue.toFixed(2),
+        refundedAmount: depositRefundedAmount.toFixed(2),
+        outstandingOwnerRefund: Math.max(0, ownerRefundDue - depositRefundedAmount).toFixed(2),
+      },
+    },
+  };
 }

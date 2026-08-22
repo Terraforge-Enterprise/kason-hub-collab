@@ -226,8 +226,8 @@ dn("postMonthlyRentForTenancy (integration)", () => {
     expect(Number(c.amount)).toBe(522.67);
   });
 
-  it("F1: bills AT MOST ONE commission charge per tenancy even after a move-in-date edit shifts the commission month", async () => {
-    // Move-in Jan 1, commission tenancy → January is the first full month → commission.
+  it("keeps every tenant-facing monthly charge as rent even when first month is owner-paid commission", async () => {
+    // Move-in Jan 1 with the owner commission option. The tenant still owes rent.
     await seed({ startDate: new Date(Date.UTC(2026, 0, 1)) });
     const db = getDb();
     await db.tenancy.update({ where: { id: TEN }, data: { firstMonthIsCommission: true } });
@@ -235,18 +235,17 @@ dn("postMonthlyRentForTenancy (integration)", () => {
     const jan = new Date(Date.UTC(2026, 0, 1));
     await db.$transaction((tx) => postMonthlyRentForTenancy(tx, ORG, TEN, jan, USER));
     const janCharge = await db.charge.findFirstOrThrow({ where: { organizationId: ORG, tenancyId: TEN, billingMonth: jan } });
-    expect(janCharge.chargeType).toBe("letting_commission");
+    expect(janCharge.chargeType).toBe("rent");
 
     // Admin edits the move-in date to Feb 3 (dates-only) → the first full month is now March.
     await db.tenancy.update({ where: { id: TEN }, data: { startDate: new Date(Date.UTC(2026, 1, 3)) } });
 
-    // Post March: resolveCommissionMonth(Feb 3) → March. WITHOUT the ≤1-per-tenancy guard this
-    // would mint a SECOND commission (double-commission). The guard downgrades it to ordinary rent.
+    // A date edit must not change the tenant document into a commission invoice.
     const mar = new Date(Date.UTC(2026, 2, 1));
     await db.$transaction((tx) => postMonthlyRentForTenancy(tx, ORG, TEN, mar, USER));
     const marCharge = await db.charge.findFirstOrThrow({ where: { organizationId: ORG, tenancyId: TEN, billingMonth: mar } });
     expect(marCharge.chargeType).toBe("rent");
-    expect(await db.charge.count({ where: { organizationId: ORG, tenancyId: TEN, chargeType: "letting_commission" } })).toBe(1);
+    expect(await db.charge.count({ where: { organizationId: ORG, tenancyId: TEN, chargeType: "letting_commission" } })).toBe(0);
   });
 });
 

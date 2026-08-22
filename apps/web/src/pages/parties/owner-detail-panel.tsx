@@ -209,7 +209,11 @@ export function OwnerDetailPanel({ partyId }: { partyId: string }) {
                 </DetailField>
                 {isOwnerBilling && (
                   <>
-                    <OwnerFeeSummary partyId={partyId} ownerName={data.displayName} />
+                    <OwnerFeeSummary
+                      partyId={partyId}
+                      ownerName={data.displayName}
+                      units={data.unitsOwned}
+                    />
                     {/* The "Owner Statements" link went with that page — the
                         Owner Ledger below is the front door for both now. */}
                     <div className="flex gap-4 text-sm">
@@ -299,11 +303,22 @@ export function OwnerDetailPanel({ partyId }: { partyId: string }) {
  * Managers see the read-only summary only. The write still flows through the
  * existing admin-gated POST/PATCH /owner-billing/fee-configs endpoints.
  */
-function OwnerFeeSummary({ partyId, ownerName }: { partyId: string; ownerName: string }) {
+function OwnerFeeSummary({
+  partyId,
+  ownerName,
+  units,
+}: {
+  partyId: string;
+  ownerName: string;
+  units: { apartmentId: string; unitCode: string; propertyName: string }[];
+}) {
   const { data, isError } = useFeeConfigs({ ownerPartyId: partyId, isActive: "true" });
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerMode, setDrawerMode] = useState<"create" | "edit">("create");
   const isAdmin = getStoredUser()?.role === "admin";
-  const activeConfig = !isError ? data?.data?.items?.find((c) => c.isActive) : undefined;
+  const activeConfigs = !isError ? data?.data?.items?.filter((c) => c.isActive) ?? [] : [];
+  const activeConfig = activeConfigs.find((c) => !c.apartmentId) ?? activeConfigs[0];
+  const unitConfigCount = activeConfigs.filter((c) => Boolean(c.apartmentId)).length;
 
   // Properties for the drawer's per-property override escape hatch. Only
   // fetched for admins (the only ones who can open the drawer).
@@ -323,23 +338,42 @@ function OwnerFeeSummary({ partyId, ownerName }: { partyId: string; ownerName: s
 
   return (
     <div className="space-y-1.5">
-      {feeLabel && <DetailField label="Management fee">{feeLabel}</DetailField>}
+      {feeLabel && <DetailField label="Management fee default">{feeLabel}</DetailField>}
+      {unitConfigCount > 0 && (
+        <DetailField label="Unit fee overrides">{unitConfigCount}</DetailField>
+      )}
       {isAdmin && (
         <>
           <button
             type="button"
-            onClick={() => setDrawerOpen(true)}
+            onClick={() => {
+              setDrawerMode(activeConfig ? "edit" : "create");
+              setDrawerOpen(true);
+            }}
             className="text-sm text-[var(--gold)] hover:underline"
           >
             {activeConfig ? "Edit fee" : "Set up billing"}
           </button>
+          {activeConfig && units.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setDrawerMode("create");
+                setDrawerOpen(true);
+              }}
+              className="ml-3 text-sm text-[var(--gold)] hover:underline"
+            >
+              Add unit fee
+            </button>
+          )}
           <FeeConfigDrawer
             open={drawerOpen}
             onClose={() => setDrawerOpen(false)}
-            mode={activeConfig ? "edit" : "create"}
-            config={activeConfig}
+            mode={drawerMode}
+            config={drawerMode === "edit" ? activeConfig : undefined}
             owners={[]}
             properties={(propertiesQuery.data?.data ?? []).map((p) => ({ id: p.id, name: p.name }))}
+            units={units}
             lockedOwner={{ id: partyId, displayName: ownerName }}
           />
         </>

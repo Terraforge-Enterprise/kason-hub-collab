@@ -342,15 +342,15 @@ dn("draftCatchupForTenancy / draftCatchupForUnit (integration)", () => {
     expect(count).toBe(0);
   });
 
-  it("no-ops while ENABLE_PHASE2_AUTODRAFT is off", async () => {
+  it("still drafts an interactive tenancy when the scheduled auto-draft flag is off", async () => {
     await seedBase();
     await runAutoDraftInvoices(RUN_CTX, PERIOD);
     await createLateTenancy();
-    process.env[FLAG] = "false";
+    process.env.ENABLE_PHASE2_AUTODRAFT = "false";
     const res = await draftCatchupForTenancy(HOOK_CTX, TENANCY_2, NOW);
-    expect(res.drafted).toEqual([]);
+    expect(res.drafted).toEqual([PERIOD]);
     const count = await getDb().invoice.count({ where: { organizationId: ORG, tenancyId: TENANCY_2 } });
-    expect(count).toBe(0);
+    expect(count).toBe(1);
   });
 
   it("draftCatchupForUnit resolves the unit's active tenancy and catches it up", async () => {

@@ -453,7 +453,7 @@ describe("SettingDrawer", () => {
 
   // Honest save feedback (user rule 2026-08-06): a billed month's snapshot is frozen —
   // the drawer must SAY so instead of toasting an unqualified "Setting saved.".
-  it("all open months billed → error toast says the month can't change (settings still saved)", async () => {
+  it("all open months payment/report locked → error toast explains why the month can't change", async () => {
     mockGetBearerConfig.mockResolvedValue(defaultDto());
     mockSetBearerConfig.mockResolvedValue({
       id: "cfg-1", isLocked: true, updatedAt: "2026-08-06T00:00:00.000Z",
@@ -466,11 +466,11 @@ describe("SettingDrawer", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(mockSetBearerConfig).toHaveBeenCalledTimes(1));
-    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("already billed"));
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("payment or an approved owner report"));
     expect(toast.success).not.toHaveBeenCalled();
   });
 
-  it("mixed billed + open months → success toast notes billed months stay unchanged", async () => {
+  it("mixed locked + open months → success toast notes paid/approved months stay unchanged", async () => {
     mockGetBearerConfig.mockResolvedValue(defaultDto());
     mockSetBearerConfig.mockResolvedValue({
       id: "cfg-1", isLocked: true, updatedAt: "2026-08-06T00:00:00.000Z",
@@ -483,7 +483,7 @@ describe("SettingDrawer", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(mockSetBearerConfig).toHaveBeenCalledTimes(1));
-    expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("Already-billed months"));
+    expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("Paid or approved-report months"));
     expect(toast.error).not.toHaveBeenCalled();
   });
 

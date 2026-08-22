@@ -7,7 +7,7 @@ import { atLeast, type AdminRole } from "../lib/rbac";
 // lives in `lib/rbac` — this is purely an alias.
 export type { AdminRole };
 
-const VALID_ROLES: ReadonlySet<string> = new Set<AdminRole>(["admin", "manager", "editor"]);
+const VALID_ROLES: ReadonlySet<string> = new Set<AdminRole>(["admin", "director", "manager", "editor"]);
 
 export function requireRole(minRole: AdminRole) {
   return createMiddleware<{ Variables: { session: SessionPayload } }>(async (c, next) => {

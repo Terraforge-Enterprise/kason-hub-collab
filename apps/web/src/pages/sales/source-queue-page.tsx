@@ -624,11 +624,11 @@ function RentalQueueCard({
             </div>
             <div>
               <div className="text-[var(--text-muted)] uppercase tracking-wide">
-                Rent (RM/mo)
+                Rent (RM/month)
               </div>
               <div className="text-sm font-semibold text-[var(--text-primary)]">
                 {rentalRate != null
-                  ? `RM ${Number(rentalRate).toLocaleString()}/mo`
+                  ? `RM ${Number(rentalRate).toLocaleString()}/month`
                   : "—"}
               </div>
             </div>

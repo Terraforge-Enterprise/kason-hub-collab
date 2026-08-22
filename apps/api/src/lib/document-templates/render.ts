@@ -71,6 +71,17 @@ const CSS = `
   main p{font-size:10.5pt;margin:1mm 0;color:#1f2937}
   main p strong{display:inline-block;min-width:44mm;font-weight:600;color:#374151}
 
+  /* Agreement cover sheets are intentionally isolated from the clauses.
+     This mirrors the supplied KAEN agreement and prevents clause 1 from
+     being squeezed onto the bottom of the title page. */
+  .agreement-cover{
+    min-height:235mm;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;text-align:center;page-break-after:always
+  }
+  .agreement-cover h1{margin-top:24mm;font-size:20pt;letter-spacing:.5pt}
+  .agreement-cover h3{margin-top:10mm;border:0;font-size:11pt}
+  .agreement-cover p{font-size:11pt;line-height:1.6}
+
   /* Fee tables */
   main .fee-table{width:100%;border-collapse:collapse;margin-top:1mm}
   main .fee-table td{padding:1.2mm 0;font-size:10.5pt;border-bottom:1px dotted #e5e7eb}

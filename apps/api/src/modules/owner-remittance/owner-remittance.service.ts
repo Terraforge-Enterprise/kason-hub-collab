@@ -22,7 +22,8 @@
 // apps/api/src/modules/owner-remittance/__tests__/allocate.integration.test.ts.
 import { z } from "zod";
 import { getDb } from "@kason/db";
-import { computeRequestFingerprint, toCents, centsToString } from "@kason/shared";
+import { toCents, centsToString } from "@kason/shared";
+import { computeRequestFingerprint } from "@kason/shared/owner-remittance";
 import type {
   RemittanceCreateInput,
   RemittanceAllocateInput,

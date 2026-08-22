@@ -8,6 +8,8 @@ export const KNOWN_DOC_TYPES = [
   "owner_statement",
   "credit_note",
   "refund_note",
+  "tenancy_agreement",
+  "property_management_agreement",
 ] as const;
 export type DocType = (typeof KNOWN_DOC_TYPES)[number];
 
@@ -49,6 +51,7 @@ export type ResolvedTemplate = {
   orgEmail: string | null;
   orgContact: string | null;
   logoUrl: string | null; // resolved from logoKey (S3 presigned or data URL)
+  bodyTemplate?: string | null;
 };
 
 export type RenderPayload = {

@@ -232,7 +232,7 @@ export async function getOwnerPropertyView(
                 take: 1,
               },
               deposits: {
-                where: { status: "held" },
+                where: { status: "released_to_owner" },
                 select: {
                   id: true,
                   type: true,

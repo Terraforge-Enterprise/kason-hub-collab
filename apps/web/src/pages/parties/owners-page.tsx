@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { Plus } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
-import { PageHeader, Surface } from "@/components/ui";
+import { Surface } from "@/components/ui";
 import { Button } from "@/components/ui/button";
 import { OwnerTable } from "./owners-table";
 import { CreateOwnerDialog } from "./owners-action-dialogs";
@@ -40,28 +40,30 @@ export default function OwnersPage() {
 
   const ownerList = owners.data!.data;
   const blacklistedCount = ownerList.filter((o) => o.isBlacklisted).length;
+  const ownerMetrics = [
+    { label: "Owners", value: ownerList.length },
+    { label: "Active", value: ownerList.filter((o) => o.status === "active").length },
+    { label: "Blacklisted", value: blacklistedCount },
+    { label: "Reachable", value: ownerList.filter((o) => o.primaryEmail || o.primaryPhone).length },
+  ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <PartiesAreaTabs activeTab="owners" />
-      <PageHeader
-        title="Owner registry"
-        description="Owner records are the control surface for identity, bank details, and blacklist governance."
-        metrics={[
-          { label: "Owners", value: String(ownerList.length), hint: "Total owner profiles" },
-          {
-            label: "Active",
-            value: String(ownerList.filter((o) => o.status === "active").length),
-            hint: "Profiles currently usable",
-          },
-          { label: "Blacklisted", value: String(blacklistedCount), hint: "Restricted owners" },
-          {
-            label: "Reachable",
-            value: String(ownerList.filter((o) => o.primaryEmail || o.primaryPhone).length),
-            hint: "Has email or phone",
-          },
-        ]}
-      />
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--navy-text)]">Owner registry</h1>
+          <p className="text-xs text-muted-foreground">Identity, bank details and owner status.</p>
+        </div>
+        <div className="grid min-w-[420px] grid-cols-4 overflow-hidden rounded-xl border border-[var(--card-border)] bg-card shadow-sm">
+          {ownerMetrics.map((metric) => (
+            <div key={metric.label} className="border-r border-[var(--card-border)] px-3 py-2 last:border-r-0">
+              <p className="text-[11px] text-muted-foreground">{metric.label}</p>
+              <p className="text-lg font-bold leading-tight text-[var(--navy-text)]">{metric.value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
       <Surface
         title="Owner records"
         description="Role-backed party records with status and screening visibility."

@@ -49,6 +49,8 @@ describe("SettingsLayout", () => {
     expect(screen.getByRole("link", { name: "Inventory" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Sales & Renovation" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Document Templates" })).not.toBeInTheDocument();
+    expect(screen.getByText("Tenant Management")).toBeInTheDocument();
+    expect(screen.getByText("Rental Services")).toBeInTheDocument();
   });
 
   it("shows all items for an admin user", () => {
@@ -80,7 +82,7 @@ describe("SettingsLayout", () => {
 
   it("redirects bare /settings to the first allowed section", () => {
     renderAt("/settings", "admin");
-    // Should redirect to /settings/commission → commission child route renders
-    expect(screen.getByText("Commission content")).toBeInTheDocument();
+    // Tenant Management is the default department, so Inventory opens first.
+    expect(screen.getByText("Inventory content")).toBeInTheDocument();
   });
 });

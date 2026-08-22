@@ -1,10 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { apiFetch } from "@/lib/api-client";
-import { listReservations, type ReservationDto } from "@/api/reservations";
+import type { ReservationDto } from "@/api/reservations";
 import { PageHeader, Surface } from "@/components/ui";
 import { TenancyTable } from "./tenancies-table";
-import { TenancyForms } from "./tenancies-forms";
 import type { TenancyListItem } from "./tenancies-table";
 
 type PropertyListItem = { id: string; name: string; propertyCode: string };
@@ -35,8 +34,6 @@ export function assignableReservationsForLegacyCard(reservations: ReservationDto
 
 export default function TenanciesPage() {
   const [searchParams] = useSearchParams();
-  const initialReservationId = searchParams.get("reservationId") ?? "";
-
   const tenancies = useQuery({
     queryKey: ["tenancy", "tenancies"],
     queryFn: () => apiFetch<{ data: TenancyListItem[] }>("/tenancy/tenancies"),
@@ -55,13 +52,6 @@ export default function TenanciesPage() {
   const tenants = useQuery({
     queryKey: ["parties", "tenants"],
     queryFn: () => apiFetch<{ data: TenantListItem[] }>("/parties/tenants"),
-  });
-
-  // Reservations feed the "start tenancy from reservation" picker. A failure
-  // here must not block the page — the picker simply won't appear.
-  const reservations = useQuery({
-    queryKey: ["reservations"],
-    queryFn: listReservations,
   });
 
   const isLoading =
@@ -94,8 +84,8 @@ export default function TenanciesPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Tenancy lifecycle"
-        description="Create, renew, and close tenancy chains while keeping billing status and occupancy state aligned."
+        title="Tenancy Agreements & Lifecycle"
+        description="Generate and edit tenancy agreements, then manage renewals, move-outs and tenancy history from the same register."
         metrics={[
           { label: "Tenancies", value: String(tenancyList.length), hint: "Total lifecycle records" },
           {
@@ -119,33 +109,8 @@ export default function TenanciesPage() {
         title="Tenancy register"
         description="A full view of active and historical tenancy chains."
       >
-        <TenancyTable tenancies={tenancyList} />
+        <TenancyTable tenancies={tenancyList} initialRenewalTenancyId={searchParams.get("renewal")} />
       </Surface>
-      <TenancyForms
-        properties={propertyList.map((p) => ({
-          id: p.id,
-          name: p.name,
-          propertyCode: p.propertyCode,
-        }))}
-        units={unitList.map((u) => ({
-          id: u.id,
-          propertyId: u.propertyId,
-          propertyName: u.propertyName,
-          unitCode: u.unitCode,
-        }))}
-        tenants={tenantList.map((t) => ({
-          id: t.id,
-          displayName: t.displayName,
-          hasReservation: t.hasReservation,
-        }))}
-        tenancies={tenancyList.map((t) => ({
-          id: t.id,
-          tenancyCode: t.tenancyCode,
-          tenantName: t.tenantName,
-        }))}
-        reservations={assignableReservationsForLegacyCard(reservations.data ?? [])}
-        initialReservationId={initialReservationId}
-      />
     </div>
   );
 }

@@ -83,9 +83,10 @@ type BearerField = "cleaningBearer" | "wifiBearer" | "maintenanceFeeBearer" | "t
  * One line setting for this row, ENTRY first.
  *
  * The precedence is the whole contract and it is easy to get backwards: `getOrCreateEntry`
- * snapshots the unit config the first time a month is opened and never re-reads it, so an
- * opened month must report what it will actually BILL, not what the unit's setting says
- * today. `null` entry is the normal never-opened state, where the config IS the answer.
+ * snapshots the unit config when a month is opened. A later settings save synchronises that
+ * snapshot while no payment/approved owner report locks it; protected months deliberately keep
+ * their historical answer. `null` entry is the normal never-opened state, where config IS the
+ * answer.
  *
  * Every reader goes through here rather than repeating `row.entry?.x ?? row.bearerConfig.x`
  * — that idiom was already written out nine times across three functions, which is exactly

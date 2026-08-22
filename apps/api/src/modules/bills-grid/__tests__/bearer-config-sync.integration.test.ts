@@ -100,19 +100,23 @@ dn("setBearerConfigService — push-to-open-months semantics", () => {
     expect(fresh.airPattern).toBe("absorbed");
     expect(fresh.cleaningBearer).toBe("owner");
     expect(fresh.wifiBearer).toBe("owner");
+    expect(fresh.maintenanceFeeBearer).toBe("owner");
   });
 
-  it("a BILLED month is skipped, counted as lockedEntries, and its snapshot stays frozen", async () => {
+  it("a BILLED but unpaid month takes the new bearer settings and can be re-billed", async () => {
     const e = await makeEntry(currentMonth(), { billedAt: new Date() });
     const r = await setBearerConfigService(SESSION, APT, BODY);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.data.syncedEntries).toBe(0);
-    expect(r.data.lockedEntries).toBe(1);
+    expect(r.data.syncedEntries).toBe(1);
+    expect(r.data.lockedEntries).toBe(0);
     const fresh = await getDb().unitBillsGridEntry.findUniqueOrThrow({ where: { id: e.id } });
-    expect(fresh.tnbPattern).toBe("recharged"); // untouched
-    expect(fresh.cleaningBearer).toBe("tenant"); // untouched
-    // The CONFIG still updated — future months are born with the new settings.
+    expect(fresh.tnbPattern).toBe("absorbed");
+    expect(fresh.airPattern).toBe("absorbed");
+    expect(fresh.cleaningBearer).toBe("owner");
+    expect(fresh.wifiBearer).toBe("owner");
+    expect(fresh.maintenanceFeeBearer).toBe("owner");
+    // The CONFIG also updates, so future months inherit the same answer.
     const cfg = await getDb().unitBillsBearerConfig.findUniqueOrThrow({
       where: { organizationId_apartmentId: { organizationId: ORG, apartmentId: APT } },
     });

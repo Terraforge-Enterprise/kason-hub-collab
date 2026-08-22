@@ -119,6 +119,11 @@
 .dark {
   color-scheme: dark;
 
+  /* Brand tokens are also used directly by older operational pages. Keep
+     their semantic meaning in dark mode instead of leaving dark navy text on
+     a dark navy surface. Bright status cells set their own ink colour. */
+  --navy-text:     #F3F6F9;
+
   --background:    #071B2D;
   --foreground:    #F0EDE6;
   --card:          #0B2945;
@@ -146,8 +151,12 @@
   --card-shadow:   0 1px 3px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.4);
   --text-primary:  var(--foreground);
   --text-secondary: var(--muted-foreground);
-  --text-muted:    #6b7280;
+  --text-muted:    #AFC0CF;
   --input-border:  var(--input);
+
+  --table-head:    #123B5E;
+  --table-total:   #061F38;
+  --table-total-ink: #F3D493;
 
   --glow-opacity:  0.12;
   --glow-border-opacity: 0.8;
@@ -155,6 +164,21 @@
   --sidebar-bg:    #061F38;
   --gold-fg:       #061F38;
 }
+
+/* ------------------------------------------------------------------ */
+/* Dark-mode compatibility for established light-surface utilities.   */
+/*                                                                    */
+/* A number of the long-lived business screens predate semantic       */
+/* Tailwind colours and use literal KAEN light-theme utilities. The   */
+/* dark theme must translate those surfaces and ink together; doing   */
+/* only one side is what caused navy-on-navy headings and controls.    */
+/* ------------------------------------------------------------------ */
+
+.dark .bg-white { background-color: var(--card) !important; }
+.dark .bg-\[\#F3F6F9\] { background-color: var(--background) !important; }
+.dark .bg-\[\#DFE9F3\] { background-color: var(--muted) !important; }
+.dark .text-\[\#082B4F\] { color: var(--foreground) !important; }
+.dark .text-\[\#657069\] { color: var(--muted-foreground) !important; }
 
 /* ------------------------------------------------------------------ */
 /* Base reset                                                         */
@@ -187,6 +211,70 @@ html {
   th { background: var(--table-head); color: var(--navy-text); font-weight: 700; }
   td { border-color: var(--card-border); overflow-wrap: anywhere; }
   th { border-color: var(--card-border); overflow-wrap: normal; word-break: normal; }
+}
+
+/* Word-like agreement canvas. Faithful templates are split into real,
+   continuously scrollable Letter sheets in the editor only. */
+.agreement-word-pages {
+  width: 816px;
+  min-height: 1056px;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+}
+.agreement-word-pages .word-faithful-template[data-editor-pagination="true"] {
+  width: 816px;
+  background: transparent;
+  counter-reset: agreement-page;
+}
+.agreement-word-pages .word-page-sheet {
+  position: relative;
+  width: 816px;
+  min-height: 1056px;
+  margin: 0 auto 32px;
+  padding: 96px;
+  box-sizing: border-box;
+  overflow: visible;
+  background: #fff;
+  color: #000;
+  box-shadow: 0 4px 18px rgba(8, 47, 85, 0.18);
+  counter-increment: agreement-page;
+}
+.agreement-word-pages .word-page-sheet::before {
+  content: "Page " attr(data-page);
+  position: absolute;
+  top: -24px;
+  left: 2px;
+  color: #506276;
+  font: 600 12px/18px Arial, sans-serif;
+  user-select: none;
+  pointer-events: none;
+}
+.agreement-word-pages table { width: 100%; border-collapse: collapse; }
+.agreement-word-pages th,
+.agreement-word-pages td { border: 1px solid #9dafc1; padding: 10px 12px; vertical-align: top; }
+.agreement-word-pages h1,
+.agreement-word-pages h2,
+.agreement-word-pages h3 { color: #082b4f; }
+.agreement-word-pages section { margin-bottom: 24px; }
+.agreement-word-pages .agreement-auto-field,
+.agreement-word-pages [data-field] {
+  display: inline;
+  border-radius: 3px;
+  background: #fff19a;
+  box-shadow: inset 0 -1px 0 #d4a400;
+  padding: 0 2px;
+  color: #082b4f;
+}
+.agreement-word-pages .agreement-auto-field-missing {
+  background: #ffe4e6;
+  color: #b42318;
+  outline: 1px dashed #ef4444;
+  box-shadow: none;
+}
+@media (max-width: 900px) {
+  .agreement-word-pages,
+  .agreement-word-pages .word-faithful-template[data-editor-pagination="true"],
+  .agreement-word-pages .word-page-sheet { width: 816px; }
 }
 
 @layer components {
@@ -264,6 +352,77 @@ html {
 .scrollbar-none {
   scrollbar-width: none;
   &::-webkit-scrollbar { display: none; }
+}
+
+/* ------------------------------------------------------------------ */
+/* Dashboard tables: fit the working page before offering scrolling.  */
+/*                                                                    */
+/* The billing matrix owns a richer Excel-style width system, so it   */
+/* opts out through its existing `.billing-matrix` class.             */
+/* ------------------------------------------------------------------ */
+
+.dashboard-content:has(table) {
+  max-width: none;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+.dashboard-content table:not(.billing-matrix) {
+  width: 100%;
+  max-width: 100%;
+  min-width: 100% !important;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.dashboard-content table:not(.billing-matrix) th,
+.dashboard-content table:not(.billing-matrix) td {
+  min-width: 0;
+  max-width: none;
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.dashboard-content table:not(.billing-matrix) th {
+  text-align: left;
+  line-height: 1.2;
+}
+
+.dashboard-content table:not(.billing-matrix) td {
+  text-align: left;
+}
+
+.dashboard-content table:not(.billing-matrix) td :is(input, select, textarea, button) {
+  max-width: 100%;
+}
+
+.dashboard-content table:not(.billing-matrix) td:has(> input[type="number"]),
+.dashboard-content table:not(.billing-matrix) td:has(> [data-money]) {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Wide operational tables shrink coherently instead of pushing their last
+   action columns outside the viewport when browser zoom increases. */
+.dashboard-content table:not(.billing-matrix):has(thead th:nth-child(8)) {
+  font-size: 0.78rem;
+}
+
+.dashboard-content table:not(.billing-matrix):has(thead th:nth-child(8)) :is(th, td) {
+  padding-left: 0.4rem;
+  padding-right: 0.4rem;
+}
+
+.dashboard-content table:not(.billing-matrix):has(thead th:nth-child(11)) {
+  font-size: 0.7rem;
+}
+
+@media (max-width: 767px) {
+  /* A 9+ column accounting table cannot remain touch-readable in a 360px
+     viewport. Desktop/laptop stay fit-to-page; phones retain safe scrolling. */
+  .dashboard-content table:not(.billing-matrix):has(thead th:nth-child(8)) {
+    min-width: 52rem !important;
+  }
 }
 
 /* Slim, theme-subtle scrollbar — tuned for dark surfaces (e.g. the sidebar).

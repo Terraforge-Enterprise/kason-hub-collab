@@ -87,52 +87,54 @@ model Organization {
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 
-  users                   User[]
-  roleAssignments         RoleAssignment[]
-  properties              Property[]
-  buildings               Building[]
-  units                   Listing[]
-  parties                 Party[]
-  partyRoles              PartyRole[]
-  tenancies               Tenancy[]
-  landlordTenancies       LandlordTenancy[]
-  deposits                Deposit[]
-  charges                 Charge[]
-  chargeEvents            ChargeEvent[]
-  chargeTemplates         ChargeTemplate[]
-  recurringCharges        RecurringCharge[]
-  lateFeeRules            LateFeeRule[]
-  payments                Payment[]
-  paymentAllocations      PaymentAllocation[]
-  bills                   CommissionBill[]
-  cashMovements           CashMovement[]
-  notifications           Notification[]
-  notificationQueue       NotificationQueue[]
-  emailTemplates          EmailTemplate[]
-  auditLogs               AuditLog[]
-  activityLogs            ActivityLog[]
-  unitAttributes          UnitAttribute[]
-  maintenanceRequests     MaintenanceRequest[]
-  documents               Document[]
-  documentLinks           DocumentLink[]
-  supplierExpenses            SupplierExpense[]
-  supplierExpenseAllocations  SupplierExpenseAllocation[]
-  kaenOperatingExpenses       KaenOperatingExpense[]
-  ownerFundingRequests        OwnerFundingRequest[]
-  announcements           Announcement[]
-  agentTierMappings       AgentTierMapping[]
-  commissionClaims        CommissionClaim[]
-  commissionClaimItems    CommissionClaimItem[]
-  roomTypes               RoomType[]
-  amenities               Amenity[]
-  workCategories          WorkCategory[]
-  propertyTypes           PropertyType[]
-  agentLevelThresholds    AgentLevelThreshold[]
-  listingVisibilityGrants ListingVisibilityGrant[]
-  taTiers                 TaTier[]
-  notificationLogs        NotificationLog[]
-  icAccessLogs            IcAccessLog[]
-  pendingUploads          PendingUpload[]
+  users                          User[]
+  roleAssignments                RoleAssignment[]
+  properties                     Property[]
+  buildings                      Building[]
+  units                          Listing[]
+  parties                        Party[]
+  partyRoles                     PartyRole[]
+  tenancies                      Tenancy[]
+  landlordTenancies              LandlordTenancy[]
+  deposits                       Deposit[]
+  charges                        Charge[]
+  chargeEvents                   ChargeEvent[]
+  chargeTemplates                ChargeTemplate[]
+  recurringCharges               RecurringCharge[]
+  lateFeeRules                   LateFeeRule[]
+  payments                       Payment[]
+  paymentAllocations             PaymentAllocation[]
+  bills                          CommissionBill[]
+  cashMovements                  CashMovement[]
+  notifications                  Notification[]
+  notificationQueue              NotificationQueue[]
+  emailTemplates                 EmailTemplate[]
+  auditLogs                      AuditLog[]
+  activityLogs                   ActivityLog[]
+  unitAttributes                 UnitAttribute[]
+  maintenanceRequests            MaintenanceRequest[]
+  documents                      Document[]
+  documentLinks                  DocumentLink[]
+  supplierExpenses               SupplierExpense[]
+  supplierExpenseAllocations     SupplierExpenseAllocation[]
+  supplierExpenseCostAssignments SupplierExpenseCostAssignment[]
+  bankCostAllocations            BankCostAllocation[]
+  kaenOperatingExpenses          KaenOperatingExpense[]
+  ownerFundingRequests           OwnerFundingRequest[]
+  announcements                  Announcement[]
+  agentTierMappings              AgentTierMapping[]
+  commissionClaims               CommissionClaim[]
+  commissionClaimItems           CommissionClaimItem[]
+  roomTypes                      RoomType[]
+  amenities                      Amenity[]
+  workCategories                 WorkCategory[]
+  propertyTypes                  PropertyType[]
+  agentLevelThresholds           AgentLevelThreshold[]
+  listingVisibilityGrants        ListingVisibilityGrant[]
+  taTiers                        TaTier[]
+  notificationLogs               NotificationLog[]
+  icAccessLogs                   IcAccessLog[]
+  pendingUploads                 PendingUpload[]
 
   // Sales Entry + Renovation Claim module (Wave 1)
   projects                       Project[]
@@ -156,10 +158,14 @@ model Organization {
   salesClaimDefaultSplits        SalesClaimDefaultSplit[]
   projectVerificationTransitions ProjectVerificationTransition[]
 
-  cardSettings       OrganizationCardSettings?
-  cardVersions       AgentCardVersion[]
-  documentTemplates  DocumentTemplate[]
-  referenceSequences ReferenceSequence[]
+  cardSettings                         OrganizationCardSettings?
+  cardVersions                         AgentCardVersion[]
+  documentTemplates                    DocumentTemplate[]
+  tenancyAgreements                    TenancyAgreement[]
+  tenancyAgreementTemplates            TenancyAgreementTemplate[]
+  propertyManagementAgreementTemplates PropertyManagementAgreementTemplate[]
+  propertyManagementAgreements         PropertyManagementAgreement[]
+  referenceSequences                   ReferenceSequence[]
 
   unitReservations           UnitReservation[]
   unitReservationTransitions UnitReservationTransition[]
@@ -169,33 +175,33 @@ model Organization {
   unitSubmissions     UnitSubmission[]
   propertySubmissions PropertySubmission[]
 
-  invoices                   Invoice[]
-  aircondMeters              AircondMeter[]
-  meterReadings              MeterReading[]
-  managementFeeConfigs       ManagementFeeConfig[]
-  ownerLedgerEntries         OwnerLedgerEntry[]
-  ownerExpenseProofs         OwnerExpenseProof[]
-  tasks                      Task[]
-  sprints                    Sprint[]
-  tickets                    Ticket[]
-  ticketHistories            TicketHistory[]
-  deviceTokens               DeviceToken[]
-  draftConfigs               DraftConfig[]
-  utilityBillingConfig       UtilityBillingConfig[]
-  invoiceDraftRuns           InvoiceDraftRun[]
-  importRuns                 ImportRun[]
-  unitUtilityBills           UnitUtilityBill[]
-  utilityAllocations         UtilityAllocation[]
-  unitUtilityBillAttachments UnitUtilityBillAttachment[]
-  carparks                   Carpark[]
-  carparkAssignments         CarparkAssignment[]
-  chargeCategories           ChargeCategory[]
-  documentSeries             DocumentSeries[]
-  billingDocuments           BillingDocument[]
-  creditApplications         CreditApplication[]
-  refunds                    Refund[]
-  unitMonthLedgers           UnitMonthLedger[]
-  ownerStatementPeriods      OwnerStatementPeriod[]
+  invoices                         Invoice[]
+  aircondMeters                    AircondMeter[]
+  meterReadings                    MeterReading[]
+  managementFeeConfigs             ManagementFeeConfig[]
+  ownerLedgerEntries               OwnerLedgerEntry[]
+  ownerExpenseProofs               OwnerExpenseProof[]
+  tasks                            Task[]
+  sprints                          Sprint[]
+  tickets                          Ticket[]
+  ticketHistories                  TicketHistory[]
+  deviceTokens                     DeviceToken[]
+  draftConfigs                     DraftConfig[]
+  utilityBillingConfig             UtilityBillingConfig[]
+  invoiceDraftRuns                 InvoiceDraftRun[]
+  importRuns                       ImportRun[]
+  unitUtilityBills                 UnitUtilityBill[]
+  utilityAllocations               UtilityAllocation[]
+  unitUtilityBillAttachments       UnitUtilityBillAttachment[]
+  carparks                         Carpark[]
+  carparkAssignments               CarparkAssignment[]
+  chargeCategories                 ChargeCategory[]
+  documentSeries                   DocumentSeries[]
+  billingDocuments                 BillingDocument[]
+  creditApplications               CreditApplication[]
+  refunds                          Refund[]
+  unitMonthLedgers                 UnitMonthLedger[]
+  ownerStatementPeriods            OwnerStatementPeriod[]
   // Phase-2 owner remittance / receivable-offset (Spec 1) — back-relations required by
   // OwnerRemittanceAllocation.organization / OwnerReceivableOffsetAllocation.organization below.
   ownerRemittanceAllocations       OwnerRemittanceAllocation[]
@@ -225,6 +231,9 @@ model User {
   passwordHash       String?
   status             String
   role               String    @default("admin")
+  /// Per-user capability exceptions. Keys are permission codes and values are
+  /// true (grant) or false (deny). Missing keys inherit the selected role.
+  permissionOverrides Json     @default("{}") @map("permission_overrides")
   userType           String    @default("operator")
   /// INVARIANT: every User where userType="operator" MUST have a paired
   /// Party row (partyType="individual") and link to it via partyId. The
@@ -542,8 +551,8 @@ model Listing {
   @@index([apartmentId, listingStatus])
   @@index([organizationId, sourcingAgentId])
   @@index([organizationId, ownerPartyId])
-  @@map("Unit")
   @@index([inChargePartyId])
+  @@map("Unit")
 }
 
 /// A physical parking bay owned via its home apartment. Replaces the old
@@ -785,6 +794,12 @@ model Tenancy {
   noticePeriodDays       Int?      @default(30)
   noticeGivenDate        DateTime?
   noticeGivenBy          String?
+  // Renewal review is deliberately explicit: autoRenew cannot distinguish
+  // "staff has not asked yet" from a confirmed "will not renew" decision.
+  renewalDecision        String    @default("pending")
+  renewalDecisionAt      DateTime?
+  renewalContactedAt     DateTime?
+  renewalNotes           String?
   overdueCount           Int       @default(0)
   lastOverdueAt          DateTime?
   // Phase-2 M1/M9 (O1 resolved 2026-06-11) — nullable, populated by import + forms
@@ -832,13 +847,15 @@ model Tenancy {
   maintenanceRequests MaintenanceRequest[]
   renovationOffsets   RenovationClaimOffset[]
 
-  invoices Invoice[]
+  invoices   Invoice[]
+  agreements TenancyAgreement[]
 
   @@unique([organizationId, tenancyCode])
   @@index([organizationId, status])
   @@index([organizationId, billingStatus])
   @@index([organizationId, unitId])
   @@index([organizationId, endDate])
+  @@index([organizationId, status, renewalDecision, endDate])
   @@index([organizationId, tenantPartyId, status])
   @@index([propertyId])
   @@index([renovationClaimId])
@@ -858,9 +875,10 @@ model LandlordTenancy {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  property     Property     @relation(fields: [propertyId], references: [id], onDelete: Restrict)
-  landlord     Party        @relation(fields: [landlordId], references: [id], onDelete: Restrict)
+  organization Organization                  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property     Property                      @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  landlord     Party                         @relation(fields: [landlordId], references: [id], onDelete: Restrict)
+  agreements   PropertyManagementAgreement[]
 
   @@index([organizationId, status])
   @@index([landlordId])
@@ -875,7 +893,9 @@ model Deposit {
   unitId         String    @db.Uuid
   type           String
   amount         Decimal   @db.Decimal(12, 2)
-  status         String    @default("held")
+  // KAEN never retains tenancy deposits. Every collected amount is payable to
+  // the unit owner, including partial collections.
+  status         String    @default("released_to_owner")
   refundedAmount Decimal   @default(0) @db.Decimal(12, 2)
   refundDate     DateTime?
   refundNotes    String?
@@ -956,67 +976,67 @@ model DocumentSeries {
 /// ('void','credited') AND categoryId IS NOT NULL — live only in migration
 /// 20260706120000_charge_duplicate_prevention (Prisma 7 can't express partial @@unique).
 model Charge {
-  id                    String    @id @default(uuid()) @db.Uuid
-  organizationId        String    @db.Uuid
-  chargeNumber          String
-  tenancyId             String?   @db.Uuid
-  unitId                String?   @db.Uuid
-  carparkId             String?   @db.Uuid
-  categoryId            String?   @db.Uuid // ChargeCategory — nullable for legacy rows (backfill script)
-  partyId               String    @db.Uuid
-  chargeType            String
-  status                String
-  description           String?
-  dueDate               DateTime  @db.Date
-  postedAt              DateTime?
-  amount                Decimal   @db.Decimal(12, 2)
-  currency              String
-  outstandingAmount     Decimal   @db.Decimal(12, 2)
-  waivedReason          String?
-  cancelledReason       String?
-  isDisputed            Boolean   @default(false)
-  disputeReason         String?
-  disputeStatus         String?
-  disputeResolution     String?
-  disputeResolvedAt     DateTime?
-  chargeableFrom        DateTime?
-  chargeableTo          DateTime?
-  lateFeeApplied        Boolean   @default(false)
-  lateFeeAmount         Decimal?  @db.Decimal(12, 2)
-  parentChargeId        String?   @db.Uuid
-  attachmentKeys        String[]
+  id                           String    @id @default(uuid()) @db.Uuid
+  organizationId               String    @db.Uuid
+  chargeNumber                 String
+  tenancyId                    String?   @db.Uuid
+  unitId                       String?   @db.Uuid
+  carparkId                    String?   @db.Uuid
+  categoryId                   String?   @db.Uuid // ChargeCategory — nullable for legacy rows (backfill script)
+  partyId                      String    @db.Uuid
+  chargeType                   String
+  status                       String
+  description                  String?
+  dueDate                      DateTime  @db.Date
+  postedAt                     DateTime?
+  amount                       Decimal   @db.Decimal(12, 2)
+  currency                     String
+  outstandingAmount            Decimal   @db.Decimal(12, 2)
+  waivedReason                 String?
+  cancelledReason              String?
+  isDisputed                   Boolean   @default(false)
+  disputeReason                String?
+  disputeStatus                String?
+  disputeResolution            String?
+  disputeResolvedAt            DateTime?
+  chargeableFrom               DateTime?
+  chargeableTo                 DateTime?
+  lateFeeApplied               Boolean   @default(false)
+  lateFeeAmount                Decimal?  @db.Decimal(12, 2)
+  parentChargeId               String?   @db.Uuid
+  attachmentKeys               String[]
   // Phase-2 additive extension points (M3/M5) — nullable, no backfill
-  invoiceId             String?   @db.Uuid
-  approvedBy            String?   @db.Uuid // User.id — plain column
-  approvedAt            DateTime?
-  billingMonth          DateTime? @db.Date // matrix period key; null on legacy rows (chargeBillingMonth() derives)
+  invoiceId                    String?   @db.Uuid
+  approvedBy                   String?   @db.Uuid // User.id — plain column
+  approvedAt                   DateTime?
+  billingMonth                 DateTime? @db.Date // matrix period key; null on legacy rows (chargeBillingMonth() derives)
   // Phase-2 (bills-grid Bill→invoice): tags charges minted by the bills-grid Bill so
   // re-Bill can find live invoices (filtered to ISSUED docs) and the double-count guard
   // can detect prior issuance. Real FK to UnitBillsGridEntry with SetNull on delete —
   // deleting a grid entry nulls this ref (never orphans it), keeping the re-Bill/
   // double-count logic (which locate live charges by sourceGridEntryId) correct.
-  sourceGridEntryId     String?   @db.Uuid // UnitBillsGridEntry.id — FK, SetNull on delete
+  sourceGridEntryId            String?   @db.Uuid // UnitBillsGridEntry.id — FK, SetNull on delete
   // Recurring-charge LINE-level provenance (recurring-charges feature). Set ONLY on charges
   // minted from a GridEntryRecurringLine (custom recurring); null for utility/other charges.
   // The re-Bill RECLAIM key stays sourceGridEntryId (which recurring charges also carry) — this
   // is for invoice-line/owner-statement provenance. FK SetNull so a removed snapshot line never
   // orphan-cascades a billed Charge. NO backfill (existing charges predate the feature).
-  sourceRecurringLineId String?   @db.Uuid
+  sourceRecurringLineId        String?   @db.Uuid
   // Bill-expenses feature (spec R2): per-charge SST override. Null = derive from
   // category.defaultSstRate (today's behavior). Set to 0 or the standard rate by
   // expense minting so SST follows the expense's withSST flag, not the routing category.
-  sstRate               Decimal?  @db.Decimal(5, 2)
+  sstRate                      Decimal?  @db.Decimal(5, 2)
   // Bill-expenses feature (spec R4): provenance of a charge minted from a GridExpense.
   // FK SetNull so deleting the grid expense nulls this ref (never orphans the billed
   // charge). Null for all non-expense charges. Drives attachment resolution + re-Bill.
-  sourceGridExpenseId   String?   @db.Uuid
+  sourceGridExpenseId          String?   @db.Uuid
   // Paid-on-behalf metadata (Task 9) — DISPLAY-ONLY, additive nullable. When KAEN
   // settled this expense (e.g. fire insurance) for the owner, who was paid + the
   // supplier reference + the payment date. Copied verbatim onto the synced
   // OwnerLedgerEntry; NEVER affects any money math.
-  payeeName             String? // who KAEN paid on the owner's behalf (e.g. "Allianz")
-  paidOnBehalfRef       String? // supplier reference / invoice no. (e.g. "INV-1")
-  paidOnBehalfDate      DateTime? @db.Date // date KAEN paid the payee
+  payeeName                    String? // who KAEN paid on the owner's behalf (e.g. "Allianz")
+  paidOnBehalfRef              String? // supplier reference / invoice no. (e.g. "INV-1")
+  paidOnBehalfDate             DateTime? @db.Date // date KAEN paid the payee
   // Phase-0 agency-accounting economic-treatment (additive, nullable, forward-only — no backfill).
   // Records WHO funded the cost, what the money IS, who it settles to, and its tax nature —
   // distinct questions ChargeCategory.family alone cannot answer. NEVER read for SST in this phase.
@@ -1025,44 +1045,44 @@ model Charge {
   // previously listed only 4 and omitted "tenant_funded". Do not edit the list here:
   // change FUNDED_BY, then the constraint, then run the drift test
   // (apps/api/src/modules/billing/__tests__/charge-vocabulary-constraints.integration.test.ts).
-  fundedBy              String? // FUNDED_BY: owner|manager|tenant_direct|tenant_funded|third_party
-  revenueRecognition    String? // "manager_revenue"|"owner_funds"|"recovery_of_advance"|"third_party_collection"
-  settlementRecipient   String? // "manager"|"owner"|"third_party"|"none"
+  fundedBy                     String? // FUNDED_BY: owner|manager|tenant_direct|tenant_funded|third_party
+  revenueRecognition           String? // "manager_revenue"|"owner_funds"|"recovery_of_advance"|"third_party_collection"
+  settlementRecipient          String? // "manager"|"owner"|"third_party"|"none"
   // DB-ENFORCED: CHECK "Charge_nature_check" (migration 20260727130000), vocabulary
   // PROFIT_EXPENSE (@kason/shared). NULL still permitted (legacy rows).
-  nature                String? // "expense" | "profit" — drives EB/deduction routing (ENABLE_CHARGE_NATURE_ROUTING)
-  sourceSupplier        String? // e.g. "TNB", "Air Selangor"
-  sourceInvoiceIssuedTo String? // "owner"|"tenant"|"manager"
-  actualCost            Decimal?  @db.Decimal(12, 2)
-  markupAmount          Decimal?  @db.Decimal(12, 2)
-  taxTreatment          String? // "taxable_service"|"exempt"|"out_of_scope_disbursement"|"reimbursement"|"pending_review"
-  taxRate               Decimal?  @db.Decimal(5, 2)
-  taxReason             String?
-  taxDeterminedAt       DateTime?
+  nature                       String? // "expense" | "profit" — drives EB/deduction routing (ENABLE_CHARGE_NATURE_ROUTING)
+  sourceSupplier               String? // e.g. "TNB", "Air Selangor"
+  sourceInvoiceIssuedTo        String? // "owner"|"tenant"|"manager"
+  actualCost                   Decimal?  @db.Decimal(12, 2)
+  markupAmount                 Decimal?  @db.Decimal(12, 2)
+  taxTreatment                 String? // "taxable_service"|"exempt"|"out_of_scope_disbursement"|"reimbursement"|"pending_review"
+  taxRate                      Decimal?  @db.Decimal(5, 2)
+  taxReason                    String?
+  taxDeterminedAt              DateTime?
   // Spec 1 rent-reclassification (Phase 1) — additive, nullable, forward-only. Authoritative
   // routing input alongside the economic-treatment columns above. commercialPurpose is NEVER
   // inferred from category name at runtime. provenance* is the Spec-3 work-order seam.
-  commercialPurpose             String? // RENT|UTILITY|CARPARK|SERVICE|MANAGEMENT_FEE|OTHER_OWNER_COLLECTION
-  provenanceType                String?
-  provenanceId                  String?   @db.Uuid
-  nonBillable                   Boolean   @default(false)
-  economicClassificationStatus  String? // null | "NEEDS_ECONOMIC_CLASSIFICATION"
-  economicClassificationReason  String?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  commercialPurpose            String? // RENT|UTILITY|CARPARK|SERVICE|MANAGEMENT_FEE|OTHER_OWNER_COLLECTION
+  provenanceType               String?
+  provenanceId                 String?   @db.Uuid
+  nonBillable                  Boolean   @default(false)
+  economicClassificationStatus String? // null | "NEEDS_ECONOMIC_CLASSIFICATION"
+  economicClassificationReason String?
+  createdAt                    DateTime  @default(now())
+  updatedAt                    DateTime  @updatedAt
 
-  organization        Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  tenancy             Tenancy?                @relation(fields: [tenancyId], references: [id], onDelete: SetNull)
-  unit                Listing?                @relation(fields: [unitId], references: [id], onDelete: SetNull)
-  carpark             Carpark?                @relation(fields: [carparkId], references: [id], onDelete: SetNull)
-  category            ChargeCategory?         @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  invoice             Invoice?                @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
-  sourceGridEntry     UnitBillsGridEntry?     @relation("GridEntrySourcedCharges", fields: [sourceGridEntryId], references: [id], onDelete: SetNull)
-  sourceRecurringLine GridEntryRecurringLine? @relation("RecurringLineSourcedCharges", fields: [sourceRecurringLineId], references: [id], onDelete: SetNull)
-  sourceGridExpense   GridExpense?            @relation("GridExpenseSourcedCharges", fields: [sourceGridExpenseId], references: [id], onDelete: SetNull)
-  party               Party                   @relation(fields: [partyId], references: [id], onDelete: Cascade)
-  events              ChargeEvent[]
-  allocations         PaymentAllocation[]
+  organization                     Organization                      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tenancy                          Tenancy?                          @relation(fields: [tenancyId], references: [id], onDelete: SetNull)
+  unit                             Listing?                          @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  carpark                          Carpark?                          @relation(fields: [carparkId], references: [id], onDelete: SetNull)
+  category                         ChargeCategory?                   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  invoice                          Invoice?                          @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  sourceGridEntry                  UnitBillsGridEntry?               @relation("GridEntrySourcedCharges", fields: [sourceGridEntryId], references: [id], onDelete: SetNull)
+  sourceRecurringLine              GridEntryRecurringLine?           @relation("RecurringLineSourcedCharges", fields: [sourceRecurringLineId], references: [id], onDelete: SetNull)
+  sourceGridExpense                GridExpense?                      @relation("GridExpenseSourcedCharges", fields: [sourceGridExpenseId], references: [id], onDelete: SetNull)
+  party                            Party                             @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  events                           ChargeEvent[]
+  allocations                      PaymentAllocation[]
   // Phase-2 owner remittance / receivable-offset (Spec 1) — back-relation for
   // OwnerReceivableOffsetAllocation.charge (the IVOWN receivable charge an offset settled).
   ownerReceivableOffsetAllocations OwnerReceivableOffsetAllocation[]
@@ -1157,14 +1177,14 @@ model LateFeeRule {
 }
 
 model Payment {
-  id                String   @id @default(uuid()) @db.Uuid
-  organizationId    String   @db.Uuid
+  id                String    @id @default(uuid()) @db.Uuid
+  organizationId    String    @db.Uuid
   paymentNumber     String
-  partyId           String   @db.Uuid
+  partyId           String    @db.Uuid
   paymentType       String
   paymentMethod     String
   status            String
-  amount            Decimal  @db.Decimal(12, 2)
+  amount            Decimal   @db.Decimal(12, 2)
   currency          String
   receivedAt        DateTime
   referenceNote     String?
@@ -1182,7 +1202,7 @@ model Payment {
   gatewayStatus     String?
   idempotencyKey    String?
   // transfer-slip / proof-of-payment uploads — Yannie's fraud-check artifact (minutes 2B.2)
-  attachmentKeys    String[] @default([])
+  attachmentKeys    String[]  @default([])
   // Slip verification (tenant-submitted bank transfers). A tenant submits a
   // payment + slip as `pending_approval`; an admin either posts it (status
   // "posted") or refuses it (status "rejected"). These three are stamped ONLY
@@ -1190,9 +1210,9 @@ model Payment {
   // to them so they can re-submit), unlike `referenceNote`, which is internal.
   rejectionReason   String?
   reviewedAt        DateTime?
-  reviewedById      String?  @db.Uuid // User.id — plain column, no relation
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  reviewedById      String?   @db.Uuid // User.id — plain column, no relation
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   organization      Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   party             Party                   @relation(fields: [partyId], references: [id], onDelete: Cascade)
@@ -1270,8 +1290,8 @@ model CommissionBill {
   @@unique([organizationId, billNumber])
   @@index([organizationId, status])
   @@index([organizationId, partyId])
-  @@map("Bill") // model renamed Bill → CommissionBill (2026-07-22); table name preserved → zero data migration
   @@index([propertyId])
+  @@map("Bill") // model renamed Bill → CommissionBill (2026-07-22); table name preserved → zero data migration
 }
 
 model CashMovement {
@@ -2293,6 +2313,7 @@ model DocumentTemplate {
   orgEmail        String?
   orgContact      String?
   logoKey         String?
+  bodyTemplate    String?  @db.Text
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -2300,6 +2321,84 @@ model DocumentTemplate {
 
   @@unique([organizationId, docType])
   @@index([organizationId])
+}
+
+model TenancyAgreement {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  tenancyId      String    @db.Uuid
+  version        Int
+  status         String    @default("draft") // draft | ready_review | approved | generated | sent_for_signature | signed | superseded
+  contentHtml    String    @db.Text
+  fileName       String?
+  pdfKey         String?
+  generatedAt    DateTime?
+  generatedById  String?   @db.Uuid
+  templateId     String?   @db.Uuid
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tenancy      Tenancy      @relation(fields: [tenancyId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, tenancyId, version])
+  @@index([organizationId, tenancyId, status])
+}
+
+model TenancyAgreementTemplate {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String
+  description    String?
+  contentHtml    String   @db.Text
+  isDefault      Boolean  @default(false)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, name])
+  @@index([organizationId, active, isDefault])
+}
+
+model PropertyManagementAgreement {
+  id                String    @id @default(uuid()) @db.Uuid
+  organizationId    String    @db.Uuid
+  landlordTenancyId String    @db.Uuid
+  templateId        String?   @db.Uuid
+  version           Int
+  status            String    @default("draft") // draft | generated | signed | superseded
+  contentHtml       String    @db.Text
+  fileName          String?
+  pdfKey            String?
+  generatedAt       DateTime?
+  generatedById     String?   @db.Uuid
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  landlordTenancy LandlordTenancy @relation(fields: [landlordTenancyId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, landlordTenancyId, version])
+  @@index([organizationId, landlordTenancyId, status])
+}
+
+model PropertyManagementAgreementTemplate {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String
+  description    String?
+  contentHtml    String   @db.Text
+  isDefault      Boolean  @default(false)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, name])
+  @@index([organizationId, active, isDefault])
 }
 
 model ReferenceSequence {
@@ -2323,35 +2422,35 @@ model ReferenceSequence {
 // (no FK sprawl); apartment/listing/property are denormalized so unit-first
 // views are free.
 model BillingDocument {
-  id                     String    @id @default(uuid()) @db.Uuid
-  organizationId         String    @db.Uuid
-  docType                String // "invoice" | "debit_note" | "credit_note" | "refund_note"
-  documentNumber         String // series-minted, e.g. "IVTEN-0001" / "DEP-2026-0007"
-  seriesId               String    @db.Uuid // → DocumentSeries (plain column)
-  status                 String    @default("issued") // issued | partially_settled | settled | offset
-  issuedAt               DateTime  @default(now())
-  issuedById             String    @db.Uuid // User.id — plain column
-  billingMonth           DateTime? @db.Date // first-of-month; null for month-less docs
-  counterpartyType       String // "tenant" | "owner"
-  partyId                String    @db.Uuid // → Party (plain column)
-  tenancyId              String?   @db.Uuid
-  propertyId             String?   @db.Uuid
-  apartmentId            String?   @db.Uuid
-  listingId              String?   @db.Uuid
-  originalDocumentId     String?   @db.Uuid // MANDATORY for credit_note/refund_note (LHDN original ref)
-  statementInvoiceId     String?   @db.Uuid // → Invoice (owner_statement) for IVOWN docs + statement CNs
-  creditAmount           Decimal?  @db.Decimal(12, 2) // credit_note only: collected portion = spendable credit
-  reason                 String? // CN/RN: the void/refund reason
-  subtotal               Decimal   @db.Decimal(12, 2)
-  sstAmount              Decimal   @default(0) @db.Decimal(12, 2)
-  total                  Decimal   @db.Decimal(12, 2)
-  pdfKey                 String?
-  idempotencyKey         String?
-  paymentId              String?   @db.Uuid // → Payment (plain column) — links a receipt to its Payment (P2 R13)
-  documentStatus         String    @default("ISSUED") // DRAFT | ISSUED | CANCELLED | SUPERSEDED (R6)
-  settlementStatus       String    @default("UNPAID") // UNPAID | PARTIALLY_PAID | PAID | OVERPAID (derived, R7)
-  taxStatus              String    @default("NOT_REQUIRED") // NOT_REQUIRED | NOT_SUBMITTED | SUBMITTED | VALID | INVALID | CANCELLED (column only; Phase 3)
-  supersededByDocumentId String?   @db.Uuid // set on a cancel-and-replaced original → its replacement (plain column, R3)
+  id                         String    @id @default(uuid()) @db.Uuid
+  organizationId             String    @db.Uuid
+  docType                    String // "invoice" | "debit_note" | "credit_note" | "refund_note"
+  documentNumber             String // series-minted, e.g. "IVTEN-0001" / "DEP-2026-0007"
+  seriesId                   String    @db.Uuid // → DocumentSeries (plain column)
+  status                     String    @default("issued") // issued | partially_settled | settled | offset
+  issuedAt                   DateTime  @default(now())
+  issuedById                 String    @db.Uuid // User.id — plain column
+  billingMonth               DateTime? @db.Date // first-of-month; null for month-less docs
+  counterpartyType           String // "tenant" | "owner"
+  partyId                    String    @db.Uuid // → Party (plain column)
+  tenancyId                  String?   @db.Uuid
+  propertyId                 String?   @db.Uuid
+  apartmentId                String?   @db.Uuid
+  listingId                  String?   @db.Uuid
+  originalDocumentId         String?   @db.Uuid // MANDATORY for credit_note/refund_note (LHDN original ref)
+  statementInvoiceId         String?   @db.Uuid // → Invoice (owner_statement) for IVOWN docs + statement CNs
+  creditAmount               Decimal?  @db.Decimal(12, 2) // credit_note only: collected portion = spendable credit
+  reason                     String? // CN/RN: the void/refund reason
+  subtotal                   Decimal   @db.Decimal(12, 2)
+  sstAmount                  Decimal   @default(0) @db.Decimal(12, 2)
+  total                      Decimal   @db.Decimal(12, 2)
+  pdfKey                     String?
+  idempotencyKey             String?
+  paymentId                  String?   @db.Uuid // → Payment (plain column) — links a receipt to its Payment (P2 R13)
+  documentStatus             String    @default("ISSUED") // DRAFT | ISSUED | CANCELLED | SUPERSEDED (R6)
+  settlementStatus           String    @default("UNPAID") // UNPAID | PARTIALLY_PAID | PAID | OVERPAID (derived, R7)
+  taxStatus                  String    @default("NOT_REQUIRED") // NOT_REQUIRED | NOT_SUBMITTED | SUBMITTED | VALID | INVALID | CANCELLED (column only; Phase 3)
+  supersededByDocumentId     String?   @db.Uuid // set on a cancel-and-replaced original → its replacement (plain column, R3)
   /// Proforma spec R3 (2026-08-10). Set on a GRADUATED `invoice` → the `proforma` whose
   /// lines it was minted from. Null on every other document, including the proforma itself.
   ///
@@ -2365,7 +2464,7 @@ model BillingDocument {
   ///
   /// Also the immutability marker (R5): a document with this set is a real tax invoice
   /// against real money and can NEVER enter the grid's reclaimable set.
-  proformaDocumentId     String?   @db.Uuid
+  proformaDocumentId         String?   @db.Uuid
   // Spec 1 rent-reclassification (Phase 1) — additive, nullable. docType stays the accounting
   // form; commercialDocumentType is the business purpose; ledgerTreatment is the money fate.
   commercialDocumentType     String? // RENTAL_INVOICE|OWNER_COLLECTION_INVOICE|TENANT_SERVICE_INVOICE|OWNER_SERVICE_INVOICE
@@ -2374,9 +2473,9 @@ model BillingDocument {
   collectedOnBehalfOfOwnerId String?   @db.Uuid
   ownerRefDiffersReason      String?
   legacyClassification       String? // e.g. LEGACY_RENT_MISCLASSIFICATION (Phase-3 migration only)
-  meta                   Json?
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  meta                       Json?
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
 
   organization       Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   lines              BillingDocumentLine[]
@@ -2476,24 +2575,34 @@ model Refund {
 // existing table is touched. Downstream fate wiring (EB- / owner-ledger / KAEN
 // opex) lands in P4/P5/P6; recoveryStatus carries that lifecycle.
 model SupplierExpense {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @db.Uuid
-  expenseNumber  String // EXP- series-minted, e.g. "EXP-0001"
-  supplierName   String
-  supplierRef    String? // supplier invoice / bill reference
-  expenseDate    DateTime @db.Date
-  totalAmount    Decimal  @db.Decimal(12, 2)
-  propertyId     String?  @db.Uuid // plain column (denormalised search)
-  apartmentId    String?  @db.Uuid
-  unitId         String?  @db.Uuid // → Listing (the room); plain column
-  description    String?
-  status         String   @default("recorded") // recorded | void
-  createdById    String   @db.Uuid // User.id — plain column
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                  String    @id @default(uuid()) @db.Uuid
+  organizationId      String    @db.Uuid
+  expenseNumber       String // EXP- series-minted, e.g. "EXP-0001"
+  supplierName        String
+  supplierRef         String? // supplier invoice / bill reference
+  expenseDate         DateTime  @db.Date
+  totalAmount         Decimal   @db.Decimal(12, 2)
+  propertyId          String?   @db.Uuid // plain column (denormalised search)
+  apartmentId         String?   @db.Uuid
+  unitId              String?   @db.Uuid // → Listing (the room); plain column
+  description         String?
+  paymentSource       String    @default("company_bank") // company_bank | employee_advance | supplier_credit
+  claimantName        String?
+  costPurpose         String    @default("unit_specific") // unit_specific | shared_materials | company_overhead
+  approvalStatus      String    @default("approved") // submitted | approved | rejected
+  reimbursementStatus String    @default("not_applicable") // not_applicable | awaiting_reimbursement | partial | paid
+  approvedById        String?   @db.Uuid
+  approvedAt          DateTime?
+  notes               String?
+  status              String    @default("recorded") // recorded | void
+  createdById         String    @db.Uuid // User.id — plain column
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  organization Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  allocations  SupplierExpenseAllocation[]
+  organization        Organization                    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  allocations         SupplierExpenseAllocation[]
+  costAssignments     SupplierExpenseCostAssignment[]
+  bankCostAllocations BankCostAllocation[]
 
   @@unique([organizationId, expenseNumber])
   @@index([organizationId, expenseDate])
@@ -2516,8 +2625,8 @@ model SupplierExpenseAllocation {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  supplierExpense SupplierExpense @relation(fields: [supplierExpenseId], references: [id], onDelete: Cascade)
+  organization          Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplierExpense       SupplierExpense        @relation(fields: [supplierExpenseId], references: [id], onDelete: Cascade)
   // P6 back-relation — at most one per allocation in practice (organizationId +
   // sourceExpenseAllocationId is unique on KaenOperatingExpense below), modelled as a
   // list because sourceExpenseAllocationId alone isn't a single-column unique key.
@@ -2546,7 +2655,7 @@ model KaenOperatingExpense {
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization            Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   // Restrict (not Cascade): SupplierExpense/Allocation never hard-delete today (soft
   // status "recorded"|"void" only) — if a hard-delete path is ever added, it must NOT
   // silently vaporize agency P&L history; force a deliberate decision at that point.
@@ -2742,29 +2851,29 @@ model UnitReservationTransition {
 }
 
 model Invoice {
-  id             String    @id @default(uuid()) @db.Uuid
-  organizationId String    @db.Uuid
-  invoiceNumber  String
-  partyId        String    @db.Uuid
-  ownerPartyId   String?   @db.Uuid
-  tenancyId      String?   @db.Uuid
-  propertyId     String?   @db.Uuid
-  apartmentId    String?   @db.Uuid // owner_statement per-unit scope; null = legacy owner-combined
-  invoiceType    String // "tenant_rental" | "tenant_aircon" | "owner_statement"
-  status         String    @default("draft") // draft → approved → sent → paid | void
-  invoiceDate    DateTime
-  dueDate        DateTime?
-  periodMonth    DateTime? // first-of-month billing period (M5 queue filter; never parse from idempotencyKey)
-  totalAmount    Decimal   @db.Decimal(12, 2)
-  sstAmount      Decimal?  @db.Decimal(12, 2)
-  currency       String    @default("MYR") // 2026-06-11 gap pass — Charge/Payment/ChargeTemplate all carry currency
-  pdfKey         String?
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String    @db.Uuid
+  invoiceNumber   String
+  partyId         String    @db.Uuid
+  ownerPartyId    String?   @db.Uuid
+  tenancyId       String?   @db.Uuid
+  propertyId      String?   @db.Uuid
+  apartmentId     String?   @db.Uuid // owner_statement per-unit scope; null = legacy owner-combined
+  invoiceType     String // "tenant_rental" | "tenant_aircon" | "owner_statement"
+  status          String    @default("draft") // draft → approved → sent → paid | void
+  invoiceDate     DateTime
+  dueDate         DateTime?
+  periodMonth     DateTime? // first-of-month billing period (M5 queue filter; never parse from idempotencyKey)
+  totalAmount     Decimal   @db.Decimal(12, 2)
+  sstAmount       Decimal?  @db.Decimal(12, 2)
+  currency        String    @default("MYR") // 2026-06-11 gap pass — Charge/Payment/ChargeTemplate all carry currency
+  pdfKey          String?
   // M6 statement-level bulk receipts
-  attachmentKeys String[]  @default([])
+  attachmentKeys  String[]  @default([])
   // M5 draft dedupe: "draft:<tenancyId>:<periodMonth>"; M3 payment-create dedupe
-  idempotencyKey String?
-  approvedBy     String?   @db.Uuid // User.id (admin actor) — plain column, no FK
-  approvedAt     DateTime?
+  idempotencyKey  String?
+  approvedBy      String?   @db.Uuid // User.id (admin actor) — plain column, no FK
+  approvedAt      DateTime?
   // Accounting-doc redesign P1 (2026-07-23): human-facing sequential DISPLAY number
   // for an owner_statement Invoice, e.g. "OST-0001" — minted from the OST
   // DocumentSeries (mintDocumentNumberTx) at the draft→approved transition
@@ -2773,8 +2882,8 @@ model Invoice {
   // `invoiceNumber`'s "OS-<mm>-<owner8>[-<apt8>]" slug, untouched. Additive +
   // nullable: flag off, or any non-owner_statement Invoice, leaves this null.
   statementNumber String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   party        Party        @relation("InvoiceBillTo", fields: [partyId], references: [id], onDelete: Cascade)
@@ -2843,6 +2952,7 @@ model ManagementFeeConfig {
   organizationId   String    @db.Uuid
   ownerPartyId     String    @db.Uuid // owner is per-unit via Listing.ownerPartyId (resolution moved off LandlordTenancy.landlordId)
   propertyId       String?   @db.Uuid // null = all the owner's properties — plain column
+  apartmentId      String?   @db.Uuid // null = property/owner default; non-null = this physical unit overrides both
   feeType          String // "percent" | "fixed" | "cap"
   feeValue         Decimal   @db.Decimal(10, 2)
   capAmount        Decimal?  @db.Decimal(10, 2)
@@ -2870,12 +2980,55 @@ model ManagementFeeConfig {
   ownerParty   Party        @relation("MgmtFeeOwner", fields: [ownerPartyId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, ownerPartyId])
+  @@index([organizationId, apartmentId])
+}
+
+/// Amount-only attribution of a shared purchase to a unit. This deliberately
+/// does not track SKU/quantity/stock movement; it only attributes cost value.
+model SupplierExpenseCostAssignment {
+  id                String   @id @default(uuid()) @db.Uuid
+  organizationId    String   @db.Uuid
+  supplierExpenseId String   @db.Uuid
+  apartmentId       String   @db.Uuid
+  gridExpenseId     String?  @db.Uuid
+  amount            Decimal  @db.Decimal(12, 2)
+  description       String?
+  assignedById      String   @db.Uuid
+  createdAt         DateTime @default(now())
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplierExpense SupplierExpense @relation(fields: [supplierExpenseId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, supplierExpenseId])
+  @@index([organizationId, apartmentId])
+}
+
+/// Settlement allocation for a real bank Debit. Exactly one target is filled.
+/// This never creates a second expense; it only records which costs were paid.
+model BankCostAllocation {
+  id                String   @id @default(uuid()) @db.Uuid
+  organizationId    String   @db.Uuid
+  bankTransactionId String   @db.Uuid
+  supplierExpenseId String?  @db.Uuid
+  gridExpenseId     String?  @db.Uuid
+  amount            Decimal  @db.Decimal(12, 2)
+  createdById       String   @db.Uuid
+  createdAt         DateTime @default(now())
+
+  bankTransaction BankReconciliationTransaction @relation(fields: [bankTransactionId], references: [id], onDelete: Restrict)
+  supplierExpense SupplierExpense?              @relation(fields: [supplierExpenseId], references: [id], onDelete: Restrict)
+  gridExpense     GridExpense?                  @relation(fields: [gridExpenseId], references: [id], onDelete: Restrict)
+  organization    Organization                  @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, bankTransactionId])
+  @@index([organizationId, supplierExpenseId])
+  @@index([organizationId, gridExpenseId])
 }
 
 model OwnerLedgerEntry {
-  id                  String    @id @default(uuid()) @db.Uuid
-  organizationId      String    @db.Uuid
-  ownerPartyId        String    @db.Uuid // owner is per-unit via Listing.ownerPartyId (resolution moved off LandlordTenancy.landlordId) — plain column
+  id                      String    @id @default(uuid()) @db.Uuid
+  organizationId          String    @db.Uuid
+  ownerPartyId            String    @db.Uuid // owner is per-unit via Listing.ownerPartyId (resolution moved off LandlordTenancy.landlordId) — plain column
   // Task 6a (Phase-2 owner remittance): NULLABLE. null = this row belongs to the
   // owner OVERALL and is not attributable to one property — NOT "unknown", NOT
   // invalid data, NOT a nil-UUID sentinel. A cross-property (R9) or combined-scope
@@ -2890,52 +3043,52 @@ model OwnerLedgerEntry {
   // money-critical balance primitive (computeOwnerRunningBalance,
   // resolveOwnerBalance, computeAvailableOwnerPayableC) is propertyId-agnostic —
   // none of them filter or group by this column.
-  propertyId          String?   @db.Uuid // plain column
-  apartmentId         String?   @db.Uuid // plain column; the Apartment (unit) anchor
-  listingId           String?   @db.Uuid // the per-room "Unit"; null = property-level
-  tenancyId           String?   @db.Uuid
-  statementMonth      DateTime  @db.Date // first-of-month grouping key
-  transactionDate     DateTime  @db.Date
-  direction           String // "income" | "expense" | "payout"
-  category            String // OWNER_LEDGER_CATEGORIES
-  description         String?
-  remarks             String?
-  amount              Decimal   @db.Decimal(12, 2)
-  sstAmount           Decimal?  @db.Decimal(12, 2)
-  paidBy              String // OWNER_PAID_BY
-  paymentStatus       String    @default("paid")
-  taxCategory         String    @default("check_with_tax_agent")
-  includeInPayout     Boolean   @default(true) // derived: paidBy == "kaen"
-  attachmentKeys      String[]  @default([])
-  sourceType          String    @default("manual") // "rent" | "statement" | "utility" | "manual"
-  sourceChargeId      String?   @db.Uuid
-  sourceInvoiceId     String?   @db.Uuid
-  sourceUtilityBillId String?   @db.Uuid
+  propertyId              String?   @db.Uuid // plain column
+  apartmentId             String?   @db.Uuid // plain column; the Apartment (unit) anchor
+  listingId               String?   @db.Uuid // the per-room "Unit"; null = property-level
+  tenancyId               String?   @db.Uuid
+  statementMonth          DateTime  @db.Date // first-of-month grouping key
+  transactionDate         DateTime  @db.Date
+  direction               String // "income" | "expense" | "payout"
+  category                String // OWNER_LEDGER_CATEGORIES
+  description             String?
+  remarks                 String?
+  amount                  Decimal   @db.Decimal(12, 2)
+  sstAmount               Decimal?  @db.Decimal(12, 2)
+  paidBy                  String // OWNER_PAID_BY
+  paymentStatus           String    @default("paid")
+  taxCategory             String    @default("check_with_tax_agent")
+  includeInPayout         Boolean   @default(true) // derived: paidBy == "kaen"
+  attachmentKeys          String[]  @default([])
+  sourceType              String    @default("manual") // "rent" | "statement" | "utility" | "manual"
+  sourceChargeId          String?   @db.Uuid
+  sourceInvoiceId         String?   @db.Uuid
+  sourceUtilityBillId     String?   @db.Uuid
   // R3 forward-collection idempotency: the triggering PaymentAllocation / PaymentAllocationReversal
   // event id. Non-null only on prior_period_collection / prior_period_collection_reversal rows.
-  sourceAllocationEventId String? @db.Uuid
+  sourceAllocationEventId String?   @db.Uuid
   // Paid-on-behalf metadata (Task 9) — DISPLAY-ONLY, additive nullable. Copied from
   // the source Charge by owner-ledger.sync (source-2) so the statement/receipt can
   // document "KAEN paid <payee> on your behalf". NEVER part of the payout formula.
-  payeeName           String? // who KAEN paid on the owner's behalf (e.g. "Allianz")
-  paidOnBehalfRef     String? // supplier reference / invoice no. (e.g. "INV-1")
-  paidOnBehalfDate    DateTime? @db.Date // date KAEN paid the payee
-  status              String    @default("active") // "active" | "void"
-  createdById         String    @db.Uuid // User.id — plain column
-  updatedById         String    @db.Uuid // User.id — plain column; sync sentinel id ⇒ "untouched by admin"
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  payeeName               String? // who KAEN paid on the owner's behalf (e.g. "Allianz")
+  paidOnBehalfRef         String? // supplier reference / invoice no. (e.g. "INV-1")
+  paidOnBehalfDate        DateTime? @db.Date // date KAEN paid the payee
+  status                  String    @default("active") // "active" | "void"
+  createdById             String    @db.Uuid // User.id — plain column
+  updatedById             String    @db.Uuid // User.id — plain column; sync sentinel id ⇒ "untouched by admin"
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   // Spec 1 Phase-2 owner remittance / offset / reversal / idempotency — additive, nullable.
-  settlementKind     String?   // OWNER_REMITTANCE | OWNER_RECEIVABLE_OFFSET | PRE_STATEMENT_REMITTANCE (null = legacy/sync payout)
-  paymentMethod      String?   // bank_transfer | cash | cheque | other  (real remittances only; null for offsets)
-  bankReference      String?
-  proofKey           String?
-  proofStatus        String?   // PROOF_PENDING | PROOF_ATTACHED
-  memo               String?
-  idempotencyKey     String?
-  requestFingerprint String?
-  reversalOfEntryId  String?   @db.Uuid // ONE-WAY: set only on a reversal entry; original carries no back-pointer
+  settlementKind        String? // OWNER_REMITTANCE | OWNER_RECEIVABLE_OFFSET | PRE_STATEMENT_REMITTANCE (null = legacy/sync payout)
+  paymentMethod         String? // bank_transfer | cash | cheque | other  (real remittances only; null for offsets)
+  bankReference         String?
+  proofKey              String?
+  proofStatus           String? // PROOF_PENDING | PROOF_ATTACHED
+  memo                  String?
+  idempotencyKey        String?
+  requestFingerprint    String?
+  reversalOfEntryId     String?                           @db.Uuid // ONE-WAY: set only on a reversal entry; original carries no back-pointer
   // Accounting-doc redesign P1 (2026-07-23): human-facing sequential DISPLAY number
   // for a real cash-out payout row, e.g. "REM-0001" — minted from the REM
   // DocumentSeries (mintDocumentNumberTx) ONLY at the recordRemittanceService write
@@ -2944,7 +3097,7 @@ model OwnerLedgerEntry {
   // OWNER_RECEIVABLE_OFFSET payout or a reversal row (reversalOfEntryId set) —
   // neither is new cash to the owner. NEVER the dedupe/identity key — that stays
   // `idempotencyKey`, untouched. Additive + nullable.
-  remittanceNumber   String?
+  remittanceNumber      String?
   remittanceAllocations OwnerRemittanceAllocation[]
   offsetAllocations     OwnerReceivableOffsetAllocation[]
 
@@ -2967,12 +3120,12 @@ model OwnerLedgerEntry {
   // C2: utility rows carry no sourceChargeId; deduplicate on sourceUtilityBillId instead.
   // Postgres NULLs-distinct ⇒ manual/rent/statement rows (null sourceUtilityBillId) are unconstrained.
   @@unique([organizationId, sourceType, sourceUtilityBillId])
+  // Spec 1 Phase-2 owner remittance / offset / reversal / idempotency indexes.
+  @@unique([organizationId, settlementKind, idempotencyKey])
   @@index([organizationId, ownerPartyId, statementMonth])
   @@index([organizationId, apartmentId, statementMonth])
   @@index([organizationId, propertyId])
   @@index([organizationId, direction, category])
-  // Spec 1 Phase-2 owner remittance / offset / reversal / idempotency indexes.
-  @@unique([organizationId, settlementKind, idempotencyKey])
   @@index([organizationId, ownerPartyId, settlementKind])
   @@index([reversalOfEntryId])
 }
@@ -3003,7 +3156,7 @@ model OwnerStatementPeriod {
   firstFrozenNetC      Int?
   freezeRulesetVersion Int?
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization               Organization                      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   // Spec 1 Phase-2 owner remittance — back-relation for OwnerRemittanceAllocation.period.
   ownerRemittanceAllocations OwnerRemittanceAllocation[]
   freezeManifestRows         OwnerStatementFreezeManifestRow[]
@@ -3015,33 +3168,35 @@ model OwnerStatementPeriod {
 }
 
 model OwnerRemittanceAllocation {
-  id                    String   @id @default(uuid()) @db.Uuid
-  organizationId        String   @db.Uuid
-  payoutEntryId         String   @db.Uuid // → OwnerLedgerEntry (the payout row)
-  ownerStatementPeriodId String  @db.Uuid // → OwnerStatementPeriod (owner×apartment×month)
-  allocatedAmountC      Int      // integer cents; > 0
-  createdById           String   @db.Uuid
-  createdAt             DateTime @default(now())
-  organization  Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  payoutEntry   OwnerLedgerEntry     @relation(fields: [payoutEntryId], references: [id], onDelete: Cascade)
-  period        OwnerStatementPeriod @relation(fields: [ownerStatementPeriodId], references: [id], onDelete: Restrict)
+  id                     String               @id @default(uuid()) @db.Uuid
+  organizationId         String               @db.Uuid
+  payoutEntryId          String               @db.Uuid // → OwnerLedgerEntry (the payout row)
+  ownerStatementPeriodId String               @db.Uuid // → OwnerStatementPeriod (owner×apartment×month)
+  allocatedAmountC       Int // integer cents; > 0
+  createdById            String               @db.Uuid
+  createdAt              DateTime             @default(now())
+  organization           Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payoutEntry            OwnerLedgerEntry     @relation(fields: [payoutEntryId], references: [id], onDelete: Cascade)
+  period                 OwnerStatementPeriod @relation(fields: [ownerStatementPeriodId], references: [id], onDelete: Restrict)
+
   @@unique([organizationId, payoutEntryId, ownerStatementPeriodId])
   @@index([organizationId, ownerStatementPeriodId])
   @@index([organizationId, payoutEntryId])
 }
 
 model OwnerReceivableOffsetAllocation {
-  id                   String   @id @default(uuid()) @db.Uuid
-  organizationId       String   @db.Uuid
-  offsetEntryId        String   @db.Uuid // → OwnerLedgerEntry (settlementKind=OWNER_RECEIVABLE_OFFSET)
-  chargeId             String   @db.Uuid // → Charge (the IVOWN receivable charge whose outstanding this settled)
-  billingDocumentLineId String? @db.Uuid // display/trace only; settlement is at the charge grain
-  allocatedAmountC     Int      // integer cents; > 0
-  createdById          String   @db.Uuid
-  createdAt            DateTime @default(now())
-  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  offsetEntry  OwnerLedgerEntry @relation(fields: [offsetEntryId], references: [id], onDelete: Cascade)
-  charge       Charge           @relation(fields: [chargeId], references: [id], onDelete: Restrict)
+  id                    String           @id @default(uuid()) @db.Uuid
+  organizationId        String           @db.Uuid
+  offsetEntryId         String           @db.Uuid // → OwnerLedgerEntry (settlementKind=OWNER_RECEIVABLE_OFFSET)
+  chargeId              String           @db.Uuid // → Charge (the IVOWN receivable charge whose outstanding this settled)
+  billingDocumentLineId String?          @db.Uuid // display/trace only; settlement is at the charge grain
+  allocatedAmountC      Int // integer cents; > 0
+  createdById           String           @db.Uuid
+  createdAt             DateTime         @default(now())
+  organization          Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  offsetEntry           OwnerLedgerEntry @relation(fields: [offsetEntryId], references: [id], onDelete: Cascade)
+  charge                Charge           @relation(fields: [chargeId], references: [id], onDelete: Restrict)
+
   @@unique([organizationId, offsetEntryId, chargeId])
   @@index([organizationId, chargeId])
   @@index([organizationId, offsetEntryId])
@@ -3051,25 +3206,25 @@ model OwnerReceivableOffsetAllocation {
 // captured at FIRST freeze of a period-scope. snapshotJson is insufficient (paid-only; omits
 // includeInPayout/sstAmount and unpaid-active rows). Never overwritten by a re-freeze. Serves R6.
 model OwnerStatementFreezeManifestRow {
-  id                     String   @id @default(uuid()) @db.Uuid
-  organizationId         String   @db.Uuid
-  ownerStatementPeriodId String   @db.Uuid
-  ownerPartyId           String   @db.Uuid
-  apartmentId            String?  @db.Uuid
-  periodMonth            DateTime @db.Date
-  ledgerEntryId          String   @db.Uuid
-  amountC                Int
-  direction              String
-  category               String
-  paidBy                 String
-  includeInPayout        Boolean
-  paymentStatus          String
-  sstAmountC             Int?
-  statementMonth         DateTime @db.Date
-  sourceType             String
-  sourceChargeId         String?  @db.Uuid
+  id                      String   @id @default(uuid()) @db.Uuid
+  organizationId          String   @db.Uuid
+  ownerStatementPeriodId  String   @db.Uuid
+  ownerPartyId            String   @db.Uuid
+  apartmentId             String?  @db.Uuid
+  periodMonth             DateTime @db.Date
+  ledgerEntryId           String   @db.Uuid
+  amountC                 Int
+  direction               String
+  category                String
+  paidBy                  String
+  includeInPayout         Boolean
+  paymentStatus           String
+  sstAmountC              Int?
+  statementMonth          DateTime @db.Date
+  sourceType              String
+  sourceChargeId          String?  @db.Uuid
   ledgerUpdatedAtAtFreeze DateTime
-  createdAt              DateTime @default(now())
+  createdAt               DateTime @default(now())
 
   organization         Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   ownerStatementPeriod OwnerStatementPeriod @relation(fields: [ownerStatementPeriodId], references: [id], onDelete: Cascade)
@@ -3082,30 +3237,30 @@ model OwnerStatementFreezeManifestRow {
 // R5/R6/R8 — durable reconciliation finding. Survives beyond AuditLog's 10-day purge. Idempotent upsert
 // on the dedupe key; lastDetectedAt bumped on re-detect; auto-resolved when valid data reappears.
 model OwnerLedgerReconciliationFinding {
-  id                 String    @id @default(uuid()) @db.Uuid
-  organizationId     String    @db.Uuid
-  ownerPartyId       String    @db.Uuid
-  apartmentId        String?   @db.Uuid
-  unitId             String?   @db.Uuid
-  carparkId          String?   @db.Uuid
-  checkKind          String // "source_to_ledger" | "frozen_integrity"
-  findingType        String // missing_ledger_row | stale_collected_amount | invalid_forward_adjustment | post_freeze_creation | post_freeze_economic_edit | manifest_field_mismatch | frozen_balance_drift | unexplained_frozen_row
-  sourceType         String
-  sourceId           String    @db.Uuid
-  sourceUpdatedAt    DateTime?
+  id                   String    @id @default(uuid()) @db.Uuid
+  organizationId       String    @db.Uuid
+  ownerPartyId         String    @db.Uuid
+  apartmentId          String?   @db.Uuid
+  unitId               String?   @db.Uuid
+  carparkId            String?   @db.Uuid
+  checkKind            String // "source_to_ledger" | "frozen_integrity"
+  findingType          String // missing_ledger_row | stale_collected_amount | invalid_forward_adjustment | post_freeze_creation | post_freeze_economic_edit | manifest_field_mismatch | frozen_balance_drift | unexplained_frozen_row
+  sourceType           String
+  sourceId             String    @db.Uuid
+  sourceUpdatedAt      DateTime?
   originalBillingMonth DateTime? @db.Date
   expectedPostingMonth DateTime? @db.Date
-  expectedDirection  String?
-  expectedAmountC    Int?
-  actualAmountC      Int?
-  severity           String // "critical" | "warning"
-  status             String    @default("open") // "open" | "acknowledged" | "resolved" | "ignored"
-  reason             String? // required on ignore (enforced by service)
-  firstDetectedAt    DateTime  @default(now())
-  lastDetectedAt     DateTime
-  resolvedAt         DateTime?
-  resolvedById       String?   @db.Uuid
-  detailsJson        Json?
+  expectedDirection    String?
+  expectedAmountC      Int?
+  actualAmountC        Int?
+  severity             String // "critical" | "warning"
+  status               String    @default("open") // "open" | "acknowledged" | "resolved" | "ignored"
+  reason               String? // required on ignore (enforced by service)
+  firstDetectedAt      DateTime  @default(now())
+  lastDetectedAt       DateTime
+  resolvedAt           DateTime?
+  resolvedById         String?   @db.Uuid
+  detailsJson          Json?
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -3146,6 +3301,7 @@ model UnitMonthLedger {
   incomeC             Int      @default(0)
   deductibleExpensesC Int      @default(0)
   netPayoutC          Int      @default(0)
+  ownerTopUpC         Int      @default(0)
   mgmtFeeC            Int      @default(0)
   sstC                Int      @default(0)
   // max updatedAt across all inputs (ledger rows + fee config) at compute time —
@@ -3615,6 +3771,71 @@ model BillsGridSummaryNote {
   @@index([organizationId, periodMonth])
 }
 
+/// Manually maintained company-bank account registry. Only a masked account
+/// label is stored here; credentials, balances and online-banking access never
+/// enter the property-management system.
+model BankReconciliationAccount {
+  id                  String   @id @default(uuid()) @db.Uuid
+  organizationId      String   @db.Uuid
+  bankName            String
+  nickname            String
+  maskedAccountNumber String?
+  active              Boolean  @default(true)
+  createdById         String   @db.Uuid
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  transactions BankReconciliationTransaction[]
+
+  @@index([organizationId, active])
+}
+
+/// Imported/copied bank statement line. Categorisation links a real company
+/// cash movement to the exact property cost/charge it funds. `fingerprint`
+/// makes repeated statement uploads idempotent per account.
+model BankReconciliationTransaction {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @db.Uuid
+  accountId       String   @db.Uuid
+  transactionDate DateTime @db.Date
+  description     String
+  reference       String?
+  debit           Decimal  @default(0) @db.Decimal(14, 2)
+  credit          Decimal  @default(0) @db.Decimal(14, 2)
+  balance         Decimal? @db.Decimal(14, 2)
+  source          String   @default("manual") // manual | paste | csv
+  importBatchKey  String?
+  fingerprint     String
+
+  status             String    @default("unmatched") // unmatched | matched | review
+  apartmentId        String?   @db.Uuid
+  responsibility     String? // tenant | owner | company | pending
+  collectionCategory String? // rental | deposit | tenant_expense | owner_payment | management_fee | other | pending
+  transactionCategory String? // non_operational_transfer | internal_bank_transfer | null
+  destinationAccount  String?
+  transferPurpose      String? // payroll_funding | head_office_funding | reserve_transfer | tax_funding | other
+  internalTransferPairId String? @db.Uuid
+  gridExpenseId      String?   @db.Uuid
+  linkedPaymentId    String?   @db.Uuid // posted tenant payment created from this bank credit
+  chargeRequired     Boolean   @default(false)
+  matchNotes         String?
+  categorizedById    String?   @db.Uuid
+  categorizedAt      DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  account         BankReconciliationAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  costAllocations BankCostAllocation[]
+
+  @@unique([organizationId, accountId, fingerprint])
+  @@index([organizationId, status, transactionDate])
+  @@index([organizationId, apartmentId, chargeRequired])
+  @@index([organizationId, gridExpenseId])
+  @@index([organizationId, linkedPaymentId])
+  @@index([organizationId, transactionCategory, transactionDate])
+  @@index([organizationId, internalTransferPairId])
+}
+
 model GridExpense {
   id             String   @id @default(uuid()) @db.Uuid
   organizationId String   @db.Uuid
@@ -3633,12 +3854,12 @@ model GridExpense {
   // Direct cost paid (or payable) by KAEN for fulfilling this charge. `amount`
   // remains the customer/owner-facing charge; these fields are internal cost
   // tracking and never change the amount billed.
-  actualCost        Decimal?  @db.Decimal(12, 2)
-  costVendor        String?
-  costPaymentStatus String    @default("unpaid") // "unpaid" | "partial" | "paid"
-  costPaymentDate   DateTime? @db.Date
+  actualCost         Decimal?  @db.Decimal(12, 2)
+  costVendor         String?
+  costPaymentStatus  String    @default("unpaid") // "unpaid" | "partial" | "paid"
+  costPaymentDate    DateTime? @db.Date
   costPaymentAccount String?
-  costNotes         String?
+  costNotes          String?
 
   partyId String? @db.Uuid // party snapshot for tenant-record reachability + name/phone search
 
@@ -3652,11 +3873,12 @@ model GridExpense {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  entry          UnitBillsGridEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
-  chargeCategory ChargeCategory?    @relation(fields: [chargeCategoryId], references: [id], onDelete: SetNull)
-  attachments    GridAttachment[]
-  sourcedCharges Charge[]           @relation("GridExpenseSourcedCharges")
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  entry               UnitBillsGridEntry   @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  chargeCategory      ChargeCategory?      @relation(fields: [chargeCategoryId], references: [id], onDelete: SetNull)
+  attachments         GridAttachment[]
+  sourcedCharges      Charge[]             @relation("GridExpenseSourcedCharges")
+  bankCostAllocations BankCostAllocation[]
 
   @@index([organizationId, entryId])
   @@index([organizationId, apartmentId, periodMonth])
@@ -3795,7 +4017,7 @@ model RecurringChargeRevision {
   // Vocabulary source: `bearer` (shared/schemas/bills-grid.ts)
   bearer             String // "owner" | "tenant"
   categoryId         String?   @db.Uuid // ChargeCategory.id (custom lines); null for CLEANING/WIFI (they route via cats)
-  nature             String?   // "expense" | "profit" — null = legacy (treated as profit)
+  nature             String? // "expense" | "profit" — null = legacy (treated as profit)
   effectiveFromMonth DateTime  @db.Date // first-of-month, inclusive
   effectiveToMonth   DateTime? @db.Date // first-of-month, EXCLUSIVE; null = open-ended
   enabled            Boolean   @default(true)
@@ -3822,7 +4044,7 @@ model GridEntryRecurringLine {
   // DB-ENFORCED: CHECK "GridEntryRecurringLine_bearer_check" (owner|tenant), migration 20260727140000.
   // Vocabulary source: `bearer` (shared/schemas/bills-grid.ts)
   bearer            String // "owner" | "tenant"
-  nature            String?   // snapshot of the revision's nature at Bill time
+  nature            String? // snapshot of the revision's nature at Bill time
   categoryId        String   @db.Uuid
   categoryCode      String
   categoryName      String

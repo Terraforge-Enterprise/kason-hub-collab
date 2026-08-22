@@ -200,9 +200,9 @@ export function RoomDraftFields({
             excludeNames={excludeNames}
           />
         </FormField>
-        <FormField label="Rent (RM/mo)">
+        <FormField label="Rent (RM/month)">
           <TextInput
-            aria-label="Rent (RM/mo)"
+            aria-label="Rent (RM/month)"
             type="number"
             min={0}
             step="0.01"

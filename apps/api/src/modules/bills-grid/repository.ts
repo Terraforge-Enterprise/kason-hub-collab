@@ -159,9 +159,10 @@ export async function resolveBearerConfig(
  * Resolve-or-create the parent UnitBillsGridEntry for (org, apartment, periodMonth).
  *
  * On CREATE it snapshots the five line settings + seeds `cleaning` from the config
- * (R14). Thereafter the ENTRY is authoritative for that period — a later config
- * edit never retro-mutates it. A created entry is NOT billed: `billedAt` stays null,
- * `paymentStatus` stays the "unpaid" column default.
+ * (R14). Thereafter the ENTRY is authoritative for that period. A later config edit
+ * deliberately updates open/billed-unpaid snapshots through setBearerConfigService,
+ * but never a period with received money or a frozen owner report. A created entry is
+ * NOT billed: `billedAt` stays null, `paymentStatus` stays the "unpaid" column default.
  *
  * Race: two concurrent child-writes to a never-Saved month both fall through the
  * findUnique miss. Rather than a throwing INSERT (which would hit the
@@ -180,9 +181,9 @@ export async function getOrCreateEntry(tx: Prisma.TransactionClient, ctx: EntryC
     },
   };
 
-  // Fast path: the entry already exists → return it untouched. Do NOT resolve the
-  // config or write anything — this is what keeps a later config edit from
-  // retro-mutating an existing period's snapshot.
+  // Fast path: the entry already exists → return it untouched. Config changes are
+  // applied explicitly by setBearerConfigService, where payment/report locks can be
+  // checked and the UI can report whether this particular period was updated.
   const existing = await tx.unitBillsGridEntry.findUnique({ where: key });
   if (existing) return existing;
 

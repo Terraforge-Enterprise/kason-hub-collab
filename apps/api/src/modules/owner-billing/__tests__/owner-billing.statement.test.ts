@@ -45,6 +45,7 @@ vi.mock("../owner-billing.repository", async (importOriginal) => {
     // (the mocked statement test asserts the mgmt-fee/cleaning behavior; the utility
     // auto-feed is covered by the owner-billing integration suite).
     findOwnerBorneUtilityComponents: vi.fn(async () => []),
+    findCommissionRentCharges: vi.fn(async () => []),
     findOwnerBorneCommissionSstCharges: vi.fn(async () => []),
     findInvoiceByIdempotencyKey: vi.fn(async () => null),
     findInvoiceByIdempotencyKeyInTx: vi.fn(async () => null),
@@ -69,6 +70,7 @@ import {
   createOwnerStatementInvoice,
   createStatementCharge,
   findFeeConfigsForOwner,
+  findCommissionRentCharges,
   findOwnerBorneCommissionSstCharges,
   findInvoiceByIdInTx,
   findInvoiceByIdempotencyKey,
@@ -175,6 +177,8 @@ beforeEach(() => {
   vi.mocked(findOwnerInOrg).mockResolvedValue({ id: "lt-1" });
   vi.mocked(resolveOwnerUnitsForMonth).mockResolvedValue([]);
   vi.mocked(findFeeConfigsForOwner).mockResolvedValue([]);
+  vi.mocked(findCommissionRentCharges).mockResolvedValue([]);
+  vi.mocked(findOwnerBorneCommissionSstCharges).mockResolvedValue([]);
   vi.mocked(findInvoiceByIdempotencyKey).mockResolvedValue(null);
   vi.mocked(findUnvoidedChargeForUnitMonth).mockResolvedValue(null);
   vi.mocked(countChargesWithPrefix).mockResolvedValue(0);
@@ -301,12 +305,18 @@ describe("generateStatementService — letting commission SST (Phase 3)", () => 
   it("B30/B33: an owner-borne commission charge → a letting_commission_sst OWNER charge = 8% of the commission (1500 → 120)", async () => {
     vi.mocked(resolveOwnerUnitsForMonth).mockResolvedValue([occUnit({ rentBase: "1500" })]);
     vi.mocked(findFeeConfigsForOwner).mockResolvedValue([]); // no fee config → isolate the SST line
+    vi.mocked(findCommissionRentCharges).mockResolvedValue([
+      { unitId: UNIT_OCC, amount: "1500.00", sstBearer: "owner" },
+    ]);
     vi.mocked(findOwnerBorneCommissionSstCharges).mockResolvedValue([{ unitId: UNIT_OCC, amount: "1500.00" }]);
 
     await generateStatementService(ctx, { ownerPartyId: OWNER, billingMonth: "2026-06" });
 
     const chargeArgs = vi.mocked(createStatementCharge).mock.calls.map((c) => c[1] as Record<string, unknown>);
+    const commission = chargeArgs.find((a) => a.chargeType === "letting_commission");
     const sst = chargeArgs.find((a) => a.chargeType === "letting_commission_sst");
+    expect(commission?.amount).toBe("1500.00");
+    expect(commission?.partyId).toBe(OWNER);
     expect(sst).toBeDefined();
     expect(sst!.amount).toBe("120.00"); // 8% of the actual commission (M-F2), billed to the owner
     expect(sst!.unitId).toBe(UNIT_OCC);

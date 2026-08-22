@@ -1003,6 +1003,8 @@ export async function createUnitsBatchService(
               monthlyRent: room.monthlyRent,
               firstMonthIsCommission: room.firstMonthIsCommission,
               commissionSstBearer: room.commissionSstBearer,
+              tenancyAgreementFeeAmount: room.tenancyAgreementFeeAmount,
+              tenancyAgreementFeeDueDate: room.tenancyAgreementFeeDueDate ? new Date(room.tenancyAgreementFeeDueDate) : undefined,
             },
           });
           await recordAudit(tx, {
@@ -1069,7 +1071,7 @@ export async function createUnitsBatchService(
         }
       }
 
-      return { ids: created, updatedIds };
+      return { ids: created, updatedIds, apartmentId: apartment.id };
     });
 
     // F4: post-commit, mirroring `updateUnitService` (inventory.service.ts) and
@@ -1593,6 +1595,8 @@ export async function createUnitService(
           monthlyRent: input.monthlyRent,
           firstMonthIsCommission: input.firstMonthIsCommission,
           commissionSstBearer: input.commissionSstBearer,
+          tenancyAgreementFeeAmount: input.tenancyAgreementFeeAmount,
+          tenancyAgreementFeeDueDate: input.tenancyAgreementFeeDueDate ? new Date(input.tenancyAgreementFeeDueDate) : undefined,
         },
       });
       await recordAudit(tx, {
@@ -2012,6 +2016,8 @@ export async function updateUnitService(
             monthlyRent: typeof occupancyMonthlyRent === "number" ? occupancyMonthlyRent : undefined,
             firstMonthIsCommission: input.firstMonthIsCommission,
             commissionSstBearer: input.commissionSstBearer,
+            tenancyAgreementFeeAmount: input.tenancyAgreementFeeAmount,
+            tenancyAgreementFeeDueDate: input.tenancyAgreementFeeDueDate ? new Date(input.tenancyAgreementFeeDueDate) : undefined,
           },
         });
       }
@@ -2194,7 +2200,10 @@ export type ApartmentRoomSummary = {
   occupancyStatus: string | null;
   listingStatus: string;
   inChargePartyId: string | null;
+  tenantPartyId?: string | null;
   tenantName?: string | null;
+  tenancyStartDate?: string | null;
+  tenancyEndDate?: string | null;
 };
 
 export type ApartmentSummary = {
@@ -2268,7 +2277,12 @@ export async function getApartmentsByPropertyService(
               where: { status: "active" },
               orderBy: { startDate: "desc" },
               take: 1,
-              select: { tenantParty: { select: { displayName: true } } },
+              select: {
+                tenantPartyId: true,
+                startDate: true,
+                endDate: true,
+                tenantParty: { select: { displayName: true } },
+              },
             },
           },
           orderBy: { listingType: "asc" },
@@ -2367,7 +2381,10 @@ export async function getApartmentsByPropertyService(
         occupancyStatus: l.occupancyStatus,
         listingStatus: l.listingStatus,
         inChargePartyId: l.inChargePartyId,
+        tenantPartyId: l.tenancies?.[0]?.tenantPartyId ?? null,
         tenantName: l.tenancies?.[0]?.tenantParty?.displayName ?? null,
+        tenancyStartDate: l.tenancies?.[0]?.startDate.toISOString().slice(0, 10) ?? null,
+        tenancyEndDate: l.tenancies?.[0]?.endDate?.toISOString().slice(0, 10) ?? null,
       })),
       archivedRooms: (archivedByApartment.get(apt.id) ?? []).map((l) => ({
         id: l.id,

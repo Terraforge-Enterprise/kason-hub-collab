@@ -96,6 +96,17 @@ type UnitDetail = {
     // older-API tolerance; `unitRentDisplay` falls back to the asking rate.
     monthlyRentAmount?: number;
   } | null;
+  tenancyHistory?: Array<{
+    id: string;
+    tenancyCode: string;
+    tenantPartyId: string;
+    tenantName: string;
+    listingLabel: string;
+    status: string;
+    startDate: string;
+    endDate: string | null;
+    monthlyRentAmount: number;
+  }>;
   property: {
     id: string;
     name: string;
@@ -511,7 +522,14 @@ export default function UnitDetailPage() {
               value={
                 unit.ownerName ? (
                   <span className="font-medium">
-                    {unit.ownerName}
+                    {unit.ownerPartyId ? (
+                      <Link
+                        to={`/parties/owners?partyId=${encodeURIComponent(unit.ownerPartyId)}`}
+                        className="underline decoration-[var(--gold)] underline-offset-4 hover:text-[var(--gold)]"
+                      >
+                        {unit.ownerName}
+                      </Link>
+                    ) : unit.ownerName}
                     {unit.ownerPhone ? (
                       <span className="ml-2 font-mono text-muted-foreground">
                         {unit.ownerPhone}
@@ -656,11 +674,19 @@ export default function UnitDetailPage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
             <div>
               <div className="text-xs text-muted-foreground uppercase tracking-wide">Rental deposit</div>
-              <div>{unit.depositMonths != null ? `${unit.depositMonths} mo` : "—"}</div>
+              <div>
+                {unit.depositMonths != null
+                  ? `${unit.depositMonths} ${unit.depositMonths > 1 ? "months" : "month"}`
+                  : "—"}
+              </div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground uppercase tracking-wide">Utilities deposit</div>
-              <div>{unit.utilitiesDepositMonths != null ? `${unit.utilitiesDepositMonths} mo` : "—"}</div>
+              <div>
+                {unit.utilitiesDepositMonths != null
+                  ? `${unit.utilitiesDepositMonths} ${unit.utilitiesDepositMonths > 1 ? "months" : "month"}`
+                  : "—"}
+              </div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground uppercase tracking-wide">Access cards</div>
@@ -692,6 +718,38 @@ export default function UnitDetailPage() {
         occupancyStatus={unit.occupancyStatus}
         unitId={unit.id}
       />
+
+      <Card className="bg-background/60 backdrop-blur-xl border-border/50 shadow-xl">
+        <CardContent className="p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <div className="w-[3px] h-[16px] rounded-sm bg-[#C9A35C]" />
+            <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#082B4F]">Tenancy history</span>
+          </div>
+          {(unit.tenancyHistory ?? []).length === 0 ? (
+            <p className="text-sm text-muted-foreground">No tenancy history yet.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-[#9DAFC1]">
+              <table className="w-full min-w-[760px] text-sm">
+                <thead className="bg-[#DFE9F3] text-[#082B4F]">
+                  <tr><th className="px-3 py-2 text-left">Tenancy</th><th className="px-3 py-2 text-left">Tenant</th><th className="px-3 py-2 text-left">Listing</th><th className="px-3 py-2 text-left">Period</th><th className="px-3 py-2 text-left">Status</th><th className="px-3 py-2 text-right">Monthly rent</th></tr>
+                </thead>
+                <tbody>
+                  {(unit.tenancyHistory ?? []).map((item) => (
+                    <tr key={item.id} className="border-t border-[#9DAFC1]">
+                      <td className="px-3 py-2 font-semibold">{item.tenancyCode}</td>
+                      <td className="px-3 py-2"><Link className="font-semibold text-[#082F55] underline decoration-[#C9A35C] underline-offset-4" to={`/parties/tenants?partyId=${encodeURIComponent(item.tenantPartyId)}`}>{item.tenantName}</Link></td>
+                      <td className="px-3 py-2">{item.listingLabel}</td>
+                      <td className="px-3 py-2">{item.startDate} – {item.endDate ?? "Present"}</td>
+                      <td className="px-3 py-2"><Badge variant="outline">{item.status}</Badge></td>
+                      <td className="px-3 py-2 text-right font-bold">{formatRental(item.monthlyRentAmount, unit.currency)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {isPhase2FlagEnabled("ENABLE_PHASE2_TASKS") && unit && (
         <UnitTicketsPanel unitId={unit.id} />
@@ -771,7 +829,12 @@ export function TenantDetailsCard({
         <div className="rounded-lg border border-border/50 bg-background/40 p-4 space-y-3">
           <div className="flex items-center gap-2">
             <UserIcon className="h-4 w-4 text-blue-400 shrink-0" />
-            <span className="text-sm font-semibold text-foreground">{tenancy.tenantName}</span>
+            <Link
+              to={`/parties/tenants?partyId=${encodeURIComponent(tenancy.tenantPartyId)}`}
+              className="text-sm font-semibold text-foreground underline decoration-[var(--gold)] underline-offset-4 hover:text-[var(--gold)]"
+            >
+              {tenancy.tenantName}
+            </Link>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
             <div>

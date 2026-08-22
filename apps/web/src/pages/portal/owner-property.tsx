@@ -73,7 +73,7 @@ function UnitCard({ unit }: { unit: OwnerPropertyView["units"][number] }) {
                 {formatDate(t.startDate)} — {t.endDate ? formatDate(t.endDate) : "ongoing"}
               </span>
               <span className="text-foreground font-medium">
-                {formatRM(parseFloat(t.monthlyRentAmount))} / mo
+                {formatRM(parseFloat(t.monthlyRentAmount))} / month
               </span>
             </div>
           </div>

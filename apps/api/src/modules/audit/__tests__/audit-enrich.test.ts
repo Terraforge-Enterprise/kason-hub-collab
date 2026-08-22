@@ -40,9 +40,9 @@ describe("enrichAuditRows", () => {
   } as unknown as Parameters<typeof enrichAuditRows>[0];
 
   const rows: RawAuditRow[] = [
-    { id: "a1", actorUserId: "u1", actorRole: "admin", action: "tasks.task.create", entityType: "Task", entityId: "task1", ip: "203.0.113.5, 10.0.0.1", userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/120.0 Safari/537.36", createdAt: new Date("2026-06-30T03:07:00.000Z") },
-    { id: "a2", actorUserId: "u1", actorRole: "admin", action: "tasks.sprint.start", entityType: "Sprint", entityId: "sp1", ip: null, userAgent: null, createdAt: new Date("2026-06-30T03:06:00.000Z") },
-    { id: "a3", actorUserId: "u1", actorRole: "admin", action: "x.y", entityType: "Unknown", entityId: "z9deadbeef", ip: null, userAgent: null, createdAt: new Date("2026-06-30T03:05:00.000Z") },
+    { id: "a1", actorUserId: "u1", actorRole: "admin", action: "tasks.task.create", entityType: "Task", entityId: "task1", ip: "203.0.113.5, 10.0.0.1", userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/120.0 Safari/537.36", diff: null, meta: null, createdAt: new Date("2026-06-30T03:07:00.000Z") },
+    { id: "a2", actorUserId: "u1", actorRole: "admin", action: "tasks.sprint.start", entityType: "Sprint", entityId: "sp1", ip: null, userAgent: null, diff: null, meta: null, createdAt: new Date("2026-06-30T03:06:00.000Z") },
+    { id: "a3", actorUserId: "u1", actorRole: "admin", action: "x.y", entityType: "Unknown", entityId: "z9deadbeef", ip: null, userAgent: null, diff: null, meta: null, createdAt: new Date("2026-06-30T03:05:00.000Z") },
   ];
 
   it("resolves actor + entity names, primary ip, and device", async () => {

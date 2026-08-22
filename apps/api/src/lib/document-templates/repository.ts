@@ -21,6 +21,7 @@ export type DocumentTemplateRow = {
   orgEmail: string | null;
   orgContact: string | null;
   logoKey: string | null;
+  bodyTemplate?: string | null;
 };
 
 const DELEGATE = (db: Prisma.TransactionClient | ReturnType<typeof getDb>) =>
@@ -51,8 +52,8 @@ export async function upsertTemplate(
   const db = getDb();
   const row = await db.documentTemplate.upsert({
     where: { organizationId_docType: { organizationId: orgId, docType } },
-    create: { organizationId: orgId, docType, ...data },
-    update: data,
+    create: { organizationId: orgId, docType, ...data, bodyTemplate: data.bodyTemplate ?? null },
+    update: { ...data, bodyTemplate: data.bodyTemplate ?? null },
   });
   return {
     ...row,

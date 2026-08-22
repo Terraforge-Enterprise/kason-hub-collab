@@ -40,6 +40,7 @@ export const updateTemplateBodySchema = z.object({
   orgEmail: nullableEmail,
   orgContact: nullableText(40),
   logoKey: nullableText(255),
+  bodyTemplate: z.string().max(100_000).nullable().optional(),
 });
 
 export const docTypeParamSchema = z.object({

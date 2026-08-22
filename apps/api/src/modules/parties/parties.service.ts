@@ -38,6 +38,8 @@ import {
   findOwnerDetail,
   findUnitsOwned,
   findTenantDetail,
+  findTenantTenancyHistory,
+  findTenantDepositLedger,
   findPortalUserByParty,
   hasActiveTenancy,
   listOwners,
@@ -215,7 +217,12 @@ export async function getTenantsService(session: PartiesSession) {
   return rows.map((r) => {
     const { idNumber, _count, userAccount, tenancies, ...rest } = r as typeof r & {
       _count: unknown; userAccount: unknown;
-      tenancies?: { property: { name: string }; unit: { apartment: { unitCode: string } } }[];
+      tenancies?: {
+        startDate: Date;
+        endDate: Date | null;
+        property: { name: string };
+        unit: { apartment: { unitCode: string } };
+      }[];
     };
     const units = dedupeUnits(
       (tenancies ?? []).map((t) => ({
@@ -232,6 +239,12 @@ export async function getTenantsService(session: PartiesSession) {
       deletable: isPartyDeletable(r as unknown as PartyDeletionShape),
       hasReservation: (_count as { reservationsCreatedFrom: number }).reservationsCreatedFrom > 0,
       units,
+      activeTenancies: (tenancies ?? []).map((tenancy) => ({
+        propertyName: tenancy.property.name,
+        unitCode: tenancy.unit.apartment.unitCode,
+        startDate: tenancy.startDate.toISOString().slice(0, 10),
+        endDate: tenancy.endDate?.toISOString().slice(0, 10) ?? null,
+      })),
     });
   });
 }
@@ -242,9 +255,11 @@ export async function getTenantDetailService(
 ) {
   const row = await findTenantDetail(session.orgId, partyId);
   if (!row) return { ok: false as const, status: 404 as const, error: "Tenant not found" };
-  const [portalUser, activeTenancy] = await Promise.all([
+  const [portalUser, activeTenancy, tenancyHistory, depositLedger] = await Promise.all([
     findPortalUserByParty(session.orgId, partyId),
     hasActiveTenancy(session.orgId, partyId),
+    findTenantTenancyHistory(session.orgId, partyId),
+    findTenantDepositLedger(session.orgId, partyId),
   ]);
   const withPhone = withFormattedPhone(row);
   const { idNumber: _idNumber, ...rest } = withPhone;
@@ -258,6 +273,25 @@ export async function getTenantDetailService(
       dateOfBirth: row.dateOfBirth?.toISOString() ?? null,
       createdAt: row.createdAt.toISOString(),
       hasActiveTenancy: activeTenancy,
+      tenancyHistory: tenancyHistory.map((t) => ({
+        id: t.id,
+        tenancyCode: t.tenancyCode,
+        propertyName: t.property.name,
+        unitCode: t.unit.apartment.unitCode,
+        status: t.status,
+        billingStatus: t.billingStatus,
+        startDate: t.startDate.toISOString().slice(0, 10),
+        endDate: t.endDate?.toISOString().slice(0, 10) ?? null,
+        monthlyRentAmount: t.monthlyRentAmount.toString(),
+      })),
+      depositLedger: depositLedger.map((item) => ({
+        ...item,
+        expected: item.expected.toFixed(2),
+        collected: item.collected.toFixed(2),
+        outstanding: item.outstanding.toFixed(2),
+        ownerTransferred: item.ownerTransferred.toFixed(2),
+        dueDate: item.dueDate.toISOString().slice(0, 10),
+      })),
       portalUser: portalUser
         ? {
             email: portalUser.email,

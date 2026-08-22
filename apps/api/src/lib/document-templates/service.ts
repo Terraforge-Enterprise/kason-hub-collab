@@ -15,7 +15,12 @@ const DEFAULT_TITLE: Record<DocType, string> = {
   owner_statement: "Owner Statement",
   credit_note: "Credit Note",
   refund_note: "Refund Note",
+  tenancy_agreement: "Tenancy Agreement",
+  property_management_agreement: "Property Management Agreement",
 };
+
+/** Legal entity printed on every financial/customer document. */
+export const LEGAL_DOCUMENT_ORG_NAME = "KAEN PROPERTIES MANAGEMENT SDN BHD";
 
 async function resolveLogoUrl(effectiveLogoKey: string | null): Promise<string | null> {
   return effectiveLogoKey
@@ -44,6 +49,7 @@ export async function getTemplateForOrgDocType(
       orgEmail: null,
       orgContact: null,
       logoKey: null,
+      bodyTemplate: null,
     });
   }
 
@@ -81,10 +87,9 @@ export async function getTemplateForOrgDocType(
     logoUrl = await resolveLogoUrl(effectiveLogoKey);
   }
 
-  // Documents print the workspace display name (Organization.name) — same
-  // field the Document Templates editor saves to, so the letterhead always
-  // matches what the admin sees in the live preview.
-  const orgName = org.name;
+  // The workspace/trading name can remain "KAEN Properties", but formal
+  // documents must always identify the registered legal entity exactly.
+  const orgName = LEGAL_DOCUMENT_ORG_NAME;
 
   // Per-docType title overrides. Some docTypes have a fixed brand title that
   // the admin Settings UI deliberately doesn't expose as editable — the
@@ -115,5 +120,6 @@ export async function getTemplateForOrgDocType(
     orgEmail: row.orgEmail,
     orgContact: row.orgContact,
     logoUrl,
+    bodyTemplate: row.bodyTemplate,
   };
 }

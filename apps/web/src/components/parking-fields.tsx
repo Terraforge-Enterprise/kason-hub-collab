@@ -3,7 +3,15 @@ import { Input } from "@/components/ui/input";
 interface ParkingFieldsProps {
   parkingQuantity: number | null;
   parkingNumbers: string[];
-  onChange: (patch: { parkingQuantity: number | null; parkingNumbers: string[] }) => void;
+  /** Optional per-bay rental rates. Create Unit supplies these so every bay is
+   * immediately usable by the standalone Carpark tenancy flow. Older callers
+   * may omit them and retain the compact quantity/label editor. */
+  monthlyRates?: string[];
+  onChange: (patch: {
+    parkingQuantity: number | null;
+    parkingNumbers: string[];
+    monthlyRates?: string[];
+  }) => void;
 }
 
 function resizeNumbers(qty: number, current: string[]): string[] {
@@ -14,12 +22,16 @@ function resizeNumbers(qty: number, current: string[]): string[] {
 }
 
 export function ParkingFields(props: ParkingFieldsProps) {
-  const { parkingQuantity, parkingNumbers, onChange } = props;
+  const { parkingQuantity, parkingNumbers, monthlyRates, onChange } = props;
   const qty = parkingQuantity ?? 0;
 
   function handleQuantityChange(raw: string) {
     if (raw === "") {
-      onChange({ parkingQuantity: null, parkingNumbers: [] });
+      onChange({
+        parkingQuantity: null,
+        parkingNumbers: [],
+        ...(monthlyRates ? { monthlyRates: [] } : {}),
+      });
       return;
     }
     const next = Number(raw);
@@ -27,13 +39,25 @@ export function ParkingFields(props: ParkingFieldsProps) {
     onChange({
       parkingQuantity: next,
       parkingNumbers: resizeNumbers(next, parkingNumbers),
+      ...(monthlyRates ? { monthlyRates: resizeNumbers(next, monthlyRates) } : {}),
     });
   }
 
   function handleSpotChange(idx: number, value: string) {
     const next = [...parkingNumbers];
     next[idx] = value;
-    onChange({ parkingQuantity: qty, parkingNumbers: next });
+    onChange({
+      parkingQuantity: qty,
+      parkingNumbers: next,
+      ...(monthlyRates ? { monthlyRates } : {}),
+    });
+  }
+
+  function handleRateChange(idx: number, value: string) {
+    if (!monthlyRates) return;
+    const next = resizeNumbers(qty, monthlyRates);
+    next[idx] = value;
+    onChange({ parkingQuantity: qty, parkingNumbers, monthlyRates: next });
   }
 
   return (
@@ -54,14 +78,29 @@ export function ParkingFields(props: ParkingFieldsProps) {
       {qty > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {Array.from({ length: qty }, (_, idx) => (
-            <label key={idx} className="block">
-              <span className="text-xs text-muted-foreground">Spot {idx + 1}</span>
-              <Input
-                value={parkingNumbers[idx] ?? ""}
-                placeholder="e.g. B2-145"
-                onChange={(e) => handleSpotChange(idx, e.target.value)}
-              />
-            </label>
+            <div key={idx} className="grid gap-2 sm:grid-cols-2 sm:col-span-2">
+              <label className="block">
+                <span className="text-xs text-muted-foreground">Spot {idx + 1}</span>
+                <Input
+                  value={parkingNumbers[idx] ?? ""}
+                  placeholder="e.g. B2-145"
+                  onChange={(e) => handleSpotChange(idx, e.target.value)}
+                />
+              </label>
+              {monthlyRates && (
+                <label className="block">
+                  <span className="text-xs text-muted-foreground">Monthly rental (RM)</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={monthlyRates[idx] ?? ""}
+                    placeholder="0.00"
+                    onChange={(e) => handleRateChange(idx, e.target.value)}
+                  />
+                </label>
+              )}
+            </div>
           ))}
         </div>
       )}

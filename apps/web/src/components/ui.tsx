@@ -38,27 +38,32 @@ export function PageHeader({
   metrics,
   actions,
   icon: HeaderIcon,
+  compact = false,
 }: {
   title: string;
   description?: string;
   metrics?: Metric[];
   actions?: ReactNode;
   icon?: IconType;
+  compact?: boolean;
 }) {
   return (
-    <section className="space-y-6">
+    <section className={compact ? "space-y-3" : "space-y-6"}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h1 className="font-display flex items-center gap-3 text-3xl font-bold text-[var(--navy-text)] dark:text-foreground md:text-4xl">
-            {HeaderIcon ? <HeaderIcon className="h-8 w-8 shrink-0 text-[var(--gold-dark)] dark:text-[var(--gold-light)]" /> : null}
+          <h1 className={cn(
+            "font-display flex items-center font-bold text-[var(--navy-text)] dark:text-foreground",
+            compact ? "gap-2 text-2xl" : "gap-3 text-3xl md:text-4xl",
+          )}>
+            {HeaderIcon ? <HeaderIcon className={cn("shrink-0 text-[var(--gold-dark)] dark:text-[var(--gold-light)]", compact ? "h-6 w-6" : "h-8 w-8")} /> : null}
             <span className="min-w-0">{title}</span>
           </h1>
-          {description ? <p className="mt-1 text-muted-foreground">{description}</p> : null}
+          {description ? <p className={cn("mt-1 text-muted-foreground", compact && "text-xs")}>{description}</p> : null}
         </div>
         {actions ? <div className="shrink-0">{actions}</div> : null}
       </div>
       {metrics?.length ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className={cn("grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4", compact ? "gap-2" : "gap-4")}>
           {metrics.map((m, i) => {
             const color = m.glowColor ?? METRIC_ROTATION[i % METRIC_ROTATION.length];
             const Icon = m.icon;
@@ -66,17 +71,20 @@ export function PageHeader({
               <GlowCard
                 key={m.label}
                 glowColor={color}
-                className="border border-[var(--card-border)] bg-card p-6 shadow-[var(--card-shadow)]"
+                className={cn(
+                  "border border-[var(--card-border)] bg-card shadow-[var(--card-shadow)]",
+                  compact ? "p-3" : "p-6",
+                )}
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 space-y-2">
-                    <p className="text-sm font-medium text-muted-foreground">{m.label}</p>
-                    <p className="break-words text-3xl font-bold text-foreground">{m.value}</p>
-                    {m.hint ? <p className="text-xs text-muted-foreground">{m.hint}</p> : null}
+                  <div className={cn("min-w-0", compact ? "space-y-0.5" : "space-y-2")}>
+                    <p className={cn("font-medium text-muted-foreground", compact ? "text-xs" : "text-sm")}>{m.label}</p>
+                    <p className={cn("break-words font-bold text-foreground", compact ? "text-xl leading-tight" : "text-3xl")}>{m.value}</p>
+                    {m.hint ? <p className={cn("text-muted-foreground", compact ? "text-[10px]" : "text-xs")}>{m.hint}</p> : null}
                   </div>
                   {Icon ? (
-                    <div className={cn("shrink-0 rounded-xl p-3", METRIC_ICON_BG[color])}>
-                      <Icon className={cn("h-6 w-6", METRIC_ICON_FG[color])} />
+                    <div className={cn("shrink-0 rounded-xl", compact ? "p-2" : "p-3", METRIC_ICON_BG[color])}>
+                      <Icon className={cn(compact ? "h-4 w-4" : "h-6 w-6", METRIC_ICON_FG[color])} />
                     </div>
                   ) : null}
                 </div>
@@ -187,7 +195,12 @@ export function StatusPill({
     amber: "amber",
     rose: "rose",
   } as const;
-  return <Badge variant={variantByTone[tone]} className={className} data-testid={testId}>{children}</Badge>;
+  const displayChildren =
+    typeof children === "string" && children.length > 0
+      ? `${children.charAt(0).toUpperCase()}${children.slice(1)}`
+      : children;
+
+  return <Badge variant={variantByTone[tone]} className={className} data-testid={testId}>{displayChildren}</Badge>;
 }
 
 export function BulletList({ children }: { children: ReactNode }) {

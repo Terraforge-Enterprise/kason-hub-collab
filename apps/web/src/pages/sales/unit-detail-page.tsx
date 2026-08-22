@@ -198,7 +198,7 @@ export default function SalesUnitDetailPage() {
           value={
             <span className="font-medium tabular-nums">
               {unit.expectedRental != null
-                ? `${formatRM(unit.expectedRental)} / mo`
+                ? `${formatRM(unit.expectedRental)} / month`
                 : "—"}
             </span>
           }

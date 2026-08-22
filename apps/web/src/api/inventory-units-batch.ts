@@ -56,9 +56,9 @@ export type CreateUnitsBatchPayload = {
 
 export async function createUnitsBatch(
   body: CreateUnitsBatchPayload,
-): Promise<{ ids: string[]; updatedIds: string[] }> {
+): Promise<{ ids: string[]; updatedIds: string[]; apartmentId: string }> {
   const res = await apiFetch<{
-    data: { ids: string[]; updatedIds: string[] };
+    data: { ids: string[]; updatedIds: string[]; apartmentId: string };
   }>("/inventory/units/batch", {
     method: "POST",
     body: JSON.stringify(body),
@@ -91,7 +91,10 @@ export type ApartmentRoomSummary = {
   occupancyStatus: string | null;
   listingStatus: string;
   inChargePartyId: string | null;
+  tenantPartyId?: string | null;
   tenantName?: string | null;
+  tenancyStartDate?: string | null;
+  tenancyEndDate?: string | null;
 };
 
 export type ApartmentSummary = {

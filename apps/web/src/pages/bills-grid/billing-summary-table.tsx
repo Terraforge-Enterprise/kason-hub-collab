@@ -17,7 +17,7 @@ const SUMMARY_COLUMNS: SummaryColumn[] = [
   { label: "Recurring", ids: ["ownerRecurring", "tenantRecurring"] },
   { label: "Tenant Expenses", ids: ["tenantExpNonSst", "tenantExpWithSst"] },
   { label: "Owner Expenses", ids: ["ownerExpNonSst", "ownerExpWithSst"] },
-  { label: "Management Fee", ids: ["managementFeeNonSst", "managementFeeSst"] },
+  { label: "Management Fee", ids: ["managementFeeSst"] },
   { label: "Owner Payout", ids: ["ownerPayout"] },
 ];
 

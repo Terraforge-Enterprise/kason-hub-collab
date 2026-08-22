@@ -44,7 +44,7 @@ export async function materializeOwnerUnitMonths(
     rowsP,
     db.managementFeeConfig.findMany({
       where: { organizationId: ctx.orgId, ownerPartyId, isActive: true },
-      select: { propertyId: true, feeType: true, feeValue: true, capAmount: true, sstPercent: true, updatedAt: true },
+      select: { propertyId: true, apartmentId: true, feeType: true, feeValue: true, capAmount: true, sstPercent: true, effectiveFrom: true, effectiveTo: true, freePeriodStart: true, freePeriodEnd: true, updatedAt: true },
     }),
     db.listing.findMany({
       where: { organizationId: ctx.orgId, ownerPartyId, listingStatus: { not: "archived" } },
@@ -96,7 +96,7 @@ export async function materializeOwnerUnitMonths(
     const depositCollectedC = aptUnitIds.reduce((acc, uid) => acc + (depositCByUnit.get(uid) ?? 0), 0);
 
     // Parity with resolveOwnerPayoutForScope: empty rows => null => zero figures.
-    const b = aptRows.length > 0 ? computeOwnerPayout({ rows: aptRows, feeConfigRows, depositCollectedC }) : null;
+    const b = aptRows.length > 0 ? computeOwnerPayout({ rows: aptRows, feeConfigRows, depositCollectedC, statementMonth: monthStart }) : null;
 
     // Observability only (NOT used to gate the write).
     const rowMax = aptRows.reduce<Date | null>((mx, r) => (!mx || r.updatedAt > mx ? r.updatedAt : mx), null);
@@ -107,13 +107,13 @@ export async function materializeOwnerUnitMonths(
       create: {
         organizationId: ctx.orgId, apartmentId: aptId, periodMonth: monthStart, ownerPartyId,
         incomeC: b?.grossRentalC ?? 0, deductibleExpensesC: b?.deductibleExpensesC ?? 0,
-        netPayoutC: b?.totalPayoutC ?? 0, mgmtFeeC: b?.computedMgmtBaseC ?? 0, sstC: b?.computedMgmtSstC ?? 0,
+        netPayoutC: b?.payableToOwnerC ?? 0, ownerTopUpC: b?.ownerTopUpRequiredC ?? 0, mgmtFeeC: b?.computedMgmtBaseC ?? 0, sstC: b?.computedMgmtSstC ?? 0,
         sourceMaxUpdatedAt: watermark, computedAt: new Date(),
       },
       update: {
         ownerPartyId,
         incomeC: b?.grossRentalC ?? 0, deductibleExpensesC: b?.deductibleExpensesC ?? 0,
-        netPayoutC: b?.totalPayoutC ?? 0, mgmtFeeC: b?.computedMgmtBaseC ?? 0, sstC: b?.computedMgmtSstC ?? 0,
+        netPayoutC: b?.payableToOwnerC ?? 0, ownerTopUpC: b?.ownerTopUpRequiredC ?? 0, mgmtFeeC: b?.computedMgmtBaseC ?? 0, sstC: b?.computedMgmtSstC ?? 0,
         sourceMaxUpdatedAt: watermark, computedAt: new Date(),
       },
     });

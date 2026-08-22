@@ -186,10 +186,15 @@ export async function buildOwnerLedgerReceiptModel(
     where: { organizationId: ctx.orgId, ownerPartyId, isActive: true },
     select: {
       propertyId: true,
+      apartmentId: true,
       feeType: true,
       feeValue: true,
       capAmount: true,
       sstPercent: true,
+      effectiveFrom: true,
+      effectiveTo: true,
+      freePeriodStart: true,
+      freePeriodEnd: true,
       updatedAt: true,
     },
   });
@@ -197,6 +202,7 @@ export async function buildOwnerLedgerReceiptModel(
     rows: allRows,
     feeConfigRows,
     depositCollectedC: 0,
+    statementMonth: monthStart,
   });
   const { computedMgmtBaseC, computedMgmtSstC, computedMgmtTotalC } = payoutBreakdown;
 

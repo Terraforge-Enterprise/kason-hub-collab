@@ -25,7 +25,7 @@ export interface NavCell {
 export interface NavRow { key: string; apartmentId: string; rowType: NavRowType; cells: NavCell[]; }
 
 const EXPENSE_TOTALS = new Set<ColumnId>([
-  "tenantExpWithSst", "tenantExpNonSst", "ownerExpWithSst", "ownerExpNonSst", "managementFeeNonSst", "managementFeeSst",
+  "tenantExpWithSst", "tenantExpNonSst", "ownerExpWithSst", "ownerExpNonSst", "agreementFee", "managementFeeSst",
 ]);
 // Recurring-charges (R9): value-bearing read-only unit cells that are ALWAYS navigable (like
 // rental + the expense totals) — the recurring summary totals.

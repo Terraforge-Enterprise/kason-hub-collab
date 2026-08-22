@@ -6,6 +6,7 @@ import { passwordResetEmail } from "../../lib/email-templates/password-reset";
 import { recordAudit } from "../../lib/audit";
 import { findActiveUserByEmail } from "./auth.repository";
 import type { LoginInput } from "./auth.types";
+import { effectivePermissions, type PermissionOverrides } from "../../lib/permissions";
 
 export async function loginService(input: LoginInput) {
   const email = input.email.trim().toLowerCase();
@@ -49,6 +50,7 @@ export async function loginService(input: LoginInput) {
         fullName: user.fullName,
         email: user.email,
         role: user.role,
+        permissions: effectivePermissions(user.role, user.permissionOverrides as PermissionOverrides),
         userType: user.userType,
       },
       orgId: user.organizationId,

@@ -48,7 +48,7 @@
 import { syncOwnerLedgerForCharges } from "../owner-ledger/owner-ledger.sync-hook";
 import { issueMgmtFeeForPaidRent } from "../owner-billing/mgmt-fee-on-payment.hook";
 import { autoOffsetOwnerReceivablesForPaidRent } from "../owner-billing/auto-offset-on-rent.hook";
-import { recordDepositsHeldForPaidCharges } from "../owner-billing/deposit-held-on-payment.hook";
+import { recordDepositsPayableToOwnerForPaidCharges } from "../owner-billing/deposit-held-on-payment.hook";
 import { graduateProformaForPayment } from "../billing-documents/graduation.hook";
 import { issueReceiptForPayment } from "../billing-documents/receipt.issue-hook";
 
@@ -79,7 +79,7 @@ export async function afterPaymentSettled(
   //    that money for the tenancy. Independent of steps 1-3 (a deposit is not
   //    rent: it earns no management fee and settles no receivable), so it neither
   //    reads nor disturbs what they wrote. It books NO payout — see the hook.
-  await recordDepositsHeldForPaidCharges(orgId, userId, role, chargeIds);
+  await recordDepositsPayableToOwnerForPaidCharges(orgId, userId, role, chargeIds);
   if (!payment) return;
   await graduateProformaForPayment(orgId, userId, role, payment.paymentId, payment.partyId, payment.paidChargeIds);
   await issueReceiptForPayment(orgId, userId, role, payment.paymentId, payment.partyId, chargeIds);

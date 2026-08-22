@@ -18,7 +18,11 @@ vi.mock("../owner-billing.repository", async (importOriginal) => {
 
 import { getDb } from "@kason/db";
 import { findDepositsCollectedInMonth } from "../owner-billing.repository";
-import { assembleYannieStatement, computedMgmtFeePaymentStatus } from "../owner-statement-sections";
+import {
+  assembleYannieStatement,
+  computeOwnerPayout,
+  computedMgmtFeePaymentStatus,
+} from "../owner-statement-sections";
 
 const ORG = "00000000-0000-0000-0000-000000000001";
 const STMT_ID = "00000000-0000-0000-0000-000000000002";
@@ -39,6 +43,77 @@ const cents = (s: string): number => Math.round(parseFloat(s) * 100);
 type PayoutLine = { label: string; amount: string; isNonIncome?: boolean; isTotal?: boolean };
 const lineByLabel = (lines: PayoutLine[], label: string): PayoutLine | undefined =>
   lines.find((l) => l.label === label);
+
+describe("computeOwnerPayout business safeguards", () => {
+  it("never exposes a negative payable and reports the owner top-up separately", () => {
+    const result = computeOwnerPayout({
+      rows: [
+        {
+          direction: "expense",
+          category: "maintenance",
+          amount: dec("500"),
+          sstAmount: null,
+          includeInPayout: true,
+          taxCategory: "non_sst",
+          propertyId: "property-a",
+          apartmentId: "apartment-a",
+        },
+      ],
+      feeConfigRows: [],
+      depositCollectedC: 0,
+    });
+    expect(result.totalPayoutC).toBe(-50_000);
+    expect(result.payableToOwnerC).toBe(0);
+    expect(result.ownerTopUpRequiredC).toBe(50_000);
+  });
+
+  it("uses unit fee config before property and owner defaults", () => {
+    const result = computeOwnerPayout({
+      rows: [
+        {
+          direction: "income",
+          category: "rental_income",
+          amount: dec("1000"),
+          sstAmount: null,
+          includeInPayout: true,
+          taxCategory: "non_sst",
+          propertyId: "property-a",
+          apartmentId: "apartment-a",
+        },
+      ],
+      feeConfigRows: [
+        { propertyId: null, apartmentId: null, feeType: "percent", feeValue: dec("5"), capAmount: null, sstPercent: dec("8"), updatedAt: new Date("2026-01-01") },
+        { propertyId: "property-a", apartmentId: null, feeType: "percent", feeValue: dec("10"), capAmount: null, sstPercent: dec("8"), updatedAt: new Date("2026-01-02") },
+        { propertyId: "property-a", apartmentId: "apartment-a", feeType: "percent", feeValue: dec("12"), capAmount: null, sstPercent: dec("8"), updatedAt: new Date("2026-01-03") },
+      ],
+      depositCollectedC: 0,
+    });
+    expect(result.computedMgmtBaseC).toBe(12_000);
+    expect(result.computedMgmtSstC).toBe(960);
+    expect(result.payableToOwnerC).toBe(87_040);
+  });
+
+  it("does not deduct management fee during the unit's free period", () => {
+    const result = computeOwnerPayout({
+      rows: [{
+        direction: "income", category: "rental_income", amount: dec("1000"),
+        sstAmount: null, includeInPayout: true, taxCategory: "non_sst",
+        propertyId: "property-a", apartmentId: "apartment-a",
+      }],
+      feeConfigRows: [{
+        propertyId: "property-a", apartmentId: "apartment-a", feeType: "percent",
+        feeValue: dec("10"), capAmount: null, sstPercent: dec("8"),
+        freePeriodStart: new Date("2026-01-01T00:00:00.000Z"),
+        freePeriodEnd: new Date("2026-06-30T00:00:00.000Z"),
+        updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      }],
+      depositCollectedC: 0,
+      statementMonth: new Date("2026-06-01T00:00:00.000Z"),
+    });
+    expect(result.computedMgmtTotalC).toBe(0);
+    expect(result.payableToOwnerC).toBe(100_000);
+  });
+});
 
 describe("assembleYannieStatement", () => {
   let dbMock: {

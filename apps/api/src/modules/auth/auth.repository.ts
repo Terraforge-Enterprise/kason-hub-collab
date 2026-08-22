@@ -12,6 +12,7 @@ export async function findActiveUserByEmail(email: string) {
       id: true,
       organizationId: true,
       role: true,
+      permissionOverrides: true,
       userType: true,
       partyId: true,
       passwordHash: true,

@@ -6,22 +6,32 @@ import { StatementSectionOccupancy } from "@/pages/tenancy/owner-statement/state
 import { StatementSectionPayoutSummary } from "@/pages/tenancy/owner-statement/statement-section-payout-summary";
 import { StatementSectionIncome } from "@/pages/tenancy/owner-statement/statement-section-income";
 import { StatementSectionExpenses } from "@/pages/tenancy/owner-statement/statement-section-expenses";
-import { useApproveStatement, useFirstCheckStatement, useGenerateStatement } from "@/api/owner-billing";
+import { useApproveStatement, useFirstCheckStatement, useGenerateStatement, useStatementApprovalPreflight } from "@/api/owner-billing";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { useEffect, useState } from "react";
+import { useAuth } from "@/lib/auth";
 
 export function OwnerReportDialog({ row, month, onClose }: { row: GridRow | null; month: string; onClose: () => void }) {
+  const { user } = useAuth();
+  const canFirstCheck = user?.permissions?.includes("owner_report.first_check") ?? ["admin", "director", "manager"].includes(user?.role ?? "");
+  const canFinalApprove = user?.permissions?.includes("owner_report.final_approve") ?? ["admin", "director"].includes(user?.role ?? "");
   const ownerPartyId = row?.ownerPartyId ?? undefined;
   const apartmentId = row?.apartmentId;
   const summaries = useOwnerMonthlySummaries(ownerPartyId, apartmentId);
   const monthSummary = summaries.data?.data.items.find((item) => item.month === month);
   const statementId = monthSummary?.statementId ?? undefined;
   const statementStatus = monthSummary?.statementStatus ?? "draft";
+  const [localStatement, setLocalStatement] = useState<{ id: string; status: string } | null>(null);
+  useEffect(() => setLocalStatement(null), [row?.apartmentId, month]);
+  const effectiveStatementId = localStatement?.id ?? statementId;
+  const effectiveStatementStatus = localStatement?.status ?? statementStatus;
   const generate = useGenerateStatement();
   const firstCheck = useFirstCheckStatement();
   const approve = useApproveStatement();
-  const issued = useStatementSections(statementId);
-  const live = useLiveStatementSections(statementId ? undefined : ownerPartyId, statementId ? undefined : month, apartmentId);
+  const preflight = useStatementApprovalPreflight(effectiveStatementId);
+  const issued = useStatementSections(effectiveStatementId);
+  const live = useLiveStatementSections(effectiveStatementId ? undefined : ownerPartyId, effectiveStatementId ? undefined : month, apartmentId);
   const sections = issued.data?.data ?? live.data?.data;
   const loading = summaries.isLoading || issued.isLoading || live.isLoading;
   const failed = summaries.isError || issued.isError || live.isError;
@@ -31,7 +41,8 @@ export function OwnerReportDialog({ row, month, onClose }: { row: GridRow | null
     if (!row || !ownerPartyId) return;
     try {
       const id = statementId ?? (await generate.mutateAsync({ ownerPartyId, billingMonth: month, apartmentId: row.apartmentId })).data.id;
-      await firstCheck.mutateAsync(id);
+      const checked = await firstCheck.mutateAsync(id);
+      setLocalStatement({ id: checked.data.id, status: checked.data.status });
       toast.success("Owner payout marked First Checked");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not mark this report First Checked");
@@ -39,9 +50,10 @@ export function OwnerReportDialog({ row, month, onClose }: { row: GridRow | null
   }
 
   async function markApproved() {
-    if (!statementId) return;
+    if (!effectiveStatementId) return;
     try {
-      await approve.mutateAsync(statementId);
+      const approved = await approve.mutateAsync(effectiveStatementId);
+      setLocalStatement({ id: approved.data.id, status: approved.data.status });
       toast.success("Owner payout approved");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not approve this owner payout");
@@ -94,18 +106,54 @@ export function OwnerReportDialog({ row, month, onClose }: { row: GridRow | null
           </div>
         )}
         {ownerPartyId && sections && (
-          <div className="sticky bottom-0 flex justify-end border-t border-[var(--border)] bg-white/95 pt-4 backdrop-blur">
-            {statementStatus === "first_checked" ? (
-              <Button className="min-h-12 px-6 text-lg font-bold" disabled={changingStatus} onClick={() => void markApproved()}>
+          <div className="sticky bottom-0 space-y-3 border-t border-[var(--border)] bg-white/95 pt-4 backdrop-blur">
+            {effectiveStatementId && (
+              <div className="rounded-xl border border-[var(--border)] bg-[var(--page-bg)] p-3">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <strong className="text-base text-[var(--navy-text)]">Owner Payout Safety Check</strong>
+                  <span className="text-sm font-bold text-[var(--navy-text)]">
+                    Payout RM {preflight.data?.data.netPayoutToOwner ?? sections.payoutSummary.netPayoutToOwner}
+                  </span>
+                </div>
+                {preflight.isLoading ? (
+                  <p className="text-sm text-[var(--text-secondary)]">Checking payout safety…</p>
+                ) : preflight.isError ? (
+                  <p className="font-semibold text-red-700">Safety checks could not be loaded. Approval is disabled.</p>
+                ) : (
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {preflight.data?.data.checks.map((check) => (
+                      <div
+                        key={check.code}
+                        className={`rounded-lg border px-3 py-2 ${check.status === "block" ? "border-red-400 bg-red-50" : check.status === "warning" ? "border-amber-400 bg-amber-50" : "border-emerald-400 bg-emerald-50"}`}
+                      >
+                        <div className="flex gap-2">
+                          <span aria-hidden>{check.status === "block" ? "●" : check.status === "warning" ? "▲" : "✓"}</span>
+                          <div>
+                            <p className="font-bold text-[var(--navy-text)]">{check.label}</p>
+                            <p className="text-sm text-[var(--text-secondary)]">{check.detail}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="flex justify-end">
+            {effectiveStatementStatus === "first_checked" ? (
+              canFinalApprove ? <Button className="min-h-12 px-6 text-lg font-bold" disabled={changingStatus || preflight.isLoading || preflight.isError || preflight.data?.data.canApprove === false} onClick={() => void markApproved()}>
                 {approve.isPending ? "Approving…" : "Approved"}
-              </Button>
-            ) : !["approved", "sent", "paid"].includes(statementStatus) ? (
-              <Button className="min-h-12 px-6 text-lg font-bold" disabled={changingStatus} onClick={() => void markFirstChecked()}>
+              </Button> : <span className="rounded-lg border border-amber-400 bg-amber-50 px-5 py-3 font-bold text-amber-900">First Checked · Waiting for final approval</span>
+            ) : !["approved", "sent", "paid"].includes(effectiveStatementStatus) && canFirstCheck ? (
+              <Button className="min-h-12 px-6 text-lg font-bold" disabled={changingStatus || (!!effectiveStatementId && (preflight.isLoading || preflight.isError || preflight.data?.data.canFirstCheck === false))} onClick={() => void markFirstChecked()}>
                 {changingStatus ? "Saving…" : "First Checked"}
               </Button>
-            ) : (
+            ) : ["approved", "sent", "paid"].includes(effectiveStatementStatus) ? (
               <span className="rounded-lg border border-emerald-600 bg-[#00FF00] px-5 py-3 text-lg font-extrabold text-[var(--navy-text)]">Approved</span>
+            ) : (
+              <span className="rounded-lg border border-[var(--border)] bg-[var(--page-bg)] px-5 py-3 font-semibold text-[var(--text-secondary)]">View only</span>
             )}
+            </div>
           </div>
         )}
       </DialogContent>

@@ -38,7 +38,7 @@ function buildSummary(u: InventoryListing): string {
     ]
       .filter(Boolean)
       .join(" · "),
-    u.rentalRate != null ? `Rental: ${formatRM(Number(u.rentalRate))}/mo` : "Rental: —",
+    u.rentalRate != null ? `Rental: ${formatRM(Number(u.rentalRate))}/month` : "Rental: —",
     u.depositMonths != null
       ? `Deposit: ${u.depositMonths} ${u.depositMonths === 1 ? "month" : "months"}`
       : "",
@@ -209,7 +209,7 @@ export function UnitCard({ unit, to, view, today = new Date() }: Props) {
         <div className="text-right shrink-0">
           <div className="text-sm font-semibold text-foreground">
             {unit.rentalRate != null
-              ? <>{formatRM(Number(unit.rentalRate))}<span className="text-xs font-normal text-muted-foreground"> /mo</span></>
+              ? <>{formatRM(Number(unit.rentalRate))}<span className="text-xs font-normal text-muted-foreground"> /month</span></>
               : "—"}
           </div>
           {unit.inChargeName && (
@@ -260,7 +260,7 @@ export function UnitCard({ unit, to, view, today = new Date() }: Props) {
             <div className="text-xs text-muted-foreground">Rental</div>
             <div className="text-sm font-semibold text-foreground">
               {unit.rentalRate != null
-                ? <>{formatRM(Number(unit.rentalRate))}<span className="text-xs font-normal text-muted-foreground"> / mo</span></>
+                ? <>{formatRM(Number(unit.rentalRate))}<span className="text-xs font-normal text-muted-foreground"> / month</span></>
                 : "—"}
             </div>
           </div>

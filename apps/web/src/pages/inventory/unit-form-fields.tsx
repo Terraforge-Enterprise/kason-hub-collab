@@ -33,6 +33,7 @@ import { cn } from "@/lib/utils";
 import { isPhase2FlagEnabled } from "@/lib/feature-flags";
 import { Button } from "@/components/ui/button";
 import { CreateOwnerDialog } from "@/pages/parties/owners-action-dialogs";
+import { AgentFormDrawer } from "@/pages/parties/agent-form-drawer";
 
 /** Occupancy errors plus the two apartment-scoped fields the create modal owns.
  *  Structurally a superset of OccupancyFieldErrors, so it still passes straight
@@ -88,6 +89,7 @@ export type UnitFormState = {
   // Parking (inventory upload extension)
   parkingQuantity: string;
   parkingNumbers: string[];
+  parkingMonthlyRates: string[];
   // Owner. ownerPartyId drives the payload on the CREATE path (opt-in, see
   // unitFormToApiPayload); ownerName/ownerPhone are display-only. The per-room
   // EDIT dialog still renders this read-only and never sends it — owner is
@@ -117,6 +119,8 @@ export type UnitFormState = {
   // picker. Only meaningful (rendered/required/sent) under
   // ENABLE_PHASE2_RESERVATION_GATED_TENANCY -- see occupancy-fields.tsx.
   monthlyRent: string;
+  tenancyAgreementFeeAmount: string;
+  tenancyAgreementFeeDueDate: string;
   // First-month-commission toggles (Phase 1). Rendered only under the same flag
   // as monthlyRent; sent on the occupancy payload; seeded from the active tenancy
   // on edit.
@@ -196,6 +200,7 @@ export function blankUnitFormState(): UnitFormState {
     accessCardQuantity: "",
     parkingQuantity: "",
     parkingNumbers: [],
+    parkingMonthlyRates: [],
     ownerPartyId: null,
     ownerName: "",
     ownerPhone: null,
@@ -209,6 +214,8 @@ export function blankUnitFormState(): UnitFormState {
     moveInDate: "",
     moveOutDate: "",
     monthlyRent: "",
+    tenancyAgreementFeeAmount: "",
+    tenancyAgreementFeeDueDate: "",
     firstMonthIsCommission: false,
     commissionSstBearer: "owner",
   };
@@ -862,6 +869,7 @@ export function UnitFormBody({
   initialTenantPartyId,
   initialMonthlyRent,
   ownerEditable = false,
+  allowCreateAgent = false,
   showBillingModel = false,
   showUnderManagement = false,
   alwaysShowRent = false,
@@ -894,6 +902,9 @@ export function UnitFormBody({
    *  off — its payload never carries ownerPartyId, so an editable control
    *  there would silently drop the admin's choice. */
   ownerEditable?: boolean;
+  /** CREATE-only: allow the operator to create a missing sourcing agent in
+   * place and select it immediately. */
+  allowCreateAgent?: boolean;
   /** Show the apartment Billing model control (SUBSIDY | NO_SUBSIDY). */
   showBillingModel?: boolean;
   /** EDIT-only: show the "Under management" toggle. A DEDICATED prop — never
@@ -999,6 +1010,7 @@ export function UnitFormBody({
   // whose values the submit path silently discards. In charge, Owner and Billing
   // model stay: they ARE on `shared`.
   const hidePartitionOrphanFields = hidePerRoomFields;
+  const [createAgentOpen, setCreateAgentOpen] = useState(false);
 
   const parsedDeductionInvalid = useMemo(() => {
     if (!state.hasPaxDeduction) return false;
@@ -1217,6 +1229,22 @@ export function UnitFormBody({
             </SelectInput>
           </FormField>
         </div>
+        {state.occupancyStatus !== "occupied" && !state.tenantPartyId && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
+            <div>
+              <p className="font-semibold text-[var(--navy)]">Tenant moving into this unit?</p>
+              <p className="text-sm text-[var(--text-secondary)]">Add the tenant and tenancy details before creating the unit.</p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="shrink-0 border-[var(--gold)] bg-white font-bold"
+              onClick={() => set({ occupancyStatus: "occupied" })}
+            >
+              <Plus className="h-4 w-4" /> Add tenant now
+            </Button>
+          </div>
+        )}
         <OccupancyFields
           occupancyStatus={state.occupancyStatus}
           tenantPartyId={state.tenantPartyId}
@@ -1227,6 +1255,8 @@ export function UnitFormBody({
           moveInDate={state.moveInDate}
           moveOutDate={state.moveOutDate}
           monthlyRent={state.monthlyRent}
+          tenancyAgreementFeeAmount={state.tenancyAgreementFeeAmount}
+          tenancyAgreementFeeDueDate={state.tenancyAgreementFeeDueDate}
           firstMonthIsCommission={state.firstMonthIsCommission}
           commissionSstBearer={state.commissionSstBearer}
           onFirstMonthIsCommissionChange={(next) => set({ firstMonthIsCommission: next })}
@@ -1253,6 +1283,7 @@ export function UnitFormBody({
                 : {}),
             })
           }
+          onAgreementFeeChange={(patch) => set(patch)}
           onClearTenant={() =>
             set({
               tenantPartyId: null,
@@ -1302,6 +1333,14 @@ export function UnitFormBody({
         {!hidePartitionOrphanFields && (
           <FormField
             label="Sourcing agent"
+            action={
+              allowCreateAgent ? (
+                <Button type="button" variant="outline" size="sm" onClick={() => setCreateAgentOpen(true)}>
+                  <Plus className="h-4 w-4" />
+                  Create Agent
+                </Button>
+              ) : null
+            }
             hint="Agent who brought in this listing. Only agent-role parties are eligible."
           >
             <AgentSelect
@@ -1356,6 +1395,27 @@ export function UnitFormBody({
           </FormField>
         )}
       </FormSection>
+
+      {allowCreateAgent && (
+        <AgentFormDrawer
+          open={createAgentOpen}
+          mode="create"
+          agent={null}
+          onClose={() => setCreateAgentOpen(false)}
+          onCreated={(agent) =>
+            set(
+              state.inChargePartyId === null
+                ? {
+                    sourcingAgentId: agent.id,
+                    sourcingAgentName: agent.displayName,
+                    inChargePartyId: agent.id,
+                    inChargeName: agent.displayName,
+                  }
+                : { sourcingAgentId: agent.id, sourcingAgentName: agent.displayName },
+            )
+          }
+        />
+      )}
 
       {/* Section: Visibility & audience. Gated (orphaned on the batch endpoint). */}
       {!hidePartitionOrphanFields && (
@@ -1450,6 +1510,7 @@ export function UnitFormBody({
             {ownerEditable ? (
               state.ownerPartyId ? (
                 <OwnerConfirmCard
+                  ownerId={state.ownerPartyId}
                   ownerName={state.ownerName}
                   ownerPhone={state.ownerPhone}
                   onChange={() => set({ ownerPartyId: null, ownerName: "", ownerPhone: null })}
@@ -1636,11 +1697,13 @@ export function UnitFormBody({
         <ParkingFields
           parkingQuantity={state.parkingQuantity === "" ? null : Number(state.parkingQuantity)}
           parkingNumbers={state.parkingNumbers}
+          monthlyRates={state.parkingMonthlyRates}
           onChange={(patch) =>
             set({
               parkingQuantity:
                 patch.parkingQuantity === null ? "" : String(patch.parkingQuantity),
               parkingNumbers: patch.parkingNumbers,
+              parkingMonthlyRates: patch.monthlyRates ?? state.parkingMonthlyRates,
             })
           }
         />
@@ -1782,6 +1845,8 @@ export function unitFormToApiPayload(
           isPhase2FlagEnabled("ENABLE_PHASE2_RESERVATION_GATED_TENANCY")
             ? { monthlyRent: num(state.monthlyRent) }
             : {}),
+          tenancyAgreementFeeAmount: num(state.tenancyAgreementFeeAmount),
+          tenancyAgreementFeeDueDate: state.tenancyAgreementFeeDueDate || undefined,
           // Commission toggles — gated on the same flag as the checkbox that
           // sets them (flag off → checkbox absent → nothing sent → server keeps
           // its false/owner defaults, byte-identical to today).

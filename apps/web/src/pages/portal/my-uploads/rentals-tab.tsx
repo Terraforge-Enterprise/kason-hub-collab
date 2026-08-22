@@ -137,7 +137,7 @@ export function RentalsTab() {
                       <div className="text-xs text-muted-foreground mt-0.5">
                         <span className="capitalize">{u.unitType}</span>
                         {rentalRate != null &&
-                          ` · RM${Number(rentalRate).toLocaleString()}/mo`}
+                          ` · RM${Number(rentalRate).toLocaleString()}/month`}
                         {u.parentListingId && " · Amendment"}
                       </div>
                       {u.amendmentNote && (

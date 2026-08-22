@@ -22,8 +22,7 @@ import { reprorateRentDraftsForPeriod } from "./reprorate-rent-drafts";
 import { generateStatementService } from "../owner-billing/owner-billing.service";
 import { issueDocumentsForChargesTx } from "../billing-documents/issue.service";
 import { creditPostedChargeTx } from "../billing-documents/credit-notes.service";
-import { isPhase2FlagEnabled, isLettingCommissionEnabled } from "../../lib/feature-flags";
-import { monthlyChargeType } from "../../lib/commission-month";
+import { isPhase2FlagEnabled } from "../../lib/feature-flags";
 import { syncOwnerLedgerForCharges } from "../owner-ledger/owner-ledger.sync-hook";
 
 /**
@@ -146,7 +145,15 @@ export async function draftRentInvoiceForTenancy(
 ): Promise<"created" | "skipped"> {
   const db = getDb();
   const firstOfMonth = firstOfMonthUtc(periodMonth);
-  const dueDate = dueDayOffset == null ? null : new Date(firstOfMonth.getTime() + dueDayOffset * 86400000);
+  // `dueDayOffset` is configured and labelled as days after the invoice/run
+  // date.  It used to be added to the first day of the *billing period*, which
+  // silently turned an offset of 0 into the first of every month (and made an
+  // advance-billed September invoice raised in August carry the wrong date).
+  // Pin the issue timestamp once so invoiceDate and dueDate use the same clock.
+  const invoiceDate = new Date();
+  const dueDate = dueDayOffset == null
+    ? null
+    : new Date(invoiceDate.getTime() + dueDayOffset * 86400000);
   const idemKey = `draft:${t.id}:${periodMonth}`;
   return db.$transaction(async (tx) => {
     const existing = await findExistingDraft(tx, ctx.orgId, idemKey);
@@ -183,31 +190,15 @@ export async function draftRentInvoiceForTenancy(
     const inv = await createInvoiceTx(tx, {
       orgId: ctx.orgId, invoiceNumber: tenantInvoiceNumber(periodMonth, t.id), partyId: t.tenantPartyId,
       tenancyId: t.id, propertyId: t.propertyId, invoiceType: "tenant_rental",
-      invoiceDate: new Date(), dueDate, periodMonth: firstOfMonth, idempotencyKey: idemKey,
+      invoiceDate, dueDate, periodMonth: firstOfMonth, idempotencyKey: idemKey,
     });
-    let chargeType = monthlyChargeType(
-      { startDate: t.startDate, endDate: t.endDate, firstMonthIsCommission: t.firstMonthIsCommission },
-      firstOfMonth,
-      isLettingCommissionEnabled(),
-    );
-    // ≤1 commission per tenancy (same invariant as postMonthlyRentForTenancy): a post-billing
-    // move-in-date edit can shift the commission month → guard against a 2nd commission charge.
-    if (chargeType === "letting_commission") {
-      const priorCommission = await tx.charge.findFirst({
-        where: {
-          organizationId: ctx.orgId,
-          tenancyId: t.id,
-          chargeType: "letting_commission",
-          status: { notIn: ["void", "credited"] },
-          chargeNumber: { not: rentChargeNumber(periodMonth, t.id) },
-        },
-        select: { id: true },
-      });
-      if (priorCommission) chargeType = "rent";
-    }
     const rent = await createRentChargeTx(tx, {
       orgId: ctx.orgId, chargeNumber: rentChargeNumber(periodMonth, t.id), tenancyId: t.id, unitId: t.unitId,
-      partyId: t.tenantPartyId, amount, dueDate: dueDate ?? firstOfMonth, billingMonth: firstOfMonth, invoiceId: inv.id, chargeType });
+      partyId: t.tenantPartyId, amount, dueDate: dueDate ?? firstOfMonth, billingMonth: firstOfMonth, invoiceId: inv.id,
+      // Tenant always owes RENT. If the owner agreed that first-month rent is
+      // KAEN's commission, that is represented separately on the OWNER statement.
+      chargeType: "rent",
+    });
     await tx.chargeEvent.create({ data: { organizationId: ctx.orgId, chargeId: rent.id, eventType: "draft.created", eventAt: new Date(), actorUserId: ctx.actorUserId, payloadJson: { invoiceId: inv.id, source: "auto-draft" } } });
     // Carpark draft charges — one per active CarparkAssignment (Task 4.2 parity).
     // Charges are attached to the same invoice so recomputeInvoiceTotalTx below

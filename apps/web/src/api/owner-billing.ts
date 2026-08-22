@@ -23,6 +23,7 @@ export type FeeConfigRow = {
   id: string;
   ownerPartyId: string;
   propertyId: string | null;
+  apartmentId?: string | null;
   feeType: FeeType;
   feeValue: string;
   capAmount: string | null;
@@ -57,6 +58,7 @@ export type FeeConfigFilters = {
 export type CreateFeeConfigBody = {
   ownerPartyId: string;
   propertyId?: string | null;
+  apartmentId?: string | null;
   feeType: FeeType;
   feeValue: string;
   capAmount?: string | null;
@@ -293,6 +295,20 @@ export type UpdateStatementLineBody = {
 /** Result of POST /send and the shape getStatementPdfUrl/regenerate hand back. */
 export type StatementSendResult = { statement: OwnerStatementRow; downloadUrl: string };
 export type StatementPdfResult = { pdfKey: string; downloadUrl: string };
+export type OwnerPayoutSafetyCheck = {
+  code: string;
+  label: string;
+  status: "pass" | "warning" | "block";
+  detail: string;
+  blocks: "first_check" | "approve" | "both" | null;
+};
+export type OwnerPayoutApprovalPreflight = {
+  statementId: string;
+  canFirstCheck: boolean;
+  canApprove: boolean;
+  netPayoutToOwner: string;
+  checks: OwnerPayoutSafetyCheck[];
+};
 
 export const OWNER_STATEMENTS_KEY = ["owner-statements"] as const;
 
@@ -438,6 +454,14 @@ export function useApproveStatement() {
       qc.invalidateQueries({ queryKey: ["owner-monthly-summaries"] }),
       qc.invalidateQueries({ queryKey: ["statement-sections"] }),
     ]),
+  });
+}
+
+export function useStatementApprovalPreflight(id: string | undefined) {
+  return useQuery({
+    queryKey: [...OWNER_STATEMENTS_KEY, "approval-preflight", id],
+    queryFn: () => apiFetch<{ data: OwnerPayoutApprovalPreflight }>(`/owner-billing/statements/${id}/approval-preflight`),
+    enabled: !!id,
   });
 }
 

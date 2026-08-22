@@ -7,6 +7,7 @@ beforeEach(() => vi.resetModules());
 
 async function loadNav() {
   vi.stubEnv("VITE_ENABLE_PHASE2_BILLING_DOCS", "true");
+  vi.stubEnv("VITE_ENABLE_PHASE2_OWNER_BILLING", "true");
   const mod = await import("../navigation");
   return mod;
 }
@@ -18,6 +19,28 @@ function accountingItems(navSections: Awaited<ReturnType<typeof loadNav>>["navSe
 }
 
 describe("accounting nav section", () => {
+  it("uses the business workflow order", async () => {
+    const { navSections } = await loadNav();
+    const accounting = navSections.find((section) => section.label === "Accounting");
+    expect(accounting?.items.map((item) => item.title)).toEqual([
+      "Bank Reconciliation",
+      "Invoices",
+      "Receipts",
+      "Employee Claims",
+      "Owner Ledger",
+      "Owner & Tenant Profitability",
+      "Month-End Control",
+    ]);
+  });
+
+  it("places Owner Ledger under Accounting without renaming or changing its route", async () => {
+    const { navSections } = await loadNav();
+    const accounting = navSections.find((section) => section.label === "Accounting");
+    expect(accounting?.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ title: "Owner Ledger", href: "/tenancy/owner-ledger", workspace: "accounting" }),
+    ]));
+    expect(navSections.find((section) => section.label === "Tenancy")?.items.some((item) => item.title === "Owner Ledger") ?? false).toBe(false);
+  });
   it("exposes Invoices + Receipts tagged workspace:accounting", async () => {
     const { navSections } = await loadNav();
     const items = accountingItems(navSections);

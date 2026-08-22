@@ -28,15 +28,20 @@ const EXT_BY_MIME: Record<string, string> = {
 };
 
 // Accepts only keys that match the exact shape buildMediaUploadUrl produces:
-//   units/<uuid>/<uuid>.<ext>
+//   units/<uuid>/<category>/<uuid>.<ext>
+// Legacy unclassified keys (`units/<uuid>/<uuid>.<ext>`) remain valid and are
+// treated as advertising media by the UI.
 // Rejects `..` / empty segments / unknown extensions / wrong top-level dir.
 const STORAGE_KEY_RE =
-  /^units\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|webp|mp4|mov|webm)$/i;
+  /^units\/[0-9a-f-]{36}\/(?:(advertising|before_move_in|move_out)\/)?[0-9a-f-]{36}\.(jpg|png|webp|mp4|mov|webm)$/i;
 
 type BuildMediaUploadUrlInput = {
   orgId: string;
   unitId: string;
   kind: "photo" | "video";
+  /** Optional for backwards-compatible direct service callers; HTTP validation
+   * supplies advertising by default. */
+  category?: "advertising" | "before_move_in" | "move_out";
   filename: string;
   mimeType: string;
   sizeBytes: number;
@@ -107,7 +112,7 @@ export async function buildMediaUploadUrl(
   }
 
   const ext = EXT_BY_MIME[normalisedMime] ?? "bin";
-  const storageKey = `units/${input.unitId}/${randomUUID()}.${ext}`;
+  const storageKey = `units/${input.unitId}/${input.category ?? "advertising"}/${randomUUID()}.${ext}`;
 
   const signed = await createSignedUploadUrl({
     storageKey,

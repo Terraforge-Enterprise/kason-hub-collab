@@ -29,7 +29,16 @@ type TenantOption = {
    * reservation picker. */
   hasReservation?: boolean;
 };
-type TenancyOption = { id: string; tenancyCode: string; tenantName: string };
+type TenancyOption = {
+  id: string;
+  tenancyCode: string;
+  tenantName: string;
+  propertyName?: string;
+  unitCode?: string;
+  endDate?: string | null;
+  status?: string;
+  renewalDecision?: "pending" | "contacted" | "renew" | "not_renew";
+};
 type ReservationOption = {
   id: string;
   referenceCode: string;
@@ -163,6 +172,41 @@ export function TenancyForms({
     onError: (err: Error) => {
       setStatusFeedback({ status: "error", message: err.message });
     },
+  });
+
+  const [renewalReviewFeedback, setRenewalReviewFeedback] = useState<FeedbackState>(idle);
+  const updateRenewalReview = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: Record<string, string> }) =>
+      apiFetch(`/tenancy/tenancies/${id}/renewal-review`, { method: "PUT", body: JSON.stringify(body) }),
+    onSuccess: () => {
+      setRenewalReviewFeedback({ status: "success", message: "Renewal follow-up saved." });
+      queryClient.invalidateQueries({ queryKey: ["tenancy"] });
+      queryClient.invalidateQueries({ queryKey: ["action-centre"] });
+    },
+    onError: (err: Error) => setRenewalReviewFeedback({ status: "error", message: err.message }),
+  });
+
+  const [moveOutFeedback, setMoveOutFeedback] = useState<FeedbackState>(idle);
+  const moveOutTenancy = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: Record<string, string> }) =>
+      apiFetch(`/tenancy/tenancies/${id}/move-out`, { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: () => {
+      setMoveOutFeedback({ status: "success", message: "Move-out completed. The old tenancy remains in history and the unit is now vacant." });
+      queryClient.invalidateQueries({ queryKey: ["tenancy"] });
+      queryClient.invalidateQueries({ queryKey: ["inventory"] });
+    },
+    onError: (err: Error) => setMoveOutFeedback({ status: "error", message: err.message }),
+  });
+  const [depositSettlementFeedback, setDepositSettlementFeedback] = useState<FeedbackState>(idle);
+  const updateDepositSettlement = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: Record<string, string> }) =>
+      apiFetch(`/tenancy/tenancies/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+    onSuccess: () => {
+      setDepositSettlementFeedback({ status: "success", message: "Owner deposit settlement updated." });
+      queryClient.invalidateQueries({ queryKey: ["tenancy"] });
+      queryClient.invalidateQueries({ queryKey: ["action-centre"] });
+    },
+    onError: (err: Error) => setDepositSettlementFeedback({ status: "error", message: err.message }),
   });
 
   return (
@@ -418,6 +462,17 @@ export function TenancyForms({
               />
             </Field>
           </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field
+              label="Tenant agreement fee (RM)"
+              hint="Paid by the tenant in addition to the first-month booking rent. This creates a draft invoice to the tenant."
+            >
+              <TextInput name="tenancyAgreementFeeAmount" type="number" min={0} step="0.01" defaultValue="0" />
+            </Field>
+            <Field label="Agreement fee due date" hint="Leave blank to use the tenancy start date.">
+              <TextInput name="tenancyAgreementFeeDueDate" type="date" />
+            </Field>
+          </div>
           <Field label="Billing status">
             <SelectInput name="billingStatus" defaultValue="active">
               <option value="active">active</option>
@@ -431,6 +486,51 @@ export function TenancyForms({
           <FeedbackMessage status={createFeedback.status} message={createFeedback.message} />
         </FormCard>
         )}
+
+        <FormCard
+          title="Renewal follow-up"
+          description="Two months before the tenancy ends, record whether the tenant has been contacted and their decision."
+          onSubmit={(e) => {
+            e.preventDefault();
+            setRenewalReviewFeedback(idle);
+            const data = getFormData(e);
+            const { tenancyId, ...body } = data;
+            if (!tenancyId) {
+              setRenewalReviewFeedback({ status: "error", message: "Select a tenancy." });
+              return;
+            }
+            updateRenewalReview.mutate({ id: tenancyId, body });
+          }}
+        >
+          <Callout variant="info" title="Renewal control">
+            Selecting Renew does not create the new tenancy yet. Complete the Renew tenancy form after terms and the tenant agreement fee are confirmed.
+          </Callout>
+          <Field label="Active tenancy">
+            <SelectInput name="tenancyId" required>
+              <option value="">Select tenancy</option>
+              {tenancies.filter((t) => !t.status || t.status === "active").map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.propertyName && t.unitCode ? `${t.propertyName} ${t.unitCode} · ` : ""}{t.tenantName}{t.endDate ? ` · ends ${t.endDate.slice(0, 10)}` : ""}
+                </option>
+              ))}
+            </SelectInput>
+          </Field>
+          <Field label="Follow-up status">
+            <SelectInput name="decision" defaultValue="contacted" required>
+              <option value="pending">Not contacted yet</option>
+              <option value="contacted">Contacted · awaiting decision</option>
+              <option value="renew">Tenant wants to renew</option>
+              <option value="not_renew">Tenant will not renew</option>
+            </SelectInput>
+          </Field>
+          <Field label="Notes">
+            <TextInput name="notes" placeholder="Contact method, agreed terms, reason, next follow-up…" />
+          </Field>
+          <ActionButton type="submit" variant="secondary" disabled={updateRenewalReview.isPending}>
+            {updateRenewalReview.isPending ? "Saving…" : "Save follow-up"}
+          </ActionButton>
+          <FeedbackMessage status={renewalReviewFeedback.status} message={renewalReviewFeedback.message} />
+        </FormCard>
 
         {/* Renew Tenancy */}
         <FormCard
@@ -478,6 +578,18 @@ export function TenancyForms({
               placeholder="0.00"
               required
             />
+          </Field>
+          <Field
+            label="Tenancy renewal fee (RM)"
+            hint="Confirm this on every renewal. Enter 0 when no fee applies; any amount entered will appear as Saved · not billed for review."
+          >
+            <TextInput name="renewalFeeAmount" type="number" min={0} step="0.01" defaultValue="0" required />
+          </Field>
+          <Field
+            label="Renewal fee due date"
+            hint="Choose when the tenant must pay. Leave blank to use the renewed tenancy start date."
+          >
+            <TextInput name="renewalFeeDueDate" type="date" />
           </Field>
           <ActionButton type="submit" variant="secondary" disabled={renewTenancy.isPending}>
             {renewTenancy.isPending ? "Renewing…" : "Trigger renewal"}
@@ -539,6 +651,106 @@ export function TenancyForms({
             {updateStatus.isPending ? "Updating…" : "Update status"}
           </ActionButton>
           <FeedbackMessage status={statusFeedback.status} message={statusFeedback.message} />
+        </FormCard>
+      </div>
+
+      <div className="max-w-2xl">
+        <FormCard
+          title="Complete tenant move-out"
+          description="Ends billing, releases parking and records the deposit amount the owner must refund to the tenant."
+          onSubmit={(e) => {
+            e.preventDefault();
+            setMoveOutFeedback(idle);
+            const data = getFormData(e);
+            const { tenancyId, ...body } = data;
+            if (!tenancyId) {
+              setMoveOutFeedback({ status: "error", message: "Select the tenancy that is moving out." });
+              return;
+            }
+            moveOutTenancy.mutate({ id: tenancyId, body });
+          }}
+        >
+          <Callout variant="warning" title="Actual handover only">
+            A future notice should stay active until handover. Complete this step on the tenant&apos;s actual final occupied date.
+          </Callout>
+          <Callout variant="warning" title="Owner holds the deposit in custody">
+            The deposit remains refundable tenant money, not owner income. Enter KAEN-approved tenant deductions and the amount the owner has directly refunded. A deduction becomes a paid Tenant Expense and is deducted from the next Owner Payout for KAEN.
+          </Callout>
+          <Field label="Active tenancy">
+            <SelectInput name="tenancyId" required>
+              <option value="">Select tenancy</option>
+              {tenancies.map((t) => (
+                <option key={t.id} value={t.id}>{t.tenancyCode} · {t.tenantName}</option>
+              ))}
+            </SelectInput>
+          </Field>
+          <Field label="Actual move-out date">
+            <TextInput name="moveOutDate" type="date" required />
+          </Field>
+          <Field label="Move-out notes">
+            <TextInput name="moveOutNotes" placeholder="Keys returned, inspection notes, transferring to Unit B, etc." />
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="KAEN-approved tenant deductions (RM)">
+              <TextInput name="depositDeductionAmount" type="number" min="0" step="0.01" defaultValue="0.00" />
+            </Field>
+            <Field label="Deposit already refunded by owner (RM)">
+              <TextInput name="depositRefundedAmount" type="number" min="0" step="0.01" defaultValue="0.00" />
+            </Field>
+          </div>
+          <Field label="Owner refund date">
+            <TextInput name="depositRefundDate" type="date" />
+          </Field>
+          <Field label="Deposit settlement notes">
+            <TextInput name="depositSettlementNotes" placeholder="Damage deductions, owner transfer reference, tenant acknowledgement, etc." />
+          </Field>
+          <ActionButton type="submit" variant="danger" disabled={moveOutTenancy.isPending}>
+            {moveOutTenancy.isPending ? "Completing…" : "Complete Move Out"}
+          </ActionButton>
+          <FeedbackMessage status={moveOutFeedback.status} message={moveOutFeedback.message} />
+        </FormCard>
+      </div>
+
+      <div className="max-w-2xl">
+        <FormCard
+          title="Update owner deposit settlement"
+          description="Use this after move-out when the owner later refunds the tenant. The outstanding reminder clears automatically once fully settled."
+          onSubmit={(e) => {
+            e.preventDefault();
+            setDepositSettlementFeedback(idle);
+            const data = getFormData(e);
+            const { tenancyId, ...body } = data;
+            if (!tenancyId) {
+              setDepositSettlementFeedback({ status: "error", message: "Select an ended tenancy." });
+              return;
+            }
+            updateDepositSettlement.mutate({ id: tenancyId, body });
+          }}
+        >
+          <Callout variant="warning" title="Owner refund record">
+            This records money returned by the owner. It is not a KAEN-held deposit payment.
+          </Callout>
+          <Field label="Ended tenancy">
+            <SelectInput name="tenancyId" required>
+              <option value="">Select ended tenancy</option>
+              {tenancies.filter((t) => t.status && t.status !== "active").map((t) => (
+                <option key={t.id} value={t.id}>{t.tenancyCode} · {t.tenantName}</option>
+              ))}
+            </SelectInput>
+          </Field>
+          <Field label="Total refunded by owner to date (RM)">
+            <TextInput name="depositRefundedAmount" type="number" min="0" step="0.01" defaultValue="0.00" />
+          </Field>
+          <Field label="Latest refund date">
+            <TextInput name="depositRefundDate" type="date" />
+          </Field>
+          <Field label="Settlement notes">
+            <TextInput name="depositSettlementNotes" placeholder="Refund reference, deductions agreed by tenant, supporting document, etc." />
+          </Field>
+          <ActionButton type="submit" disabled={updateDepositSettlement.isPending}>
+            {updateDepositSettlement.isPending ? "Saving…" : "Save Deposit Settlement"}
+          </ActionButton>
+          <FeedbackMessage status={depositSettlementFeedback.status} message={depositSettlementFeedback.message} />
         </FormCard>
       </div>
     </div>

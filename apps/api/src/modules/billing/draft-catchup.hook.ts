@@ -41,7 +41,6 @@
 import { getDb, Prisma } from "@kason/db";
 import { ymOfUtc } from "@kason/shared";
 import { recordAudit } from "../../lib/audit";
-import { isPhase2FlagEnabled } from "../../lib/feature-flags";
 import { isBillableStatus, tenancyOverlapsPeriod } from "../../lib/tenancy-period";
 import type { AutoDraftActorCtx } from "./auto-draft.types";
 import { getDraftConfig } from "./auto-draft.repository";
@@ -137,8 +136,6 @@ export async function draftCatchupForTenancy(
   now: Date = new Date(),
 ): Promise<{ drafted: string[] }> {
   const drafted: string[] = [];
-  // Same gate as the cron: while the flag is dark this whole feature is inert.
-  if (!isPhase2FlagEnabled("ENABLE_PHASE2_AUTODRAFT")) return { drafted };
   try {
     const config = await getDraftConfig(ctx.orgId);
     // Parity with runAutoDraftInvoices: an inactive config drafts nothing, and
@@ -322,7 +319,6 @@ export async function draftCatchupForUnit(
   unitId: string,
   now: Date = new Date(),
 ): Promise<{ drafted: string[] }> {
-  if (!isPhase2FlagEnabled("ENABLE_PHASE2_AUTODRAFT")) return { drafted: [] };
   try {
     const active = await getDb().tenancy.findMany({
       where: { organizationId: ctx.orgId, unitId, status: "active" },

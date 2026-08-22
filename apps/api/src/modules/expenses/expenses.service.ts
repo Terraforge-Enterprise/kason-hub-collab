@@ -121,6 +121,12 @@ export async function createSupplierExpenseService(
         apartmentId: input.apartmentId ?? null,
         unitId: input.unitId ?? null,
         description: input.description ?? null,
+        paymentSource: input.paymentSource ?? "company_bank",
+        claimantName: input.claimantName ?? null,
+        costPurpose: input.costPurpose ?? "unit_specific",
+        approvalStatus: input.paymentSource === "employee_advance" ? "submitted" : "approved",
+        reimbursementStatus: input.paymentSource === "employee_advance" ? "awaiting_approval" : "not_applicable",
+        notes: input.notes ?? null,
         createdById: ctx.actorUserId,
         allocations: {
           create: input.allocations.map((a) => ({
@@ -133,6 +139,9 @@ export async function createSupplierExpenseService(
             description: a.description ?? null,
           })),
         },
+        ...(input.costPurpose === "unit_specific" && input.apartmentId ? {
+          costAssignments: { create: [{ organizationId: ctx.orgId, apartmentId: input.apartmentId, amount: input.totalAmount, description: input.description ?? null, assignedById: ctx.actorUserId }] },
+        } : {}),
       },
       select: {
         id: true,
@@ -143,7 +152,7 @@ export async function createSupplierExpenseService(
       },
     });
 
-    if (isPhase2FlagEnabled("ENABLE_KAEN_OPEX")) {
+    if (isPhase2FlagEnabled("ENABLE_KAEN_OPEX") && input.paymentSource !== "employee_advance") {
       await routeKaenOperatingExpensesTx(tx, ctx, created.allocations, expenseDate);
     }
 
@@ -165,5 +174,71 @@ export async function createSupplierExpenseService(
     // Reconstruct the public shape — `select` above also pulls back `allocations` for
     // the KAEN-opex routing above; callers/tests must see only {id, expenseNumber}.
     return { id: created.id, expenseNumber: created.expenseNumber };
+  });
+}
+
+export async function listSupplierExpensesService(ctx: ExpenseActorCtx) {
+  const db = getDb();
+  const rows = await db.supplierExpense.findMany({
+    where: { organizationId: ctx.orgId, status: "recorded" },
+    include: {
+      allocations: true,
+      costAssignments: true,
+      bankCostAllocations: { select: { amount: true } },
+    },
+    orderBy: [{ expenseDate: "desc" }, { createdAt: "desc" }],
+    take: 1000,
+  });
+  return rows.map((row) => {
+    const assigned = row.costAssignments.reduce((sum, item) => sum + Number(item.amount), 0);
+    const reimbursed = row.bankCostAllocations.reduce((sum, item) => sum + Number(item.amount), 0);
+    return {
+      ...row,
+      totalAmount: row.totalAmount.toFixed(2),
+      allocatedCost: assigned.toFixed(2),
+      unallocatedCost: Math.max(0, Number(row.totalAmount) - assigned).toFixed(2),
+      reimbursedAmount: reimbursed.toFixed(2),
+      allocations: row.allocations.map((item) => ({ ...item, amount: item.amount.toFixed(2) })),
+      costAssignments: row.costAssignments.map((item) => ({ ...item, amount: item.amount.toFixed(2) })),
+    };
+  });
+}
+
+export async function approveEmployeeClaimService(ctx: ExpenseActorCtx, id: string) {
+  const db = getDb();
+  return db.$transaction(async (tx) => {
+    const current = await tx.supplierExpense.findFirst({ where: { id, organizationId: ctx.orgId, paymentSource: "employee_advance", status: "recorded" }, include: { allocations: { select: { id: true, borneBy: true, amount: true, chargeCategoryId: true, description: true } } } });
+    if (!current) throw new ExpenseError(404, "CLAIM_NOT_FOUND");
+    if (current.approvalStatus !== "submitted") throw new ExpenseError(409, "CLAIM_NOT_SUBMITTED");
+    await routeKaenOperatingExpensesTx(tx, ctx, current.allocations, current.expenseDate);
+    const row = await tx.supplierExpense.update({ where: { id }, data: { approvalStatus: "approved", reimbursementStatus: "awaiting_reimbursement", approvedById: ctx.actorUserId, approvedAt: new Date() } });
+    await recordAudit(tx, { organizationId: ctx.orgId, actorUserId: ctx.actorUserId, actorRole: ctx.actorRole, action: "employee_claim.approve", entityType: "SupplierExpense", entityId: id, meta: { amount: current.totalAmount.toFixed(2), claimantName: current.claimantName }, ip: ctx.ip, userAgent: ctx.userAgent });
+    return { ...row, totalAmount: row.totalAmount.toFixed(2) };
+  });
+}
+
+export async function assignSharedCostService(ctx: ExpenseActorCtx, id: string, input: { apartmentId: string; gridExpenseId?: string | null; amount: string; description?: string | null }) {
+  const db = getDb();
+  return db.$transaction(async (tx) => {
+    const expense = await tx.supplierExpense.findFirst({ where: { id, organizationId: ctx.orgId, status: "recorded" }, include: { costAssignments: { select: { amount: true } } } });
+    if (!expense) throw new ExpenseError(404, "EXPENSE_NOT_FOUND");
+    // Unit-specific employee claims may be linked straight to the exact open grid
+    // cost during creation; shared-material claims can be allocated gradually.
+    if (!['shared_materials', 'unit_specific'].includes(expense.costPurpose)) throw new ExpenseError(409, "COST_NOT_ASSIGNABLE_TO_UNIT");
+    const apartment = await tx.apartment.findFirst({ where: { id: input.apartmentId, organizationId: ctx.orgId } });
+    if (!apartment) throw new ExpenseError(404, "APARTMENT_NOT_FOUND");
+    if (input.gridExpenseId) {
+      const line = await tx.gridExpense.findFirst({ where: { id: input.gridExpenseId, organizationId: ctx.orgId, apartmentId: input.apartmentId, status: "active" } });
+      if (!line) throw new ExpenseError(409, "GRID_EXPENSE_MISMATCH");
+    }
+    const assigned = expense.costAssignments.reduce((sum, item) => sum + Number(item.amount), 0);
+    if (assigned + Number(input.amount) - Number(expense.totalAmount) > 0.009) throw new ExpenseError(409, "ASSIGNMENT_EXCEEDS_UNALLOCATED_COST");
+    const row = await tx.supplierExpenseCostAssignment.create({ data: { organizationId: ctx.orgId, supplierExpenseId: id, apartmentId: input.apartmentId, gridExpenseId: input.gridExpenseId ?? null, amount: input.amount, description: input.description ?? null, assignedById: ctx.actorUserId } });
+    if (input.gridExpenseId) {
+      const currentLine = await tx.gridExpense.findUniqueOrThrow({ where: { id: input.gridExpenseId }, select: { actualCost: true } });
+      await tx.gridExpense.update({ where: { id: input.gridExpenseId }, data: { actualCost: Number(currentLine.actualCost ?? 0) + Number(input.amount), costPaymentStatus: "paid", costVendor: expense.supplierName, costPaymentDate: expense.expenseDate, costPaymentAccount: expense.paymentSource === "employee_advance" ? `Employee advance · ${expense.claimantName ?? "Employee"}` : "Shared materials pool" } });
+    }
+    await recordAudit(tx, { organizationId: ctx.orgId, actorUserId: ctx.actorUserId, actorRole: ctx.actorRole, action: "shared_cost.assign", entityType: "SupplierExpense", entityId: id, meta: { apartmentId: input.apartmentId, amount: input.amount, gridExpenseId: input.gridExpenseId ?? null }, ip: ctx.ip, userAgent: ctx.userAgent });
+    return { ...row, amount: row.amount.toFixed(2) };
   });
 }

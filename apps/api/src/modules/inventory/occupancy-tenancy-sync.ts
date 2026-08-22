@@ -1,5 +1,6 @@
 import { generateTenancyCodeTx } from "../tenancy/tenancy-code-generator";
 import { releaseAssignmentsForTenancyTx } from "../carpark/carpark-assignment.service";
+import { createInvoiceTx, recomputeInvoiceTotalTx } from "../billing/auto-draft.repository";
 import { isPhase2FlagEnabled } from "../../lib/feature-flags";
 
 export type SyncOccupancyTenancyParams = {
@@ -33,6 +34,8 @@ export type SyncOccupancyTenancyParams = {
     // editor guard BEFORE the transaction (assertCommissionWritable).
     firstMonthIsCommission?: boolean;
     commissionSstBearer?: "owner" | "kaen";
+    tenancyAgreementFeeAmount?: number;
+    tenancyAgreementFeeDueDate?: Date;
   };
 };
 
@@ -206,7 +209,7 @@ export async function syncOccupancyTenancy(params: SyncOccupancyTenancyParams) {
   }
 
   const tenancyCode = await generateTenancyCodeTx(tx, orgId);
-  await tx.tenancy.create({
+  const created = await tx.tenancy.create({
     data: {
       organizationId: orgId,
       propertyId: unit.propertyId,
@@ -225,6 +228,42 @@ export async function syncOccupancyTenancy(params: SyncOccupancyTenancyParams) {
     },
     select: { id: true },
   });
+
+  const agreementFee = incoming.tenancyAgreementFeeAmount ?? 0;
+  // An explicit zero is a reviewable TA decision, not the absence of a charge.
+  // Keep it visible as Saved · not billed in the tenancy start month.
+  if (incoming.tenancyAgreementFeeAmount !== undefined && agreementFee >= 0) {
+    const dueDate = incoming.tenancyAgreementFeeDueDate ?? moveInDate;
+    const periodMonth = new Date(Date.UTC(moveInDate.getUTCFullYear(), moveInDate.getUTCMonth(), 1));
+    const idempotencyKey = `tenancy-agreement-fee:${created.id}`;
+    const category = await tx.chargeCategory.findFirst({
+      where: { organizationId: orgId, code: "tenancy_agreement_fee" }, select: { id: true },
+    });
+    const invoice = await createInvoiceTx(tx, {
+      orgId,
+      invoiceNumber: `TAF-${created.id}`,
+      partyId,
+      tenancyId: created.id,
+      propertyId: unit.propertyId,
+      invoiceType: "tenant_agreement_fee",
+      invoiceDate: new Date(),
+      dueDate,
+      periodMonth,
+      idempotencyKey,
+    });
+    await tx.charge.create({
+      data: {
+        organizationId: orgId, chargeNumber: `TAF-${created.id}`, tenancyId: created.id,
+        unitId: unit.id, partyId, categoryId: category?.id ?? null,
+        chargeType: "tenancy_agreement_fee", status: "draft", description: "Tenancy agreement fee",
+        dueDate, amount: agreementFee.toFixed(2), outstandingAmount: agreementFee.toFixed(2),
+        currency: "MYR", billingMonth: periodMonth, attachmentKeys: [], invoiceId: invoice.id,
+        nature: "profit", revenueRecognition: "manager_revenue", settlementRecipient: "manager",
+        commercialPurpose: "SERVICE",
+      },
+    });
+    await recomputeInvoiceTotalTx(tx, orgId, invoice.id);
+  }
 }
 
 /**

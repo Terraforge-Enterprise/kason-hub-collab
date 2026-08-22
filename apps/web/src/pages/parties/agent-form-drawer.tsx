@@ -182,6 +182,9 @@ type Props = {
   agent: AgentListItem | null;
   onClose: () => void;
   onResetPassword?: () => void;
+  /** Create-only callback used by inline pickers that must immediately select
+   * the new agent without forcing the operator to close and search again. */
+  onCreated?: (agent: AgentListItem) => void;
 };
 
 type FormState = {
@@ -274,7 +277,7 @@ function fromAgentDetail(detail: AgentDetail): FormState {
   };
 }
 
-export function AgentFormDrawer({ open, mode, agent, onClose, onResetPassword }: Props) {
+export function AgentFormDrawer({ open, mode, agent, onClose, onResetPassword, onCreated }: Props) {
   const { create, update } = useAgentActions();
   const [form, setForm] = useState<FormState>(empty);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
@@ -438,8 +441,9 @@ export function AgentFormDrawer({ open, mode, agent, onClose, onResetPassword }:
         title: form.title.trim() || undefined,
       };
       create.mutate(payload, {
-        onSuccess: () => {
+        onSuccess: (createdAgent) => {
           setDirtyFields(new Set());
+          onCreated?.(createdAgent);
           onClose();
         },
         // Override the generic resource-mutations error toast for the

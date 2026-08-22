@@ -172,7 +172,7 @@ describe("PartitionRoomStrip", () => {
     // not the input, so getByLabelText resolves to the group and /rent/i also
     // matches "Rental deposit". Query the input directly by role + its
     // aria-label — the rent spinbutton is unique.
-    fireEvent.change(screen.getByRole("spinbutton", { name: "Rent (RM/mo)" }), {
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Rent (RM/month)" }), {
       target: { value: "1200" },
     });
     const next = onChange.mock.calls[0][0];

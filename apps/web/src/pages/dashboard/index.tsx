@@ -117,7 +117,9 @@ export default function DashboardPage() {
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const currentMonth = new Date().toLocaleString("en-MY", { month: "short", year: "numeric" });
 
-  const orgName = stats.orgName;
+  // Product UI uses the legal company's correct display name. Do not surface
+  // stale Organization.name values from older seeded databases here.
+  const orgName = "KAEN Properties Management Sdn Bhd";
   const {
     propertyCount,
     unitCount,

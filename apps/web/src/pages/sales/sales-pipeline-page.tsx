@@ -484,7 +484,7 @@ function SalesUnitCard({
           Sold {unit.salesDate.slice(0, 10)}
         </span>
         <span className="font-medium text-foreground">
-          {unit.expectedRental != null ? `${formatRMShort(unit.expectedRental)}/mo` : formatRMShort(unit.purchasePrice)}
+          {unit.expectedRental != null ? `${formatRMShort(unit.expectedRental)}/month` : formatRMShort(unit.purchasePrice)}
         </span>
       </div>
       <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
@@ -554,7 +554,7 @@ function TableView({
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums">
                   {u.expectedRental != null
-                    ? `${formatRMShort(u.expectedRental)}/mo`
+                    ? `${formatRMShort(u.expectedRental)}/month`
                     : "—"}
                 </td>
                 <td className="px-4 py-3">

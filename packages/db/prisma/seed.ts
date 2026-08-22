@@ -213,7 +213,7 @@ async function main() {
   const org = await prisma.organization.create({
     data: {
       id: IDS.org,
-      name: "Kaen Properties Sdn Bhd",
+      name: "KAEN PROPERTIES MANAGEMENT SDN BHD",
       slug: "kaen-demo",
       status: "active",
       defaultCurrency: "MYR",
@@ -1619,7 +1619,7 @@ Please ensure your monthly rent is paid by the 1st of each month via bank transf
 If you have any questions, please do not hesitate to contact us.
 
 Best regards,
-Kaen Properties Sdn Bhd`,
+KAEN PROPERTIES MANAGEMENT SDN BHD`,
         description: "Sent to new tenants upon move-in",
         isActive: true,
       },
@@ -1639,7 +1639,7 @@ Reference: {{tenancy_code}}
 Thank you for your prompt payment.
 
 Best regards,
-Kaen Properties Sdn Bhd`,
+KAEN PROPERTIES MANAGEMENT SDN BHD`,
         description: "Monthly rent reminder sent before due date",
         isActive: true,
       },
@@ -1658,7 +1658,7 @@ Total Due: RM {{total_due}}
 Please make payment immediately to avoid further action. If you have already made payment, please disregard this notice and contact us with your payment reference.
 
 Best regards,
-Kaen Properties Sdn Bhd`,
+KAEN PROPERTIES MANAGEMENT SDN BHD`,
         description: "Sent when rent is overdue past grace period",
         isActive: true,
       },

@@ -46,14 +46,18 @@ type DrawerState =
   | null;
 
 const ROLE_LABELS: Record<string, string> = {
-  admin: "Admin",
+  admin: "Super Admin",
+  director: "Director",
+  accountant: "Finance",
   manager: "Manager",
-  editor: "Editor",
+  editor: "Operations Admin",
   viewer: "Viewer",
 };
 
 const ROLE_TONES: Record<string, "emerald" | "amber" | "sky" | "slate"> = {
   admin: "emerald",
+  director: "amber",
+  accountant: "sky",
   manager: "amber",
   editor: "sky",
   viewer: "slate",
@@ -62,12 +66,14 @@ const ROLE_TONES: Record<string, "emerald" | "amber" | "sky" | "slate"> = {
 // Role filter chips. "all" first; the rest mirror the four operator roles in
 // rank order. Selecting one narrows the register below — e.g. "Manager" is the
 // exact view the retired Managers page used to give.
-type RoleFilter = "all" | "admin" | "manager" | "editor" | "viewer";
+type RoleFilter = "all" | "admin" | "director" | "accountant" | "manager" | "editor" | "viewer";
 const ROLE_FILTERS: { id: RoleFilter; label: string }[] = [
   { id: "all", label: "All" },
-  { id: "admin", label: "Admin" },
+  { id: "admin", label: "Super Admin" },
+  { id: "director", label: "Director" },
+  { id: "accountant", label: "Finance" },
   { id: "manager", label: "Manager" },
-  { id: "editor", label: "Editor" },
+  { id: "editor", label: "Operations Admin" },
   { id: "viewer", label: "Viewer" },
 ];
 
@@ -79,7 +85,7 @@ export default function StaffPage() {
   // listed here) so the role-filter chips and the metrics always reconcile with
   // the fetched set — an unfiltered useUsers() would leak an accountant that has
   // no chip, no ROLE_LABELS entry, and no matching Add/Edit-drawer option.
-  const users = useUsers({ roles: ["admin", "manager", "editor", "viewer"] });
+  const users = useUsers({ roles: ["admin", "director", "accountant", "manager", "editor", "viewer"] });
   const [drawer, setDrawer] = useState<DrawerState>(null);
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
 
@@ -99,14 +105,14 @@ export default function StaffPage() {
 
       <PageHeader
         title="Staff"
-        description="Operator login users — admins, managers, editors, and viewers with access to this admin workspace."
+        description="Company access roles — Super Admin, Director, Finance, Manager, Operations Admin and Viewer."
         metrics={[
           { label: "Total", value: String(all.length), hint: "Operator login users" },
           { label: "Active", value: String(activeCount), hint: "Can currently log in" },
           { label: "Disabled", value: String(all.filter((u) => u.status === "disabled").length), hint: "Deactivated accounts" },
         ]}
         actions={
-          <RoleGate min="manager">
+          <RoleGate min="admin">
             <Button
               variant="gold"
               disabled={drawer !== null}
@@ -120,7 +126,7 @@ export default function StaffPage() {
 
       <Surface
         title="Operator register"
-        description="Managers can create, edit, deactivate, and reset passwords for manager, editor, and viewer accounts. Admin-tier rows are visible but managed out-of-band (DB), so they cannot be modified here."
+        description="Only Super Admin can create users, assign roles, deactivate access or reset passwords. The Super Admin account itself is protected."
       >
         {/* Role filter — 'Manager' reproduces the old Managers tab exactly. */}
         <div className="mb-4 flex flex-wrap items-center gap-2" role="group" aria-label="Filter by role">
@@ -217,7 +223,7 @@ export default function StaffPage() {
                                 <MoreHorizontalIcon className="h-4 w-4" />
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                <RoleGate min="manager">
+                                <RoleGate min="admin">
                                   <DropdownMenuItem
                                     onClick={() => setDrawer({ kind: "form", mode: "edit", user })}
                                   >
@@ -273,7 +279,7 @@ export default function StaffPage() {
         open={drawer?.kind === "form"}
         mode={drawer?.kind === "form" ? drawer.mode : "create"}
         user={drawer?.kind === "form" ? drawer.user : null}
-        availableRoles={["manager", "editor", "viewer"]}
+        availableRoles={["director", "accountant", "manager", "editor", "viewer"]}
         onClose={closeDrawer}
       />
 
